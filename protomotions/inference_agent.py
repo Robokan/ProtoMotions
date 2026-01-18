@@ -121,6 +121,18 @@ def create_parser():
         default=1,
         help="How often to update motion targets (1=every step, 5=every 5 steps). Higher values simulate lower-frequency command updates like GR00T at 5-10 Hz.",
     )
+    parser.add_argument(
+        "--scene-usd",
+        type=str,
+        default=None,
+        help="Path to a USD scene file to load into the simulation (local or omniverse:// path)",
+    )
+    parser.add_argument(
+        "--scene-offset",
+        type=str,
+        default="0 0 0",
+        help="XYZ offset for the scene (e.g., '0 0 -0.1')",
+    )
 
     return parser
 
@@ -334,6 +346,12 @@ def main():
     
     # Set target update interval (simulates lower-frequency commands like GR00T)
     env.inference_target_update_interval = args.target_update_interval
+
+    # Store scene args for loading after reset (need robot position)
+    _scene_usd = args.scene_usd if args.simulator == "isaaclab" else None
+    _scene_offset = [float(x) for x in args.scene_offset.split()] if args.scene_offset else [0, 0, 0]
+    if len(_scene_offset) != 3:
+        _scene_offset = [0.0, 0.0, 0.0]
     if args.target_update_interval > 1:
         print(f"Target update interval: every {args.target_update_interval} steps (simulating ~{50//args.target_update_interval} Hz commands)")
 
@@ -361,6 +379,53 @@ def main():
 
     agent.setup()
     agent.load(args.checkpoint, load_env=False)
+
+    # Load custom USD scene centered on robot position
+    if _scene_usd:
+        import omni.usd
+        from pxr import Gf, UsdGeom
+        
+        stage = omni.usd.get_context().get_stage()
+        scene_prim_path = "/World/CustomScene"
+        
+        # Create xform and add scene as reference
+        scene_prim = stage.DefinePrim(scene_prim_path, "Xform")
+        scene_prim.GetReferences().AddReference(_scene_usd)
+        
+        # Create xformable with translate op
+        xformable = UsdGeom.Xformable(scene_prim)
+        xformable.ClearXformOpOrder()
+        translate_op = xformable.AddTranslateOp()
+        
+        # Hide default terrain visuals (keep physics for collision)
+        from pxr import Usd
+        terrain_paths = ["/World/ground", "/World/ground/terrain", "/World/ground/terrain/mesh"]
+        for path in terrain_paths:
+            prim = stage.GetPrimAtPath(path)
+            if prim.IsValid():
+                imageable = UsdGeom.Imageable(prim)
+                imageable.MakeInvisible()
+                print(f"Hidden: {path}")
+        
+        print(f"Loaded scene: {_scene_usd}")
+        
+        # Wrap env.reset to update scene position only when env 0 resets
+        _original_reset = env.reset
+        def _reset_with_scene_update(env_ids=None):
+            result = _original_reset(env_ids)
+            # Only update scene if env 0 is being reset (None means all envs)
+            env0_reset = env_ids is None or (hasattr(env_ids, '__len__') and 0 in env_ids) or (hasattr(env_ids, 'numel') and (env_ids == 0).any())
+            if env0_reset:
+                robot_state = env.simulator._get_simulator_root_state(env_ids=None)
+                robot_pos = robot_state.root_pos[0].cpu().numpy()
+                final_offset = Gf.Vec3d(
+                    float(robot_pos[0] + _scene_offset[0]),
+                    float(robot_pos[1] + _scene_offset[1]),
+                    float(_scene_offset[2])
+                )
+                translate_op.Set(final_offset)
+            return result
+        env.reset = _reset_with_scene_update
 
     if args.full_eval:
         agent.evaluator.eval_count = 0

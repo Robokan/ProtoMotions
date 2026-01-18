@@ -847,20 +847,26 @@ class IsaacLabSimulator(Simulator):
             height_offset = 0
 
         cam_pos = np.array(self._perspective_view.get_camera_state())
-        cam_delta = cam_pos - self._cam_prev_char_pos
+        # Only use XY delta, keep Z fixed
+        cam_delta_xy = cam_pos[:2] - self._cam_prev_char_pos[:2]
 
+        # Fixed camera target height
+        cam_target_height = 0.5
+        # Fixed camera position height (maintains relative height from target)
+        cam_pos_height = cam_pos[2]  # Keep current camera Z
+        
         new_cam_target = np.array(
-            [char_root_pos[0], char_root_pos[1], char_root_pos[2] + height_offset]
+            [char_root_pos[0], char_root_pos[1], cam_target_height]
         )
         new_cam_pos = np.array(
             [
-                char_root_pos[0] + cam_delta[0],
-                char_root_pos[1] + cam_delta[1],
-                char_root_pos[2] + cam_delta[2],
+                char_root_pos[0] + cam_delta_xy[0],
+                char_root_pos[1] + cam_delta_xy[1],
+                cam_pos_height,  # Keep camera Z fixed
             ]
         )
         self._perspective_view.set_camera_view(new_cam_pos, new_cam_target)
-        self._cam_prev_char_pos[:] = char_root_pos
+        self._cam_prev_char_pos[:2] = char_root_pos[:2]  # Only update XY
 
     def _write_viewport_to_file(self, file_name: str) -> None:
         """
