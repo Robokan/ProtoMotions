@@ -189,25 +189,28 @@ class MaskedMimic(BaseAgent):
 
             expert_model.apply(pass_fabric_to_running_mean_std)
 
-            log.info("Materializing expert model lazy modules...")
+            log.info("Materializing expert model lazy modules (actor only)...")
             with torch.no_grad():
                 dummy_obs = self.env.get_obs()
                 dummy_obs = self.add_agent_info_to_obs(dummy_obs)
                 dummy_obs_td = self.obs_dict_to_tensordict(dummy_obs)
-                _ = expert_model(dummy_obs_td)
+                # Only materialize the actor, not the critic (critic may have different obs sizes)
+                _ = expert_model._actor(dummy_obs_td)
 
-            self.expert_model = self.fabric.setup(expert_model)
-
-            # loading should be done after fabric.setup to ensure the model is on the correct fabric.device
+            # Load weights BEFORE DDP setup - we only use the actor anyway
             pre_trained_expert = torch.load(
                 str(checkpoint_path),
                 map_location=self.fabric.device,
                 weights_only=False,
             )
-            self.expert_model.load_state_dict(pre_trained_expert["model"])
-            for param in self.expert_model.parameters():
+            # Load with strict=False to ignore critic size mismatches (we only use actor)
+            expert_model.load_state_dict(pre_trained_expert["model"], strict=False)
+            for param in expert_model.parameters():
                 param.requires_grad = False
-            self.expert_model.eval()  # Just incase
+            expert_model.eval()
+            
+            # Don't wrap with DDP - we don't train this model, just use it for inference
+            self.expert_model = expert_model
         else:
             self.expert_model = None
 
@@ -299,8 +302,8 @@ class MaskedMimic(BaseAgent):
         else:
             action = output_td["action"]  # During evaluation, we use the action
 
-        # Run expert model to get target action
-        expert_output_td = self.expert_model(obs_td)
+        # Run expert model's ACTOR ONLY to get target action (critic may have incompatible obs sizes)
+        expert_output_td = self.expert_model._actor(obs_td)
         if "mean_action" in expert_output_td:
             expert_action = expert_output_td[
                 "mean_action"

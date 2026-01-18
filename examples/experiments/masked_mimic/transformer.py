@@ -52,6 +52,7 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> MimicEnvConf
     from protomotions.envs.obs.config import (
         HumanoidObsConfig,
         MaxCoordsSelfObsConfig,
+        SelfObsConfig,
         ActionHistoryConfig,
         MimicObsConfig,
         MimicTargetPoseConfig,
@@ -104,7 +105,11 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> MimicEnvConf
     env_config: MimicEnvConfig = MimicEnvConfig(
         humanoid_obs=HumanoidObsConfig(
             max_coords_obs=MaxCoordsSelfObsConfig(
-                enabled=True, num_historical_steps=120
+                enabled=True, num_historical_steps=3  # Match expert model
+            ),
+            # Expert model was trained with reduced_coords_obs, so we need it for distillation
+            reduced_coords_obs=SelfObsConfig(
+                enabled=True, num_historical_steps=3
             ),
             action_history=ActionHistoryConfig(
                 enabled=True,
@@ -119,15 +124,16 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> MimicEnvConf
             enabled=True,
             mimic_target_pose=MimicTargetPoseConfig(
                 enabled=True,
-                type=FuturePoseType.MAX_COORDS,
+                type=FuturePoseType.MAX_COORDS_SIMPLE,  # Must match expert model
                 with_velocities=True,
+                with_time=True,  # Must match expert model
                 future_steps=1,
             ),
         ),
         masked_mimic_obs=MaskedMimicObsConfig(
             enabled=True,
             masked_mimic_target_pose=MaskedMimicTargetPoseConfig(
-                num_future_steps=5,
+                num_future_steps=2,  # Reduced from 5 to save memory
             ),
             masked_mimic_masking=MaskedMimicMaskingConfig(
                 joint_masking=JointMaskingConfig(
@@ -139,7 +145,7 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> MimicEnvConf
                 time_sampling=TimeSamplingConfig(alpha=2.0, beta=5.0),
             ),
             historical_obs=MaskedMimicHistoricalObsConfig(
-                num_historical_conditioned_steps=15
+                num_historical_conditioned_steps=3  # Must be <= max_coords_obs.num_historical_steps
             ),
         ),
         motion_manager=MimicMotionManagerConfig(

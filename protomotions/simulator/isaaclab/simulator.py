@@ -439,13 +439,24 @@ class IsaacLabSimulator(Simulator):
         """
         Advance the simulation by stepping for a number of iterations equal to the decimation factor.
         """
+        # Check if simulation was closed before doing work
+        if not self._simulation_app.is_running():
+            self._simulation_running = False
+            return
+        
+        # Apply control targets once per control step (not per physics substep)
+        self._apply_control()
+        self._scene.write_data_to_sim()
+        
+        # Step physics multiple times (decimation substeps)
         for idx in range(self.decimation):
-            self._apply_control()
-            self._scene.write_data_to_sim()
             self._sim.step(render=False)
-            if (idx + 1) % self.decimation == 0 and not self.headless:
-                self._sim.render()
+            # Update scene after each substep to get fresh sensor data
             self._scene.update(dt=self._sim.get_physics_dt())
+        
+        # Render once at the end
+        if not self.headless:
+            self._sim.render()
 
     def _apply_simulator_pd_targets(self, pd_targets: torch.Tensor) -> None:
         """Applies PD position targets using IsaacLab's internal PD controller."""
@@ -865,6 +876,15 @@ class IsaacLabSimulator(Simulator):
 
         vp_api = get_active_viewport()
         capture_viewport_to_file(vp_api, file_name)
+
+    def is_simulation_running(self) -> bool:
+        """Check if the simulation application is still running.
+        
+        Returns:
+            True if the simulation is running, False if window was closed or exit requested.
+        """
+        # Check both the base class flag and the IsaacLab app state
+        return self._simulation_running and self._simulation_app.is_running()
 
     def close(self) -> None:
         """

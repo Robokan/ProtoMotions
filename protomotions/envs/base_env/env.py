@@ -176,6 +176,14 @@ class BaseEnv:
             self.num_envs, 3, dtype=torch.float, device=self.device
         )
 
+        # Inference mode flag - when True, skips reward computation for faster demos
+        self.inference_mode = False
+        
+        # Target update rate for inference mode (1 = every step, 5 = every 5 steps)
+        # Simulates lower-frequency command updates like GR00T at 5-10 Hz
+        self.inference_target_update_interval = 1
+        self._inference_step_counter = 0
+
         # Cache terrain height correction flag (optimization for flat terrain)
         self.skip_height_correction = (
             self.config.skip_correct_terrain_height_on_flat and self.terrain.is_flat()
@@ -485,12 +493,15 @@ class BaseEnv:
 
         Increments progress counter, computes observations and rewards, checks for resets,
         and stores raw robot state in extras for logging.
+        
+        In inference_mode, reward computation is skipped for better performance.
         """
         self.progress_buf += 1
         self.self_obs_cb.post_physics_step()
 
         self.compute_observations()
-        self.compute_reward()
+        if not self.inference_mode:
+            self.compute_reward()
         self.reset_buf[:], self.terminate_buf[:] = self.check_resets_and_terminations()
 
         if (

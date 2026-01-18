@@ -115,6 +115,12 @@ def create_parser():
         default=[],
         help="Config overrides in format key=value (e.g., env.max_episode_length=5000 simulator.headless=True)",
     )
+    parser.add_argument(
+        "--target-update-interval",
+        type=int,
+        default=1,
+        help="How often to update motion targets (1=every step, 5=every 5 steps). Higher values simulate lower-frequency command updates like GR00T at 5-10 Hz.",
+    )
 
     return parser
 
@@ -323,6 +329,14 @@ def main():
         simulator=simulator,
     )
 
+    # Enable inference mode for faster demos (skips reward computation)
+    env.inference_mode = True
+    
+    # Set target update interval (simulates lower-frequency commands like GR00T)
+    env.inference_target_update_interval = args.target_update_interval
+    if args.target_update_interval > 1:
+        print(f"Target update interval: every {args.target_update_interval} steps (simulating ~{50//args.target_update_interval} Hz commands)")
+
     # Determine root_dir for agent based on checkpoint path
     agent_kwargs = {}
     checkpoint_path = Path(args.checkpoint)
@@ -352,7 +366,8 @@ def main():
         agent.evaluator.eval_count = 0
         agent.evaluator.evaluate()
     else:
-        agent.evaluator.simple_test_policy(collect_metrics=True)
+        # collect_metrics=False for better performance (avoids GPU sync every frame)
+        agent.evaluator.simple_test_policy(collect_metrics=False)
 
 
 if __name__ == "__main__":

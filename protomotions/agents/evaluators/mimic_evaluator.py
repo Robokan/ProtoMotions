@@ -441,10 +441,27 @@ class MimicEvaluator(BaseEvaluator):
         # Store actions for plotting (only for single motion evaluation)
         actions_storage = [] if collect_metrics and num_motions == 1 else None
 
-        print("Evaluating policy...")
+        print("Evaluating policy... (Press Q or close window to exit)")
+        last_printed_motion_id = None  # Track to avoid duplicate prints
         try:
-            while True:
+            while self.env.simulator.is_simulation_running():
                 obs, _ = self.env.reset(done_indices)
+                
+                # Check again after reset in case window was closed
+                if not self.env.simulator.is_simulation_running():
+                    break
+                
+                # Print motion info only when it changes
+                motion_id = self.motion_manager.motion_ids[0].item()
+                if motion_id != last_printed_motion_id:
+                    if hasattr(self.motion_lib, 'motion_files') and len(self.motion_lib.motion_files) > motion_id:
+                        motion_name = self.motion_lib.motion_files[motion_id].split('/')[-1]
+                    else:
+                        motion_name = f"motion_{motion_id}"
+                    motion_length = self.motion_lib.motion_lengths[motion_id].item()
+                    print(f"Playing: {motion_name} (id={motion_id}, length={motion_length:.2f}s)")
+                    last_printed_motion_id = motion_id
+                    
                 obs = self.agent.add_agent_info_to_obs(obs)
                 obs_td = self.agent.obs_dict_to_tensordict(obs)
 
@@ -472,6 +489,11 @@ class MimicEvaluator(BaseEvaluator):
 
                 # Step the environment
                 obs, rewards, dones, terminated, extras = self.env.step(actions)
+                
+                # Check again after step in case window was closed during physics
+                if not self.env.simulator.is_simulation_running():
+                    break
+                    
                 obs = self.agent.add_agent_info_to_obs(obs)
                 obs_td = self.agent.obs_dict_to_tensordict(obs)
 
@@ -492,20 +514,24 @@ class MimicEvaluator(BaseEvaluator):
                 step += 1
         except KeyboardInterrupt:
             print("\nEvaluation interrupted by Ctrl+C, exiting...")
-            if collect_metrics:
-                print("Metrics up to now:")
-                for k in (
-                    self.config.eval_metric_keys
-                ):  # do not reduce added eval keys for the raws
-                    print(f"{k}: {metrics[k].mean_mean_reduce().item()}")
 
-                # Plot per-frame metrics if only one motion
-                if num_motions == 1:
-                    self._plot_per_frame_metrics(metrics, actions_storage)
-            return
-        except Exception as e:
-            print(f"Error in simple_test_policy: {e}")
-            raise e
+        # Print metrics if collected
+        if collect_metrics:
+            print("Final metrics:")
+            for k in (
+                self.config.eval_metric_keys
+            ):  # do not reduce added eval keys for the raws
+                print(f"{k}: {metrics[k].mean_mean_reduce().item()}")
+
+            # Plot per-frame metrics if only one motion
+            if num_motions == 1:
+                self._plot_per_frame_metrics(metrics, actions_storage)
+
+        print("Simulation ended, exiting...")
+        
+        # Force exit - IsaacLab's close() blocks, so we use os._exit() to terminate immediately
+        import os
+        os._exit(0)
 
     def _plot_per_frame_metrics(
         self, metrics: Dict, actions_storage: list = None

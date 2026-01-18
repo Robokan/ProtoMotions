@@ -13,7 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-import sys
 from isaacgym import gymapi, gymtorch, gymutil  # type: ignore[misc]
 import torch
 from torch import Tensor
@@ -1417,12 +1416,14 @@ class IsaacGymSimulator(Simulator):
 
             # check for window closed
             if self._gym.query_viewer_has_closed(self._viewer):
-                sys.exit()
+                self._simulation_running = False
+                return
 
             # check for keyboard events
             for evt in self._gym.query_viewer_action_events(self._viewer):
                 if evt.action == "QUIT" and evt.value > 0:
-                    sys.exit()
+                    self._simulation_running = False
+                    return
                 elif evt.action == "toggle_viewer_sync" and evt.value > 0:
                     self._enable_viewer_sync = not self._enable_viewer_sync
                 elif evt.action == "push_robot" and evt.value > 0:
@@ -1453,7 +1454,7 @@ class IsaacGymSimulator(Simulator):
 
             if self._enable_viewer_sync:
                 self._gym.step_graphics(self._sim)
-                self._gym.draw_viewer(self._viewer, self._sim, True)
+                self._gym.draw_viewer(self._viewer, self._sim, False)  # Changed from True to False - disable sync_frame_time for faster rendering
             else:
                 self._gym.poll_viewer_events(self._viewer)
         super().render()

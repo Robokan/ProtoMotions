@@ -235,7 +235,10 @@ def create_parser():
         "--nodes", type=int, default=1, help="Number of nodes for distributed training"
     )
     parser.add_argument(
-        "--headless", default=True, help="Run simulation in headless mode"
+        "--headless",
+        action="store_true",
+        default=False,
+        help="Run simulation in headless mode (use flag to enable, omit for GUI)",
     )
     parser.add_argument(
         "--seed", type=int, default=0, help="Random seed for reproducibility"

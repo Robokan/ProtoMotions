@@ -250,23 +250,36 @@ class Mimic(BaseEnv):
 
         markers_state = super().get_markers_state()
 
-        # Update mimic markers
-        if self.config.masked_mimic_obs.enabled:
-            # For masked mimic, use the time of the first visible target pose
-            pose_masks = (
-                self.masked_mimic_obs_cb.masked_mimic_target_poses_masks
-            )  # [num_envs, num_future_steps]
-            first_valid_indices = torch.argmax(pose_masks.float(), dim=1)  # [num_envs]
-
-            # Get the target times for the first visible pose
-            env_indices = torch.arange(self.num_envs, device=self.device)
-            target_motion_times = self.masked_mimic_obs_cb.target_times[
-                env_indices, first_valid_indices
-            ]
-
-            # Compute time to target (time difference between target and current)
+        # Update mimic markers (skip if not initialized or motion times are invalid)
+        if (self.config.masked_mimic_obs.enabled 
+            and self.masked_mimic_obs_cb._initialized
+            and (self.motion_manager.motion_times < 1e9).all()):
+            # For masked mimic, determine what time to show markers at
             current_motion_times = self.motion_manager.motion_times
-            time_to_target = target_motion_times - current_motion_times  # [num_envs]
+            env_indices = torch.arange(self.num_envs, device=self.device)
+            
+            if self.inference_mode:
+                # In inference mode, show markers at current time + small offset
+                # This gives smooth marker movement for demos
+                motion_lengths = self.motion_lib.motion_lengths[self.motion_manager.motion_ids]
+                target_motion_times = torch.clamp(current_motion_times + 0.1, max=motion_lengths - 0.01)
+                time_to_target = torch.full_like(current_motion_times, 0.1)
+                # Use first time step for body masks (all bodies visible with fixed conditioning)
+                first_valid_indices = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
+            else:
+                # In training mode, use the time of the first visible target pose
+                pose_masks = (
+                    self.masked_mimic_obs_cb.masked_mimic_target_poses_masks
+                )  # [num_envs, num_future_steps]
+                first_valid_indices = torch.argmax(pose_masks.float(), dim=1)  # [num_envs]
+
+                # Get the target times for the first visible pose
+                target_motion_times = self.masked_mimic_obs_cb.target_times[
+                    env_indices, first_valid_indices
+                ]
+
+                # Compute time to target (time difference between target and current)
+                time_to_target = target_motion_times - current_motion_times  # [num_envs]
 
             ref_state = self.motion_lib.get_motion_state(
                 self.motion_manager.motion_ids, target_motion_times
@@ -295,12 +308,18 @@ class Mimic(BaseEnv):
             )
 
             # Use advanced indexing to get the correct time step for each environment
-            translation_view = bodies_masks_reshaped[
-                env_indices, first_valid_indices, :, 0
-            ]
-            active_translations = (
-                translation_view == 1
-            )  # [num_envs, num_conditionable_bodies]
+            if self.inference_mode:
+                # In inference mode, show all conditionable bodies
+                active_translations = torch.ones(
+                    self.num_envs, num_conditionable_bodies, dtype=torch.bool, device=self.device
+                )
+            else:
+                translation_view = bodies_masks_reshaped[
+                    env_indices, first_valid_indices, :, 0
+                ]
+                active_translations = (
+                    translation_view == 1
+                )  # [num_envs, num_conditionable_bodies]
 
             # Create masks for each time range
             # Blue: > 1 second
@@ -407,7 +426,8 @@ class Mimic(BaseEnv):
         reset_buf, terminate_buf = super().check_resets_and_terminations()
 
         # Check for early termination based on mimic-specific metrics
-        if self.config.mimic_early_termination:
+        # Skip in inference_mode since compute_reward() is skipped and extras won't be populated
+        if self.config.mimic_early_termination and not self.inference_mode:
             early_term_mask = torch.zeros_like(self.reset_buf, dtype=torch.bool)
             for entry in self.config.mimic_early_termination:
                 key = entry.mimic_early_termination_key
@@ -669,10 +689,18 @@ class Mimic(BaseEnv):
         if env_ids is None:
             env_ids = torch.arange(self.num_envs, device=self.device).long()
 
-        if self.config.mimic_obs.enabled:
-            self.mimic_obs_cb.compute_observations(env_ids)
-        if self.config.masked_mimic_obs.enabled:
-            self.masked_mimic_obs_cb.compute_observations(env_ids)
+        # In inference mode, only update target poses every N steps
+        # This simulates lower-frequency command updates (like GR00T at 5-10 Hz)
+        should_update_targets = True
+        if self.inference_mode and self.inference_target_update_interval > 1:
+            self._inference_step_counter += 1
+            should_update_targets = (self._inference_step_counter % self.inference_target_update_interval) == 0
+
+        if should_update_targets:
+            if self.config.mimic_obs.enabled:
+                self.mimic_obs_cb.compute_observations(env_ids)
+            if self.config.masked_mimic_obs.enabled:
+                self.masked_mimic_obs_cb.compute_observations(env_ids)
 
     def process_actions(self, actions):
         """Process actions (zeros them out for kinematic playback mode).

@@ -479,11 +479,16 @@ class BaseEvaluator:
         self.agent.eval()
         done_indices = None  # Force reset on first entry
         step = 0
-        print("Evaluating policy...")
+        print("Evaluating policy... (Press Q or close window to exit)")
 
         try:
-            while True:
+            while self.env.simulator.is_simulation_running():
                 obs, _ = self.env.reset(done_indices)
+                
+                # Check again after reset in case window was closed
+                if not self.env.simulator.is_simulation_running():
+                    break
+                    
                 obs = self.agent.add_agent_info_to_obs(obs)
                 obs_td = self.agent.obs_dict_to_tensordict(obs)
 
@@ -497,6 +502,11 @@ class BaseEvaluator:
 
                 # Step the environment
                 obs, rewards, dones, terminated, extras = self.env.step(actions)
+                
+                # Check again after step in case window was closed during physics
+                if not self.env.simulator.is_simulation_running():
+                    break
+                    
                 obs = self.agent.add_agent_info_to_obs(obs)
                 obs_td = self.agent.obs_dict_to_tensordict(obs)
 
@@ -505,4 +515,8 @@ class BaseEvaluator:
         except KeyboardInterrupt:
             print("\nEvaluation interrupted by Ctrl+C, exiting...")
 
-        return None
+        print("Simulation ended, exiting...")
+        
+        # Force exit - IsaacLab's close() blocks, so we use os._exit() to terminate immediately
+        import os
+        os._exit(0)

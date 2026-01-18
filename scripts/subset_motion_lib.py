@@ -91,3 +91,21 @@ def subset_motion_lib(input_path: str, output_path: str, sample_every: int = 200
     print(f"  Motions: {num_motions} -> {num_selected}")
     print(f"  Total frames: {len(data['gts'])} -> {len(new_data['gts'])}")
 
+
+if __name__ == "__main__":
+    import argparse
+    
+    parser = argparse.ArgumentParser(
+        description="Create a subset of a motion library by sampling every N motions"
+    )
+    parser.add_argument("input_path", help="Path to input motion library (.pt)")
+    parser.add_argument("output_path", help="Path to output motion library (.pt)")
+    parser.add_argument(
+        "--sample-every", 
+        type=int, 
+        default=10,
+        help="Take every Nth motion (default: 10, giving ~10%% of motions)"
+    )
+    
+    args = parser.parse_args()
+    subset_motion_lib(args.input_path, args.output_path, args.sample_every)

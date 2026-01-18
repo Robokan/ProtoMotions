@@ -5,8 +5,41 @@
 outputs/*
 rendered_images/*
 *tmp*
-results/*
 .DS_Store
 **/.DS_Store
 
 output/
+
+# Large data directories
+data/*
+!data/yaml_files/
+!data/scripts/
+!data/smpl/
+!data/__init__.py
+!data/README.md
+
+# Large YAML motion lists (auto-generated)
+data/yaml_files/*_train*.yaml
+data/yaml_files/g1
+
+# Training outputs
+results/
+results
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Large binary files
+*.hdf5
+*.pt
+*.pth
+*.ckpt
+*.tar.bz2
+*.tar.gz
+*.zip
+
+# Except small example data (re-include if needed)
+!examples/data/*.motion
+
