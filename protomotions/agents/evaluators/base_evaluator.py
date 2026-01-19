@@ -261,13 +261,19 @@ class BaseEvaluator:
             dummy_state: RobotState = self.env.simulator.get_robot_state()
             shape_mapping = dummy_state.get_shape_mapping(flattened=True)
 
+            # Robot state device is configurable - CPU saves ~10-14GB GPU memory
+            # for large motion libs, GPU is faster for smaller datasets
+            robot_state_device = getattr(self.config, 'robot_state_metrics_device', 'cpu')
+            if robot_state_device == "gpu":
+                robot_state_device = self.device
+            
             for k, shape in shape_mapping.items():
                 metrics[k] = MotionMetrics(
                     num_motions,
-                    motion_num_frames,
+                    motion_num_frames.to(robot_state_device),
                     max_eval_steps,
                     num_sub_features=shape[0],
-                    device=self.device,
+                    device=robot_state_device,
                 )
         except Exception as e:
             print(f"Warning: Could not add robot state metrics: {e}")

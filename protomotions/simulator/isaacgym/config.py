@@ -30,7 +30,7 @@ class IsaacGymPhysXParams(ConfigBuilder):
     rest_offset: float = 0.0
     bounce_threshold_velocity: float = 0.2
     max_depenetration_velocity: float = 10.0
-    default_buffer_size_multiplier: float = 10.0
+    default_buffer_size_multiplier: float = 2.0  # Reduced from 10.0 to save GPU memory
 
 
 @dataclass

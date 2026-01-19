@@ -133,6 +133,12 @@ def create_parser():
         default="0 0 0",
         help="XYZ offset for the scene (e.g., '0 0 -0.1')",
     )
+    parser.add_argument(
+        "--record-seconds",
+        type=float,
+        default=None,
+        help="Automatically record video for specified seconds then exit",
+    )
 
     return parser
 
@@ -398,7 +404,6 @@ def main():
         translate_op = xformable.AddTranslateOp()
         
         # Hide default terrain visuals (keep physics for collision)
-        from pxr import Usd
         terrain_paths = ["/World/ground", "/World/ground/terrain", "/World/ground/terrain/mesh"]
         for path in terrain_paths:
             prim = stage.GetPrimAtPath(path)
@@ -411,6 +416,7 @@ def main():
         
         # Wrap env.reset to update scene position only when env 0 resets
         _original_reset = env.reset
+
         def _reset_with_scene_update(env_ids=None):
             result = _original_reset(env_ids)
             # Only update scene if env 0 is being reset (None means all envs)
@@ -427,7 +433,57 @@ def main():
             return result
         env.reset = _reset_with_scene_update
 
-    if args.full_eval:
+    # Auto-record for specified duration using Replicator rgb capture
+    if args.record_seconds:
+        import os
+        import time
+        import imageio
+        from datetime import datetime
+        
+        if args.headless:
+            print("WARNING: Recording requires non-headless mode. Use --enable_cameras for headless recording.")
+        
+        print(f"Recording in {args.record_seconds}-second chunks (press Q to quit)...")
+        os.makedirs("output/videos", exist_ok=True)
+        
+        agent.eval()
+        done_indices = None
+        video_count = 0
+        fps = int(1.0 / env.simulator.dt) if hasattr(env.simulator, 'dt') else 50
+        
+        while env.simulator.is_simulation_running():
+            video_count += 1
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            video_path = f"output/videos/demo_{timestamp}.mp4"
+            print(f"Recording video #{video_count} at {fps} FPS...")
+            
+            writer = imageio.get_writer(video_path, fps=fps, codec='libx264', quality=8)
+            
+            start_time = time.time()
+            while time.time() - start_time < args.record_seconds:
+                if not env.simulator.is_simulation_running():
+                    break
+                obs, _ = env.reset(done_indices)
+                obs = agent.add_agent_info_to_obs(obs)
+                obs_td = agent.obs_dict_to_tensordict(obs)
+                model_outs = agent.model(obs_td)
+                actions = model_outs.get("mean_action", model_outs.get("action"))
+                obs, rewards, dones, terminated, extras = env.step(actions)
+                
+                # Capture frame using Replicator
+                frame = env.simulator.render(mode="rgb_array")
+                if frame is not None and frame.size > 0:
+                    writer.append_data(frame)
+                
+                done_indices = dones.nonzero(as_tuple=False).squeeze(-1)
+            
+            writer.close()
+            print(f"Saved: {video_path}")
+        
+        print(f"Recording ended. Saved {video_count} videos to output/videos/")
+        import os
+        os._exit(0)
+    elif args.full_eval:
         agent.evaluator.eval_count = 0
         agent.evaluator.evaluate()
     else:

@@ -173,7 +173,6 @@ class MimicEvaluator(BaseEvaluator):
         Args:
             metrics: Dictionary to collect evaluation metrics
         """
-
         self._cached_robot_state = self.env.simulator.get_robot_state()
         self._cached_markers_state = self.env.get_markers_state()
         self._cached_env_actions = self.env.simulator.get_current_actions()

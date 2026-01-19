@@ -24,6 +24,11 @@ class EvaluatorConfig(ConfigBuilder):
 
     _target_: str = "protomotions.agents.evaluators.base_evaluator.BaseEvaluator"
     eval_metrics_every: Optional[int] = 200
+    
+    # Device for storing raw robot state metrics (used for smoothness computation).
+    # "cpu" saves ~10-14GB GPU memory for large motion libraries.
+    # "gpu" is faster but uses significant GPU memory (num_motions * max_steps * ~500 features * 4 bytes).
+    robot_state_metrics_device: str = "cpu"
 
 
 @dataclass

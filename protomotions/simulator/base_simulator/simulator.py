@@ -1146,7 +1146,9 @@ class Simulator(ABC):
                         ]
                     )
 
-                    clip = ImageSequenceClip(images, fps=30)
+                    # Use simulation control rate for real-time playback
+                    video_fps = int(1.0 / self.dt) if hasattr(self, 'dt') else 50
+                    clip = ImageSequenceClip(images, fps=video_fps)
                     clip.write_videofile(
                         f"{self._curr_user_recording_name}.mp4",
                         codec="libx264",

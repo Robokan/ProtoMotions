@@ -82,12 +82,18 @@ class MotionMetrics:
             values = values.unsqueeze(1)
         assert motion_ids.shape[0] == values.shape[0]
 
+        # Move inputs to the same device as data storage (may be CPU for large motion libs)
+        motion_ids = motion_ids.to(self.device)
+        values = values.to(self.device)
+
         # assert motion_ids being non-duplicated
         assert torch.unique(motion_ids).shape[0] == motion_ids.shape[0]
 
         if frame_indices is None:
             # Use current counts as frame indices
             frame_indices = self.frame_counts[motion_ids]
+        else:
+            frame_indices = frame_indices.to(self.device)
         assert frame_indices.shape[0] == values.shape[0]
 
         # Update the data using batched operations with per-motion length checks
