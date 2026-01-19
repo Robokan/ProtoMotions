@@ -91,6 +91,12 @@ def create_parser():
         help="Run simulation in headless mode",
     )
     parser.add_argument(
+        "--enable_cameras",
+        action="store_true",
+        default=False,
+        help="Enable camera rendering (required for Camera sensor)",
+    )
+    parser.add_argument(
         "--simulator",
         type=str,
         required=True,
@@ -183,6 +189,32 @@ def create_parser():
         type=float,
         default=0.0,
         help="Probability to hide each object (0-1)",
+    )
+    
+    # Data collection options
+    parser.add_argument(
+        "--collect-data",
+        action="store_true",
+        default=False,
+        help="Enable egocentric data collection mode",
+    )
+    parser.add_argument(
+        "--collect-output-dir",
+        type=str,
+        default="/tmp/egocentric_data",
+        help="Output directory for collected data",
+    )
+    parser.add_argument(
+        "--collect-resolution",
+        type=int,
+        default=224,
+        help="Camera resolution for data collection",
+    )
+    parser.add_argument(
+        "--collect-max-episodes",
+        type=int,
+        default=None,
+        help="Maximum number of episodes to collect",
     )
 
     return parser
@@ -585,7 +617,11 @@ def main():
     # Setup IsaacLab simulation_app if using IsaacLab simulator
     simulator_extra_params = {}
     if args.simulator == "isaaclab":
-        app_launcher_flags = {"headless": args.headless, "device": str(fabric.device)}
+        app_launcher_flags = {
+            "headless": args.headless,
+            "device": str(fabric.device),
+            "enable_cameras": getattr(args, 'enable_cameras', False),
+        }
         app_launcher = AppLauncher(app_launcher_flags)
         simulator_extra_params["simulation_app"] = app_launcher.app
 
@@ -780,6 +816,164 @@ def main():
         print(f"Recording ended. Saved {video_count} videos to output/videos/")
         import os
         os._exit(0)
+    elif args.collect_data:
+        # Egocentric data collection mode
+        import os as os_module
+        import numpy as np
+        from PIL import Image
+        from pxr import UsdGeom
+        
+        print("Starting egocentric data collection...")
+        print(f"Output: {args.collect_output_dir}")
+        print(f"Resolution: {args.collect_resolution}x{args.collect_resolution}")
+        
+        # Use Replicator to capture from EgoCamera
+        import omni.replicator.core as rep
+        from pxr import Usd
+        
+        # Find EgoCamera in the stage
+        stage = omni.usd.get_context().get_stage()
+        camera_path = None
+        for prim in Usd.PrimRange(stage.GetPseudoRoot()):
+            if prim.GetTypeName() == "Camera" and prim.GetName() == "EgoCamera":
+                camera_path = str(prim.GetPath())
+                break
+        
+        if not camera_path:
+            raise RuntimeError("EgoCamera not found in scene")
+        
+        print(f"Found EgoCamera at: {camera_path}")
+        
+        resolution = (args.collect_resolution, args.collect_resolution)
+        rp = rep.create.render_product(camera_path, resolution=resolution)
+        rgb_annotator = rep.AnnotatorRegistry.get_annotator("rgb")
+        rgb_annotator.attach([rp])
+        print(f"Attached render product ({resolution[0]}x{resolution[1]})")
+        
+        # Hide markers (red target spheres) for clean video
+        env.simulator._show_markers = False
+        print("Markers hidden for data collection")
+        
+        # Set up lighting randomization if enabled
+        randomize_fn = None
+        if args.randomize_lights:
+            # Find the scene prim path (warehouse or other loaded scene)
+            scene_prim_path = None
+            for prim in Usd.PrimRange(stage.GetPseudoRoot()):
+                if "warehouse" in prim.GetPath().pathString.lower():
+                    scene_prim_path = str(prim.GetPath())
+                    break
+            if not scene_prim_path:
+                scene_prim_path = "/World"
+            
+            randomize_fn = setup_scene_randomization(stage, scene_prim_path, args)
+            print(f"Lighting randomization enabled")
+        
+        # Create output directory
+        os_module.makedirs(args.collect_output_dir, exist_ok=True)
+        
+        # Run simulation loop
+        agent.eval()
+        episode_count = 0
+        done_indices = None
+        max_episodes = args.collect_max_episodes or 999999
+        
+        # Set up window close handler
+        import omni.kit.app
+        app = omni.kit.app.get_app()
+
+        def check_running():
+            """Check if simulation should continue"""
+            return env.simulator.is_simulation_running() and app.is_running()
+        
+        try:
+            while check_running() and episode_count < max_episodes:
+                episode_count += 1
+                episode_dir = os_module.path.join(
+                    args.collect_output_dir, f"episode_{episode_count:05d}")
+                os_module.makedirs(os_module.path.join(episode_dir, "rgb"), exist_ok=True)
+                
+                print(f"Collecting episode {episode_count}...")
+                
+                obs, _ = env.reset(done_indices)
+                if not check_running():
+                    break
+                
+                # Randomize lighting at start of each episode
+                if randomize_fn and not args.randomize_per_frame:
+                    randomize_fn()
+                
+                obs = agent.add_agent_info_to_obs(obs)
+                
+                frames = []
+                poses = []
+                frame_idx = 0
+                max_frames = 300  # ~6 seconds at 50Hz
+                
+                while frame_idx < max_frames:
+                    if not check_running():
+                        break
+                    
+                    obs_td = agent.obs_dict_to_tensordict(obs)
+                    model_outs = agent.model(obs_td)
+                    actions = model_outs.get("mean_action", model_outs.get("action"))
+                    
+                    obs, rewards, dones, terminated, extras = env.step(actions)
+                    obs = agent.add_agent_info_to_obs(obs)
+                    
+                    # Per-frame randomization if enabled
+                    if randomize_fn and args.randomize_per_frame:
+                        randomize_fn()
+                    
+                    # Capture RGB from EgoCamera
+                    # Render a frame for the annotator (needed for headless)
+                    env.simulator._sim.render()
+                    rgb_data = rgb_annotator.get_data()
+                    if rgb_data is not None and rgb_data.size > 0:
+                        if len(rgb_data.shape) == 3:
+                            rgb_image = rgb_data[:, :, :3]
+                        else:
+                            rgb_image = rgb_data
+                        
+                        frame_path = os_module.path.join(
+                            episode_dir, "rgb", f"frame_{frame_idx:05d}.png")
+                        Image.fromarray(rgb_image.astype(np.uint8)).save(frame_path)
+                        frames.append(f"rgb/frame_{frame_idx:05d}.png")
+                    
+                    # Get robot state
+                    bodies_state = env.simulator._get_simulator_bodies_state(env_ids=None)
+                    dof_state = env.simulator._get_simulator_dof_state(env_ids=None)
+                    
+                    poses.append({
+                        'body_positions': bodies_state.rigid_body_pos[0].cpu().numpy().tolist(),
+                        'body_rotations': bodies_state.rigid_body_rot[0].cpu().numpy().tolist(),
+                        'dof_positions': dof_state.dof_pos[0].cpu().numpy().tolist(),
+                        'frame_idx': frame_idx,
+                    })
+                    
+                    frame_idx += 1
+                    
+                    # Check for episode end
+                    if dones.any():
+                        break
+                
+                # Save episode data
+                episode_data = {
+                    'episode_idx': episode_count,
+                    'num_frames': len(frames),
+                    'frames': frames,
+                    'poses': poses,
+                }
+                torch.save(episode_data, os_module.path.join(episode_dir, "episode_data.pt"))
+                print(f"  Saved {len(frames)} frames")
+                
+                done_indices = torch.tensor([0], device=env.device)
+                
+        except KeyboardInterrupt:
+            print("\nCollection interrupted by Ctrl+C")
+        
+        print(f"\nData collection complete! {episode_count} episodes saved to {args.collect_output_dir}")
+        os_module._exit(0)
     elif args.full_eval:
         agent.evaluator.eval_count = 0
         agent.evaluator.evaluate()
