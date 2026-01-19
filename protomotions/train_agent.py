@@ -753,18 +753,6 @@ def main():
             app_launcher_flags["distributed"] = True
             os.environ["LOCAL_RANK"] = str(fabric.local_rank)
             os.environ["RANK"] = str(fabric.global_rank)
-        
-        # Memory optimization: disable RTX renderer entirely for headless physics training
-        # Default RTX renderer + texture streaming uses ~14-18GB of GPU memory!
-        memory_kit_args = (
-            "--/renderer/enabled=pxr "  # Use minimal Pixar renderer instead of RTX
-            "--/rtx-transient/resourcemanager/enableTextureStreaming=false "  # Disable texture streaming
-            "--/rtx/ecoMode/enabled=true "
-            "--/app/renderer/resolution/width=1 "
-            "--/app/renderer/resolution/height=1"
-        )
-        app_launcher_flags["kit_args"] = memory_kit_args
-        
         app_launcher = AppLauncher(app_launcher_flags)
         simulator_extra_params["simulation_app"] = app_launcher.app
 
@@ -801,7 +789,6 @@ def main():
         if hasattr(env_config, "save_dir")
         else None
     )
-    
     components = build_all_components(
         terrain_config=terrain_config,
         scene_lib_config=scene_lib_config,

@@ -797,15 +797,9 @@ class IsaacLabSimulator(Simulator):
     # =====================================================
     # Group 6: Rendering & Visualization
     # =====================================================
-    def render(self, mode: str = "human") -> Optional[np.ndarray]:
+    def render(self) -> None:
         """
         Render the simulation view. Initializes or updates the camera if the simulator is not in headless mode.
-        
-        Args:
-            mode: Render mode - "human" for display, "rgb_array" for numpy array output
-            
-        Returns:
-            RGB numpy array if mode is "rgb_array", None otherwise
         """
         if not self.headless:
             if not hasattr(self, "_perspective_view"):
@@ -818,40 +812,6 @@ class IsaacLabSimulator(Simulator):
             else:
                 self._update_camera()
         super().render()
-        
-        if mode == "rgb_array":
-            return self._get_rgb_frame()
-        return None
-    
-    def _get_rgb_frame(self, resolution: tuple = (1280, 720)) -> np.ndarray:
-        """
-        Capture current viewport as RGB numpy array using Replicator.
-        
-        Args:
-            resolution: (width, height) of the output image
-            
-        Returns:
-            RGB numpy array of shape (height, width, 3)
-        """
-        if not hasattr(self, "_rgb_annotator"):
-            import omni.replicator.core as rep
-            
-            # Create render product from the perspective camera
-            self._render_product = rep.create.render_product(
-                "/OmniverseKit_Persp", resolution
-            )
-            # Create RGB annotator
-            self._rgb_annotator = rep.AnnotatorRegistry.get_annotator("rgb", device="cpu")
-            self._rgb_annotator.attach([self._render_product])
-        
-        # Get RGB data
-        rgb_data = self._rgb_annotator.get_data()
-        if rgb_data is None or rgb_data.size == 0:
-            return np.zeros((resolution[1], resolution[0], 3), dtype=np.uint8)
-        
-        # Convert to numpy array and return RGB (drop alpha if present)
-        rgb_array = np.frombuffer(rgb_data, dtype=np.uint8).reshape(*rgb_data.shape)
-        return rgb_array[:, :, :3]
 
     def _init_camera(self) -> None:
         """

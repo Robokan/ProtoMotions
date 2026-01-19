@@ -32,11 +32,9 @@ class ProtoMotionsIsaacLabMarkers:
 class IsaacLabPhysXParams(IsaacGymPhysXParams):
     """PhysX physics engine parameters."""
 
-    # Reduced GPU buffer sizes for multi-GPU training with large motion datasets
-    # Original values used ~10GB+ of GPU memory for buffers alone
-    gpu_found_lost_pairs_capacity: int = 2**18       # 256K (was 2M)
-    gpu_max_rigid_contact_count: int = 2**19         # 512K (was 8M)
-    gpu_found_lost_aggregate_pairs_capacity: int = 2**20  # 1M (was 32M)
+    gpu_found_lost_pairs_capacity: int = 2**21
+    gpu_max_rigid_contact_count: int = 2**23
+    gpu_found_lost_aggregate_pairs_capacity: int = 2**25
 
 
 @dataclass

@@ -139,6 +139,51 @@ def create_parser():
         default=None,
         help="Automatically record video for specified seconds then exit",
     )
+    
+    # Domain randomization options (Replicator-based)
+    parser.add_argument(
+        "--randomize-lights",
+        action="store_true",
+        default=False,
+        help="Randomize intensity and color of existing lights in the scene",
+    )
+    parser.add_argument(
+        "--randomize-per-frame",
+        action="store_true",
+        default=False,
+        help="Randomize every frame (vs per-episode reset)",
+    )
+    parser.add_argument(
+        "--num-lights",
+        type=int,
+        default=3,
+        help="Number of random lights to add for randomization",
+    )
+    parser.add_argument(
+        "--randomize-objects",
+        type=str,
+        nargs="*",
+        default=None,
+        help="List of object names to randomize (e.g., --randomize-objects forklift pallet_01 crate_02)",
+    )
+    parser.add_argument(
+        "--object-pos-range",
+        type=str,
+        default="-0.5 0.5",
+        help="Position randomization range (min max)",
+    )
+    parser.add_argument(
+        "--object-rot-range",
+        type=str,
+        default="-30 30",
+        help="Rotation randomization range in degrees (min max)",
+    )
+    parser.add_argument(
+        "--hide-objects-prob",
+        type=float,
+        default=0.0,
+        help="Probability to hide each object (0-1)",
+    )
 
     return parser
 
@@ -167,6 +212,241 @@ from lightning.fabric import Fabric  # noqa: E402
 logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s: %(message)s")
 
 log = logging.getLogger(__name__)
+
+
+def find_objects_by_name(stage, root_path, object_names):
+    """Find objects in the scene by exact name match.
+    
+    Args:
+        stage: USD stage
+        root_path: Root path to search under (e.g., /World/CustomScene)
+        object_names: List of object names to find (case-insensitive partial match)
+    
+    Returns:
+        List of matching prim paths
+    """
+    from pxr import UsdGeom
+    
+    if not object_names:
+        return []
+    
+    # Convert to lowercase for matching
+    names_lower = [n.lower() for n in object_names]
+    objects = []
+    
+    root_prim = stage.GetPrimAtPath(root_path)
+    if not root_prim.IsValid():
+        return objects
+    
+    def _find_matching(prim):
+        name = prim.GetName().lower()
+        # Check if any of the specified names is in this prim's name
+        for target_name in names_lower:
+            if target_name in name and prim.IsA(UsdGeom.Xformable):
+                objects.append(prim.GetPath().pathString)
+                log.info(f"  Found: {prim.GetPath().pathString}")
+                break
+        for child in prim.GetChildren():
+            _find_matching(child)
+    
+    for child in root_prim.GetAllChildren():
+        _find_matching(child)
+    
+    log.info(f"Found {len(objects)} objects matching names: {object_names}")
+    return objects
+
+
+def setup_scene_randomization(stage, scene_root_path, args):
+    """Set up Replicator-based scene and lighting randomization.
+    
+    Returns a function that triggers randomization when called.
+    """
+    import numpy as np
+    from pxr import UsdGeom, Gf, UsdLux
+    
+    log.info("Setting up scene randomization with Replicator...")
+    
+    # Parse ranges
+    pos_range = [float(x) for x in args.object_pos_range.split()]
+    rot_range = [float(x) for x in args.object_rot_range.split()]
+    
+    # Find specific objects to randomize (if any specified)
+    scene_objects = []
+    original_positions = {}  # Store original positions
+    if scene_root_path and args.randomize_objects:
+        scene_objects = find_objects_by_name(stage, scene_root_path, args.randomize_objects)
+        
+        for obj_path in scene_objects:
+            prim = stage.GetPrimAtPath(obj_path)
+            if prim.IsValid():
+                xform = UsdGeom.Xformable(prim)
+                # Get local transform 
+                local_transform = xform.GetLocalTransformation()
+                local_pos = local_transform.ExtractTranslation()
+                
+                # Log existing ops for debugging
+                ops = xform.GetOrderedXformOps()
+                op_types = [str(op.GetOpType()) for op in ops]
+                log.info(f"  {prim.GetName()}: pos={local_pos}, ops={op_types}")
+                
+                original_positions[obj_path] = local_pos
+    
+    # Find ALL existing lights in the scene (if light randomization is enabled)
+    existing_lights = []
+    original_intensities = {}
+    if args.randomize_lights:
+        light_types = ["RectLight", "DiskLight", "SphereLight", "CylinderLight", 
+                       "DistantLight", "DomeLight", "PortalLight", "PluginLight"]
+        for prim in stage.Traverse():
+            if prim.GetTypeName() in light_types:
+                existing_lights.append(prim.GetPath().pathString)
+                log.info(f"  Found light: {prim.GetPath()} ({prim.GetTypeName()})")
+        
+        # Store original intensities so we can randomize relative to them
+        for light_path in existing_lights:
+            light_prim = stage.GetPrimAtPath(light_path)
+            if light_prim.IsValid():
+                intensity_attr = light_prim.GetAttribute("inputs:intensity")
+                if intensity_attr and intensity_attr.Get():
+                    original_intensities[light_path] = intensity_attr.Get()
+        
+        log.info(f"Found {len(existing_lights)} lights in scene, {len(original_intensities)} with intensity attrs")
+    
+    def randomize():
+        """Randomize lighting and objects."""
+        # Randomize lights (if enabled)
+        if args.randomize_lights:
+            for light_path in existing_lights:
+                light_prim = stage.GetPrimAtPath(light_path)
+                if not light_prim.IsValid():
+                    continue
+                
+                # Get original intensity or use default
+                orig_intensity = original_intensities.get(light_path, 1000.0)
+                
+                # Randomize intensity (50% to 150% of original)
+                intensity_multiplier = np.random.uniform(0.5, 1.5)
+                new_intensity = orig_intensity * intensity_multiplier
+                
+                # Set intensity via attribute
+                intensity_attr = light_prim.GetAttribute("inputs:intensity")
+                if intensity_attr:
+                    intensity_attr.Set(new_intensity)
+                
+                # Randomize color temperature (warm to cool)
+                color_temp = np.random.uniform(3500, 7500)
+                if color_temp < 5500:
+                    r = 1.0
+                    g = 0.9 + 0.1 * (color_temp - 3500) / 2000
+                    b = 0.8 + 0.2 * (color_temp - 3500) / 2000
+                else:
+                    r = 0.9 + 0.1 * (7500 - color_temp) / 2000
+                    g = 0.95
+                    b = 1.0
+                
+                color_attr = light_prim.GetAttribute("inputs:color")
+                if color_attr:
+                    color_attr.Set(Gf.Vec3f(r, g, b))
+        
+        # Randomize objects (only those explicitly specified)
+        if scene_objects:
+            for obj_path in scene_objects:
+                prim = stage.GetPrimAtPath(obj_path)
+                if not prim.IsValid():
+                    continue
+                
+                # Random visibility
+                if args.hide_objects_prob > 0:
+                    imageable = UsdGeom.Imageable(prim)
+                    if np.random.random() < args.hide_objects_prob:
+                        imageable.GetVisibilityAttr().Set(UsdGeom.Tokens.invisible)
+                    else:
+                        imageable.GetVisibilityAttr().Set(UsdGeom.Tokens.inherited)
+                
+                # Get original world position
+                orig_pos = original_positions.get(obj_path)
+                if orig_pos is None:
+                    continue
+                
+                # Calculate random offsets
+                offset_x = np.random.uniform(pos_range[0], pos_range[1])
+                offset_y = np.random.uniform(pos_range[0], pos_range[1])
+                rot_z_offset = np.random.uniform(rot_range[0], rot_range[1])
+                
+                # Find existing ops
+                xform = UsdGeom.Xformable(prim)
+                ops = xform.GetOrderedXformOps()
+                
+                translate_op = None
+                rotate_op = None
+                matrix_op = None
+                for op in ops:
+                    op_type = op.GetOpType()
+                    if op_type == UsdGeom.XformOp.TypeTranslate and translate_op is None:
+                        translate_op = op
+                    elif op_type == UsdGeom.XformOp.TypeRotateZ and rotate_op is None:
+                        rotate_op = op
+                    elif op_type == UsdGeom.XformOp.TypeRotateXYZ and rotate_op is None:
+                        rotate_op = op  # Will handle differently
+                    elif op_type == UsdGeom.XformOp.TypeTransform and matrix_op is None:
+                        matrix_op = op
+                
+                moved = False
+                
+                # If there's a translate op, modify it directly
+                if translate_op:
+                    current = translate_op.Get()
+                    if current:
+                        new_val = Gf.Vec3d(
+                            orig_pos[0] + offset_x,
+                            orig_pos[1] + offset_y,
+                            current[2]
+                        )
+                        translate_op.Set(new_val)
+                        moved = True
+                
+                # If there's a matrix op, modify the translation in the matrix
+                elif matrix_op:
+                    current_matrix = matrix_op.Get()
+                    if current_matrix:
+                        # Create new matrix with offset translation
+                        new_matrix = Gf.Matrix4d(current_matrix)
+                        current_trans = new_matrix.ExtractTranslation()
+                        new_matrix.SetTranslateOnly(Gf.Vec3d(
+                            orig_pos[0] + offset_x,
+                            orig_pos[1] + offset_y,
+                            current_trans[2]
+                        ))
+                        matrix_op.Set(new_matrix)
+                        moved = True
+                
+                if moved:
+                    log.debug(f"  Moved {prim.GetName()} by ({offset_x:.2f}, {offset_y:.2f})")
+                
+                # Handle rotation
+                if rotate_op:
+                    op_type = rotate_op.GetOpType()
+                    if op_type == UsdGeom.XformOp.TypeRotateZ:
+                        rotate_op.Set(rot_z_offset)
+                    elif op_type == UsdGeom.XformOp.TypeRotateXYZ:
+                        current_rot = rotate_op.Get() or Gf.Vec3f(0, 0, 0)
+                        rotate_op.Set(Gf.Vec3f(current_rot[0], current_rot[1], rot_z_offset))
+                elif matrix_op:
+                    # For matrix ops, apply rotation to the matrix
+                    current_matrix = matrix_op.Get()
+                    if current_matrix:
+                        rot_matrix = Gf.Matrix4d()
+                        rot_matrix.SetRotate(Gf.Rotation(Gf.Vec3d(0, 0, 1), rot_z_offset))
+                        new_matrix = rot_matrix * current_matrix
+                        matrix_op.Set(new_matrix)
+                else:
+                    # No rotate op exists - add one
+                    new_rotate_op = xform.AddRotateZOp()
+                    new_rotate_op.Set(rot_z_offset)
+                    log.info(f"  Added RotateZ op to {prim.GetName()}")
+    
+    log.info("Scene randomization ready")
+    return randomize
 
 
 # def tmp_enable_domain_randomization(robot_cfg, simulator_cfg, env_cfg):
@@ -414,6 +694,11 @@ def main():
         
         print(f"Loaded scene: {_scene_usd}")
         
+        # Set up scene randomization if lights or objects randomization is enabled
+        randomize_fn = None
+        if args.randomize_lights or args.randomize_objects:
+            randomize_fn = setup_scene_randomization(stage, scene_prim_path, args)
+        
         # Wrap env.reset to update scene position only when env 0 resets
         _original_reset = env.reset
 
@@ -430,8 +715,20 @@ def main():
                     float(_scene_offset[2])
                 )
                 translate_op.Set(final_offset)
+                # Randomize on episode reset (unless per-frame)
+                if randomize_fn and not args.randomize_per_frame:
+                    randomize_fn()
             return result
         env.reset = _reset_with_scene_update
+        
+        # For per-frame randomization, wrap env.step
+        if randomize_fn and args.randomize_per_frame:
+            _original_step = env.step
+            def _step_with_randomize(action):
+                randomize_fn()
+                return _original_step(action)
+            env.step = _step_with_randomize
+            print("Per-frame randomization enabled")
 
     # Auto-record for specified duration using Replicator rgb capture
     if args.record_seconds:
