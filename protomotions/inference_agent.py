@@ -246,241 +246,6 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s: %(messag
 log = logging.getLogger(__name__)
 
 
-def find_objects_by_name(stage, root_path, object_names):
-    """Find objects in the scene by exact name match.
-    
-    Args:
-        stage: USD stage
-        root_path: Root path to search under (e.g., /World/CustomScene)
-        object_names: List of object names to find (case-insensitive partial match)
-    
-    Returns:
-        List of matching prim paths
-    """
-    from pxr import UsdGeom
-    
-    if not object_names:
-        return []
-    
-    # Convert to lowercase for matching
-    names_lower = [n.lower() for n in object_names]
-    objects = []
-    
-    root_prim = stage.GetPrimAtPath(root_path)
-    if not root_prim.IsValid():
-        return objects
-    
-    def _find_matching(prim):
-        name = prim.GetName().lower()
-        # Check if any of the specified names is in this prim's name
-        for target_name in names_lower:
-            if target_name in name and prim.IsA(UsdGeom.Xformable):
-                objects.append(prim.GetPath().pathString)
-                log.info(f"  Found: {prim.GetPath().pathString}")
-                break
-        for child in prim.GetChildren():
-            _find_matching(child)
-    
-    for child in root_prim.GetAllChildren():
-        _find_matching(child)
-    
-    log.info(f"Found {len(objects)} objects matching names: {object_names}")
-    return objects
-
-
-def setup_scene_randomization(stage, scene_root_path, args):
-    """Set up Replicator-based scene and lighting randomization.
-    
-    Returns a function that triggers randomization when called.
-    """
-    import numpy as np
-    from pxr import UsdGeom, Gf, UsdLux
-    
-    log.info("Setting up scene randomization with Replicator...")
-    
-    # Parse ranges
-    pos_range = [float(x) for x in args.object_pos_range.split()]
-    rot_range = [float(x) for x in args.object_rot_range.split()]
-    
-    # Find specific objects to randomize (if any specified)
-    scene_objects = []
-    original_positions = {}  # Store original positions
-    if scene_root_path and args.randomize_objects:
-        scene_objects = find_objects_by_name(stage, scene_root_path, args.randomize_objects)
-        
-        for obj_path in scene_objects:
-            prim = stage.GetPrimAtPath(obj_path)
-            if prim.IsValid():
-                xform = UsdGeom.Xformable(prim)
-                # Get local transform 
-                local_transform = xform.GetLocalTransformation()
-                local_pos = local_transform.ExtractTranslation()
-                
-                # Log existing ops for debugging
-                ops = xform.GetOrderedXformOps()
-                op_types = [str(op.GetOpType()) for op in ops]
-                log.info(f"  {prim.GetName()}: pos={local_pos}, ops={op_types}")
-                
-                original_positions[obj_path] = local_pos
-    
-    # Find ALL existing lights in the scene (if light randomization is enabled)
-    existing_lights = []
-    original_intensities = {}
-    if args.randomize_lights:
-        light_types = ["RectLight", "DiskLight", "SphereLight", "CylinderLight", 
-                       "DistantLight", "DomeLight", "PortalLight", "PluginLight"]
-        for prim in stage.Traverse():
-            if prim.GetTypeName() in light_types:
-                existing_lights.append(prim.GetPath().pathString)
-                log.info(f"  Found light: {prim.GetPath()} ({prim.GetTypeName()})")
-        
-        # Store original intensities so we can randomize relative to them
-        for light_path in existing_lights:
-            light_prim = stage.GetPrimAtPath(light_path)
-            if light_prim.IsValid():
-                intensity_attr = light_prim.GetAttribute("inputs:intensity")
-                if intensity_attr and intensity_attr.Get():
-                    original_intensities[light_path] = intensity_attr.Get()
-        
-        log.info(f"Found {len(existing_lights)} lights in scene, {len(original_intensities)} with intensity attrs")
-    
-    def randomize():
-        """Randomize lighting and objects."""
-        # Randomize lights (if enabled)
-        if args.randomize_lights:
-            for light_path in existing_lights:
-                light_prim = stage.GetPrimAtPath(light_path)
-                if not light_prim.IsValid():
-                    continue
-                
-                # Get original intensity or use default
-                orig_intensity = original_intensities.get(light_path, 1000.0)
-                
-                # Randomize intensity (50% to 150% of original)
-                intensity_multiplier = np.random.uniform(0.5, 1.5)
-                new_intensity = orig_intensity * intensity_multiplier
-                
-                # Set intensity via attribute
-                intensity_attr = light_prim.GetAttribute("inputs:intensity")
-                if intensity_attr:
-                    intensity_attr.Set(new_intensity)
-                
-                # Randomize color temperature (warm to cool)
-                color_temp = np.random.uniform(3500, 7500)
-                if color_temp < 5500:
-                    r = 1.0
-                    g = 0.9 + 0.1 * (color_temp - 3500) / 2000
-                    b = 0.8 + 0.2 * (color_temp - 3500) / 2000
-                else:
-                    r = 0.9 + 0.1 * (7500 - color_temp) / 2000
-                    g = 0.95
-                    b = 1.0
-                
-                color_attr = light_prim.GetAttribute("inputs:color")
-                if color_attr:
-                    color_attr.Set(Gf.Vec3f(r, g, b))
-        
-        # Randomize objects (only those explicitly specified)
-        if scene_objects:
-            for obj_path in scene_objects:
-                prim = stage.GetPrimAtPath(obj_path)
-                if not prim.IsValid():
-                    continue
-                
-                # Random visibility
-                if args.hide_objects_prob > 0:
-                    imageable = UsdGeom.Imageable(prim)
-                    if np.random.random() < args.hide_objects_prob:
-                        imageable.GetVisibilityAttr().Set(UsdGeom.Tokens.invisible)
-                    else:
-                        imageable.GetVisibilityAttr().Set(UsdGeom.Tokens.inherited)
-                
-                # Get original world position
-                orig_pos = original_positions.get(obj_path)
-                if orig_pos is None:
-                    continue
-                
-                # Calculate random offsets
-                offset_x = np.random.uniform(pos_range[0], pos_range[1])
-                offset_y = np.random.uniform(pos_range[0], pos_range[1])
-                rot_z_offset = np.random.uniform(rot_range[0], rot_range[1])
-                
-                # Find existing ops
-                xform = UsdGeom.Xformable(prim)
-                ops = xform.GetOrderedXformOps()
-                
-                translate_op = None
-                rotate_op = None
-                matrix_op = None
-                for op in ops:
-                    op_type = op.GetOpType()
-                    if op_type == UsdGeom.XformOp.TypeTranslate and translate_op is None:
-                        translate_op = op
-                    elif op_type == UsdGeom.XformOp.TypeRotateZ and rotate_op is None:
-                        rotate_op = op
-                    elif op_type == UsdGeom.XformOp.TypeRotateXYZ and rotate_op is None:
-                        rotate_op = op  # Will handle differently
-                    elif op_type == UsdGeom.XformOp.TypeTransform and matrix_op is None:
-                        matrix_op = op
-                
-                moved = False
-                
-                # If there's a translate op, modify it directly
-                if translate_op:
-                    current = translate_op.Get()
-                    if current:
-                        new_val = Gf.Vec3d(
-                            orig_pos[0] + offset_x,
-                            orig_pos[1] + offset_y,
-                            current[2]
-                        )
-                        translate_op.Set(new_val)
-                        moved = True
-                
-                # If there's a matrix op, modify the translation in the matrix
-                elif matrix_op:
-                    current_matrix = matrix_op.Get()
-                    if current_matrix:
-                        # Create new matrix with offset translation
-                        new_matrix = Gf.Matrix4d(current_matrix)
-                        current_trans = new_matrix.ExtractTranslation()
-                        new_matrix.SetTranslateOnly(Gf.Vec3d(
-                            orig_pos[0] + offset_x,
-                            orig_pos[1] + offset_y,
-                            current_trans[2]
-                        ))
-                        matrix_op.Set(new_matrix)
-                        moved = True
-                
-                if moved:
-                    log.debug(f"  Moved {prim.GetName()} by ({offset_x:.2f}, {offset_y:.2f})")
-                
-                # Handle rotation
-                if rotate_op:
-                    op_type = rotate_op.GetOpType()
-                    if op_type == UsdGeom.XformOp.TypeRotateZ:
-                        rotate_op.Set(rot_z_offset)
-                    elif op_type == UsdGeom.XformOp.TypeRotateXYZ:
-                        current_rot = rotate_op.Get() or Gf.Vec3f(0, 0, 0)
-                        rotate_op.Set(Gf.Vec3f(current_rot[0], current_rot[1], rot_z_offset))
-                elif matrix_op:
-                    # For matrix ops, apply rotation to the matrix
-                    current_matrix = matrix_op.Get()
-                    if current_matrix:
-                        rot_matrix = Gf.Matrix4d()
-                        rot_matrix.SetRotate(Gf.Rotation(Gf.Vec3d(0, 0, 1), rot_z_offset))
-                        new_matrix = rot_matrix * current_matrix
-                        matrix_op.Set(new_matrix)
-                else:
-                    # No rotate op exists - add one
-                    new_rotate_op = xform.AddRotateZOp()
-                    new_rotate_op.Set(rot_z_offset)
-                    log.info(f"  Added RotateZ op to {prim.GetName()}")
-    
-    log.info("Scene randomization ready")
-    return randomize
-
-
 # def tmp_enable_domain_randomization(robot_cfg, simulator_cfg, env_cfg):
 #     """Temporary function to enable domain randomization for testing.
 
@@ -702,67 +467,54 @@ def main():
     agent.setup()
     agent.load(args.checkpoint, load_env=False)
 
-    # Load custom USD scene centered on robot position
+    # Load custom scene centered on robot position (via simulator API)
     if _scene_usd:
-        import omni.usd
-        from pxr import Gf, UsdGeom
-        
-        stage = omni.usd.get_context().get_stage()
-        scene_prim_path = "/World/CustomScene"
-        
-        # Create xform and add scene as reference
-        scene_prim = stage.DefinePrim(scene_prim_path, "Xform")
-        scene_prim.GetReferences().AddReference(_scene_usd)
-        
-        # Create xformable with translate op
-        xformable = UsdGeom.Xformable(scene_prim)
-        xformable.ClearXformOpOrder()
-        translate_op = xformable.AddTranslateOp()
-        
-        # Hide default terrain visuals (keep physics for collision)
-        terrain_paths = ["/World/ground", "/World/ground/terrain", "/World/ground/terrain/mesh"]
-        for path in terrain_paths:
-            prim = stage.GetPrimAtPath(path)
-            if prim.IsValid():
-                imageable = UsdGeom.Imageable(prim)
-                imageable.MakeInvisible()
-                print(f"Hidden: {path}")
-        
-        print(f"Loaded scene: {_scene_usd}")
-        
-        # Set up scene randomization if lights or objects randomization is enabled
+        # Load the scene using simulator's scene loading API
+        env.simulator.load_scene(_scene_usd, tuple(_scene_offset))
+
+        # Set up scene randomization if requested
         randomize_fn = None
         if args.randomize_lights or args.randomize_objects:
-            randomize_fn = setup_scene_randomization(stage, scene_prim_path, args)
-        
-        # Wrap env.reset to update scene position only when env 0 resets
+            pos_range = tuple(float(x) for x in args.object_pos_range.split())
+            rot_range = tuple(float(x) for x in args.object_rot_range.split())
+            randomize_fn = env.simulator.setup_scene_randomization(
+                randomize_lights=args.randomize_lights,
+                randomize_objects=args.randomize_objects,
+                object_pos_range=pos_range,
+                object_rot_range=rot_range,
+                hide_objects_prob=args.hide_objects_prob,
+            )
+
+        # Wrap env.reset to update scene position and apply randomization
         _original_reset = env.reset
 
         def _reset_with_scene_update(env_ids=None):
             result = _original_reset(env_ids)
-            # Only update scene if env 0 is being reset (None means all envs)
-            env0_reset = env_ids is None or (hasattr(env_ids, '__len__') and 0 in env_ids) or (hasattr(env_ids, 'numel') and (env_ids == 0).any())
+            # Only update scene if env 0 is being reset
+            env0_reset = (
+                env_ids is None
+                or (hasattr(env_ids, "__len__") and 0 in env_ids)
+                or (hasattr(env_ids, "numel") and (env_ids == 0).any())
+            )
             if env0_reset:
                 robot_state = env.simulator._get_simulator_root_state(env_ids=None)
                 robot_pos = robot_state.root_pos[0].cpu().numpy()
-                final_offset = Gf.Vec3d(
-                    float(robot_pos[0] + _scene_offset[0]),
-                    float(robot_pos[1] + _scene_offset[1]),
-                    float(_scene_offset[2])
-                )
-                translate_op.Set(final_offset)
+                env.simulator.update_scene_position(robot_pos)
                 # Randomize on episode reset (unless per-frame)
                 if randomize_fn and not args.randomize_per_frame:
                     randomize_fn()
             return result
+
         env.reset = _reset_with_scene_update
-        
+
         # For per-frame randomization, wrap env.step
         if randomize_fn and args.randomize_per_frame:
             _original_step = env.step
+
             def _step_with_randomize(action):
                 randomize_fn()
                 return _original_step(action)
+
             env.step = _step_with_randomize
             print("Per-frame randomization enabled")
 
@@ -817,162 +569,143 @@ def main():
         import os
         os._exit(0)
     elif args.collect_data:
-        # Egocentric data collection mode
+        # Egocentric data collection mode (via simulator API)
         import os as os_module
-        import numpy as np
         from PIL import Image
-        from pxr import UsdGeom
-        
+
         print("Starting egocentric data collection...")
         print(f"Output: {args.collect_output_dir}")
         print(f"Resolution: {args.collect_resolution}x{args.collect_resolution}")
-        
-        # Use Replicator to capture from EgoCamera
-        import omni.replicator.core as rep
-        from pxr import Usd
-        
-        # Find EgoCamera in the stage
-        stage = omni.usd.get_context().get_stage()
-        camera_path = None
-        for prim in Usd.PrimRange(stage.GetPseudoRoot()):
-            if prim.GetTypeName() == "Camera" and prim.GetName() == "EgoCamera":
-                camera_path = str(prim.GetPath())
-                break
-        
-        if not camera_path:
-            raise RuntimeError("EgoCamera not found in scene")
-        
-        print(f"Found EgoCamera at: {camera_path}")
-        
+
+        # Set up egocentric camera via simulator API
         resolution = (args.collect_resolution, args.collect_resolution)
-        rp = rep.create.render_product(camera_path, resolution=resolution)
-        rgb_annotator = rep.AnnotatorRegistry.get_annotator("rgb")
-        rgb_annotator.attach([rp])
-        print(f"Attached render product ({resolution[0]}x{resolution[1]})")
-        
+        env.simulator.setup_egocentric_camera(
+            camera_name="EgoCamera", resolution=resolution
+        )
+
         # Hide markers (red target spheres) for clean video
         env.simulator._show_markers = False
         print("Markers hidden for data collection")
-        
-        # Set up lighting randomization if enabled
+
+        # Set up lighting randomization if enabled (via simulator API)
         randomize_fn = None
         if args.randomize_lights:
-            # Find the scene prim path (warehouse or other loaded scene)
-            scene_prim_path = None
-            for prim in Usd.PrimRange(stage.GetPseudoRoot()):
-                if "warehouse" in prim.GetPath().pathString.lower():
-                    scene_prim_path = str(prim.GetPath())
-                    break
-            if not scene_prim_path:
-                scene_prim_path = "/World"
-            
-            randomize_fn = setup_scene_randomization(stage, scene_prim_path, args)
-            print(f"Lighting randomization enabled")
-        
+            randomize_fn = env.simulator.setup_scene_randomization(
+                randomize_lights=True,
+            )
+            print("Lighting randomization enabled")
+
         # Create output directory
         os_module.makedirs(args.collect_output_dir, exist_ok=True)
-        
+
         # Run simulation loop
         agent.eval()
         episode_count = 0
         done_indices = None
         max_episodes = args.collect_max_episodes or 999999
-        
-        # Set up window close handler
-        import omni.kit.app
-        app = omni.kit.app.get_app()
 
-        def check_running():
-            """Check if simulation should continue"""
-            return env.simulator.is_simulation_running() and app.is_running()
-        
         try:
-            while check_running() and episode_count < max_episodes:
+            while (
+                env.simulator.is_simulation_running() and episode_count < max_episodes
+            ):
                 episode_count += 1
                 episode_dir = os_module.path.join(
-                    args.collect_output_dir, f"episode_{episode_count:05d}")
-                os_module.makedirs(os_module.path.join(episode_dir, "rgb"), exist_ok=True)
-                
+                    args.collect_output_dir, f"episode_{episode_count:05d}"
+                )
+                os_module.makedirs(
+                    os_module.path.join(episode_dir, "rgb"), exist_ok=True
+                )
+
                 print(f"Collecting episode {episode_count}...")
-                
+
                 obs, _ = env.reset(done_indices)
-                if not check_running():
+                if not env.simulator.is_simulation_running():
                     break
-                
+
                 # Randomize lighting at start of each episode
                 if randomize_fn and not args.randomize_per_frame:
                     randomize_fn()
-                
+
                 obs = agent.add_agent_info_to_obs(obs)
-                
+
                 frames = []
                 poses = []
                 frame_idx = 0
                 max_frames = 300  # ~6 seconds at 50Hz
-                
+
                 while frame_idx < max_frames:
-                    if not check_running():
+                    if not env.simulator.is_simulation_running():
                         break
-                    
+
                     obs_td = agent.obs_dict_to_tensordict(obs)
                     model_outs = agent.model(obs_td)
                     actions = model_outs.get("mean_action", model_outs.get("action"))
-                    
+
                     obs, rewards, dones, terminated, extras = env.step(actions)
                     obs = agent.add_agent_info_to_obs(obs)
-                    
+
                     # Per-frame randomization if enabled
                     if randomize_fn and args.randomize_per_frame:
                         randomize_fn()
-                    
-                    # Capture RGB from EgoCamera
-                    # Render a frame for the annotator (needed for headless)
-                    env.simulator._sim.render()
-                    rgb_data = rgb_annotator.get_data()
-                    if rgb_data is not None and rgb_data.size > 0:
-                        if len(rgb_data.shape) == 3:
-                            rgb_image = rgb_data[:, :, :3]
-                        else:
-                            rgb_image = rgb_data
-                        
+
+                    # Capture RGB from egocentric camera (via simulator API)
+                    rgb_image = env.simulator.capture_egocentric_frame()
+                    if rgb_image is not None:
                         frame_path = os_module.path.join(
-                            episode_dir, "rgb", f"frame_{frame_idx:05d}.png")
-                        Image.fromarray(rgb_image.astype(np.uint8)).save(frame_path)
+                            episode_dir, "rgb", f"frame_{frame_idx:05d}.png"
+                        )
+                        Image.fromarray(rgb_image).save(frame_path)
                         frames.append(f"rgb/frame_{frame_idx:05d}.png")
-                    
-                    # Get robot state
-                    bodies_state = env.simulator._get_simulator_bodies_state(env_ids=None)
-                    dof_state = env.simulator._get_simulator_dof_state(env_ids=None)
-                    
-                    poses.append({
-                        'body_positions': bodies_state.rigid_body_pos[0].cpu().numpy().tolist(),
-                        'body_rotations': bodies_state.rigid_body_rot[0].cpu().numpy().tolist(),
-                        'dof_positions': dof_state.dof_pos[0].cpu().numpy().tolist(),
-                        'frame_idx': frame_idx,
-                    })
-                    
+
+                    # Get robot state (using public API)
+                    bodies_state = env.simulator.get_bodies_state(env_ids=None)
+                    dof_state = env.simulator.get_dof_state(env_ids=None)
+
+                    poses.append(
+                        {
+                            "body_positions": bodies_state.rigid_body_pos[0]
+                            .cpu()
+                            .numpy()
+                            .tolist(),
+                            "body_rotations": bodies_state.rigid_body_rot[0]
+                            .cpu()
+                            .numpy()
+                            .tolist(),
+                            "dof_positions": dof_state.dof_pos[0]
+                            .cpu()
+                            .numpy()
+                            .tolist(),
+                            "frame_idx": frame_idx,
+                        }
+                    )
+
                     frame_idx += 1
-                    
+
                     # Check for episode end
                     if dones.any():
                         break
-                
+
                 # Save episode data
                 episode_data = {
-                    'episode_idx': episode_count,
-                    'num_frames': len(frames),
-                    'frames': frames,
-                    'poses': poses,
+                    "episode_idx": episode_count,
+                    "num_frames": len(frames),
+                    "frames": frames,
+                    "poses": poses,
                 }
-                torch.save(episode_data, os_module.path.join(episode_dir, "episode_data.pt"))
+                torch.save(
+                    episode_data, os_module.path.join(episode_dir, "episode_data.pt")
+                )
                 print(f"  Saved {len(frames)} frames")
-                
+
                 done_indices = torch.tensor([0], device=env.device)
-                
+
         except KeyboardInterrupt:
             print("\nCollection interrupted by Ctrl+C")
-        
-        print(f"\nData collection complete! {episode_count} episodes saved to {args.collect_output_dir}")
+
+        print(
+            f"\nData collection complete! {episode_count} episodes "
+            f"saved to {args.collect_output_dir}"
+        )
         os_module._exit(0)
     elif args.full_eval:
         agent.evaluator.eval_count = 0

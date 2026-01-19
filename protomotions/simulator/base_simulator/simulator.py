@@ -1302,3 +1302,119 @@ class Simulator(ABC):
         Close the simulator and perform cleanup operations.
         """
         self._simulation_running = False
+
+    # -------------------------
+    # 🌍 Group 7: Scene & Environment Features
+    # -------------------------
+    def load_scene(
+        self,
+        scene_path: str,
+        offset: Tuple[float, float, float] = (0.0, 0.0, 0.0),
+    ) -> None:
+        """Load an external scene/environment into the simulation.
+
+        This loads a scene file (e.g., USD for IsaacLab) and positions it
+        relative to the robot. The scene will follow the robot's position
+        on environment resets.
+
+        Args:
+            scene_path: Path to the scene file (format depends on simulator).
+            offset: XYZ offset for scene placement relative to robot.
+
+        Raises:
+            NotImplementedError: If simulator doesn't support scene loading.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support scene loading. "
+            "This feature is currently only available in IsaacLab."
+        )
+
+    def setup_scene_randomization(
+        self,
+        randomize_lights: bool = False,
+        randomize_objects: Optional[List[str]] = None,
+        object_pos_range: Tuple[float, float] = (-0.5, 0.5),
+        object_rot_range: Tuple[float, float] = (-30.0, 30.0),
+        hide_objects_prob: float = 0.0,
+    ) -> Callable[[], None]:
+        """Set up domain randomization for scene elements.
+
+        Configures randomization for lights and/or objects in the loaded scene.
+        Returns a function that applies randomization when called.
+
+        Args:
+            randomize_lights: Whether to randomize light intensity/color.
+            randomize_objects: List of object names to randomize positions/rotations.
+            object_pos_range: Min/max XY position offset range in meters.
+            object_rot_range: Min/max Z rotation offset range in degrees.
+            hide_objects_prob: Probability (0-1) to hide each object.
+
+        Returns:
+            A callable that applies randomization when invoked.
+
+        Raises:
+            NotImplementedError: If simulator doesn't support randomization.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support scene randomization. "
+            "This feature is currently only available in IsaacLab."
+        )
+
+    def get_scene_randomize_fn(self) -> Optional[Callable[[], None]]:
+        """Get the current scene randomization function if configured.
+
+        Returns:
+            The randomization function, or None if not configured.
+        """
+        return getattr(self, "_scene_randomize_fn", None)
+
+    # -------------------------
+    # 📷 Group 8: Egocentric Camera & Data Collection
+    # -------------------------
+    def setup_egocentric_camera(
+        self,
+        camera_name: str = "EgoCamera",
+        resolution: Tuple[int, int] = (224, 224),
+    ) -> None:
+        """Set up an egocentric camera for data collection.
+
+        Finds or creates a camera attached to the robot for first-person
+        view capture. The camera should be attached to the robot's head/torso.
+
+        Args:
+            camera_name: Name of the camera prim to find in the robot USD.
+            resolution: Camera resolution (width, height) in pixels.
+
+        Raises:
+            NotImplementedError: If simulator doesn't support egocentric cameras.
+            RuntimeError: If camera cannot be found or initialized.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support egocentric cameras. "
+            "This feature is currently only available in IsaacLab."
+        )
+
+    def capture_egocentric_frame(self) -> Optional[Any]:
+        """Capture a frame from the egocentric camera.
+
+        Must call setup_egocentric_camera() first.
+
+        Returns:
+            RGB image as numpy array (H, W, 3), or None if capture failed.
+
+        Raises:
+            NotImplementedError: If simulator doesn't support egocentric cameras.
+            RuntimeError: If camera not initialized via setup_egocentric_camera().
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support egocentric cameras. "
+            "This feature is currently only available in IsaacLab."
+        )
+
+    def is_egocentric_camera_ready(self) -> bool:
+        """Check if egocentric camera is set up and ready for capture.
+
+        Returns:
+            True if camera is ready, False otherwise.
+        """
+        return False

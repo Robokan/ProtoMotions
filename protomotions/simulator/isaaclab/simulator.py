@@ -33,7 +33,7 @@ from protomotions.components.scene_lib import (
 import os
 from pathlib import Path
 import numpy as np
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Callable, Dict, List, Any, Optional, Tuple
 from protomotions.simulator.isaaclab.utils.scene import SceneCfg
 from protomotions.simulator.isaaclab.config import (
     IsaacLabSimulatorConfig,
@@ -835,7 +835,6 @@ class IsaacLabSimulator(Simulator):
                 .root_pos.cpu()
                 .numpy()
             )
-            height_offset = 0.2
         else:
             in_scene_object_id = self._camera_target["element"] - 1
             char_root_pos = (
@@ -844,7 +843,6 @@ class IsaacLabSimulator(Simulator):
                 .cpu()
                 .numpy()
             )
-            height_offset = 0
 
         cam_pos = np.array(self._perspective_view.get_camera_state())
         # Only use XY delta, keep Z fixed
@@ -999,3 +997,296 @@ class IsaacLabSimulator(Simulator):
                 orientations=markers_state_item.orientation.view(-1, 4),
                 scales=marker_dict.scale,
             )
+
+    # =====================================================
+    # Group 7: Scene & Environment Features
+    # =====================================================
+    def load_scene(
+        self,
+        scene_path: str,
+        offset: Tuple[float, float, float] = (0.0, 0.0, 0.0),
+    ) -> None:
+        """Load a USD scene into the IsaacLab simulation.
+
+        Args:
+            scene_path: Path to USD file (local or omniverse:// URL).
+            offset: XYZ offset for scene placement relative to robot.
+        """
+        import omni.usd
+        from pxr import UsdGeom
+
+        self._scene_offset = offset
+        stage = omni.usd.get_context().get_stage()
+        self._scene_prim_path = "/World/CustomScene"
+
+        # Create xform and add scene as reference
+        scene_prim = stage.DefinePrim(self._scene_prim_path, "Xform")
+        scene_prim.GetReferences().AddReference(scene_path)
+
+        # Create xformable with translate op
+        xformable = UsdGeom.Xformable(scene_prim)
+        xformable.ClearXformOpOrder()
+        self._scene_translate_op = xformable.AddTranslateOp()
+
+        # Hide default terrain visuals (keep physics for collision)
+        terrain_paths = [
+            "/World/ground",
+            "/World/ground/terrain",
+            "/World/ground/terrain/mesh",
+        ]
+        for path in terrain_paths:
+            prim = stage.GetPrimAtPath(path)
+            if prim.IsValid():
+                imageable = UsdGeom.Imageable(prim)
+                imageable.MakeInvisible()
+                print(f"Hidden: {path}")
+
+        print(f"Loaded scene: {scene_path}")
+        self._scene_loaded = True
+
+    def update_scene_position(self, robot_pos: np.ndarray) -> None:
+        """Update scene position to follow robot.
+
+        Called internally after environment resets.
+
+        Args:
+            robot_pos: Robot root position as numpy array [x, y, z].
+        """
+        if not getattr(self, "_scene_loaded", False):
+            return
+
+        from pxr import Gf
+
+        offset = self._scene_offset
+        final_offset = Gf.Vec3d(
+            float(robot_pos[0] + offset[0]),
+            float(robot_pos[1] + offset[1]),
+            float(offset[2]),
+        )
+        self._scene_translate_op.Set(final_offset)
+
+    def setup_scene_randomization(
+        self,
+        randomize_lights: bool = False,
+        randomize_objects: Optional[List[str]] = None,
+        object_pos_range: Tuple[float, float] = (-0.5, 0.5),
+        object_rot_range: Tuple[float, float] = (-30.0, 30.0),
+        hide_objects_prob: float = 0.0,
+    ) -> Callable[[], None]:
+        """Set up domain randomization for scene elements in IsaacLab.
+
+        Args:
+            randomize_lights: Whether to randomize light intensity/color.
+            randomize_objects: List of object names to randomize.
+            object_pos_range: Min/max XY position offset in meters.
+            object_rot_range: Min/max Z rotation offset in degrees.
+            hide_objects_prob: Probability (0-1) to hide each object.
+
+        Returns:
+            A callable that applies randomization when invoked.
+        """
+        import omni.usd
+        from pxr import UsdGeom, Gf
+
+        stage = omni.usd.get_context().get_stage()
+        scene_root = getattr(self, "_scene_prim_path", "/World")
+
+        # Find objects to randomize
+        scene_objects = []
+        original_positions = {}
+        if randomize_objects:
+            scene_objects = self._find_objects_by_name(
+                stage, scene_root, randomize_objects
+            )
+            for obj_path in scene_objects:
+                prim = stage.GetPrimAtPath(obj_path)
+                if prim.IsValid():
+                    xform = UsdGeom.Xformable(prim)
+                    local_transform = xform.GetLocalTransformation()
+                    original_positions[obj_path] = local_transform.ExtractTranslation()
+
+        # Find lights to randomize
+        existing_lights = []
+        original_intensities = {}
+        if randomize_lights:
+            light_types = [
+                "RectLight", "DiskLight", "SphereLight", "CylinderLight",
+                "DistantLight", "DomeLight", "PortalLight", "PluginLight",
+            ]
+            for prim in stage.Traverse():
+                if prim.GetTypeName() in light_types:
+                    existing_lights.append(prim.GetPath().pathString)
+            for light_path in existing_lights:
+                light_prim = stage.GetPrimAtPath(light_path)
+                if light_prim.IsValid():
+                    intensity_attr = light_prim.GetAttribute("inputs:intensity")
+                    if intensity_attr and intensity_attr.Get():
+                        original_intensities[light_path] = intensity_attr.Get()
+
+        def randomize():
+            """Apply randomization to lights and objects."""
+            # Randomize lights
+            if randomize_lights:
+                for light_path in existing_lights:
+                    light_prim = stage.GetPrimAtPath(light_path)
+                    if not light_prim.IsValid():
+                        continue
+                    orig_intensity = original_intensities.get(light_path, 1000.0)
+                    intensity_multiplier = np.random.uniform(0.5, 1.5)
+                    new_intensity = orig_intensity * intensity_multiplier
+                    intensity_attr = light_prim.GetAttribute("inputs:intensity")
+                    if intensity_attr:
+                        intensity_attr.Set(new_intensity)
+                    # Randomize color temperature
+                    color_temp = np.random.uniform(3500, 7500)
+                    if color_temp < 5500:
+                        r, g, b = 1.0, 0.9 + 0.1 * (color_temp - 3500) / 2000, 0.8 + 0.2 * (color_temp - 3500) / 2000
+                    else:
+                        r, g, b = 0.9 + 0.1 * (7500 - color_temp) / 2000, 0.95, 1.0
+                    color_attr = light_prim.GetAttribute("inputs:color")
+                    if color_attr:
+                        color_attr.Set(Gf.Vec3f(r, g, b))
+
+            # Randomize objects
+            for obj_path in scene_objects:
+                prim = stage.GetPrimAtPath(obj_path)
+                if not prim.IsValid():
+                    continue
+                # Random visibility
+                if hide_objects_prob > 0:
+                    imageable = UsdGeom.Imageable(prim)
+                    if np.random.random() < hide_objects_prob:
+                        imageable.GetVisibilityAttr().Set(UsdGeom.Tokens.invisible)
+                    else:
+                        imageable.GetVisibilityAttr().Set(UsdGeom.Tokens.inherited)
+                # Random position offset
+                orig_pos = original_positions.get(obj_path)
+                if orig_pos is None:
+                    continue
+                offset_x = np.random.uniform(object_pos_range[0], object_pos_range[1])
+                offset_y = np.random.uniform(object_pos_range[0], object_pos_range[1])
+                # Note: rotation randomization not yet implemented in simplified version
+                xform = UsdGeom.Xformable(prim)
+                ops = xform.GetOrderedXformOps()
+                for op in ops:
+                    if op.GetOpType() == UsdGeom.XformOp.TypeTranslate:
+                        current = op.Get()
+                        if current:
+                            op.Set(Gf.Vec3d(orig_pos[0] + offset_x, orig_pos[1] + offset_y, current[2]))
+                        break
+                    elif op.GetOpType() == UsdGeom.XformOp.TypeTransform:
+                        current_matrix = op.Get()
+                        if current_matrix:
+                            new_matrix = Gf.Matrix4d(current_matrix)
+                            new_matrix.SetTranslateOnly(Gf.Vec3d(orig_pos[0] + offset_x, orig_pos[1] + offset_y, orig_pos[2]))
+                            op.Set(new_matrix)
+                        break
+
+        self._scene_randomize_fn = randomize
+        return randomize
+
+    def get_scene_randomize_fn(self) -> Optional[Callable[[], None]]:
+        """Get the current scene randomization function."""
+        return getattr(self, "_scene_randomize_fn", None)
+
+    def _find_objects_by_name(
+        self, stage, root_path: str, object_names: List[str]
+    ) -> List[str]:
+        """Find objects in scene by name match."""
+        from pxr import UsdGeom
+
+        if not object_names:
+            return []
+        names_lower = [n.lower() for n in object_names]
+        objects = []
+        root_prim = stage.GetPrimAtPath(root_path)
+        if not root_prim.IsValid():
+            return objects
+
+        def _find_matching(prim):
+            name = prim.GetName().lower()
+            for target_name in names_lower:
+                if target_name in name and prim.IsA(UsdGeom.Xformable):
+                    objects.append(prim.GetPath().pathString)
+                    break
+            for child in prim.GetChildren():
+                _find_matching(child)
+
+        for child in root_prim.GetAllChildren():
+            _find_matching(child)
+        return objects
+
+    # =====================================================
+    # Group 8: Egocentric Camera & Data Collection
+    # =====================================================
+    def setup_egocentric_camera(
+        self,
+        camera_name: str = "EgoCamera",
+        resolution: Tuple[int, int] = (224, 224),
+    ) -> None:
+        """Set up egocentric camera for data collection.
+
+        Args:
+            camera_name: Name of camera prim in robot USD.
+            resolution: Camera resolution (width, height).
+        """
+        import omni.usd
+        import omni.replicator.core as rep
+        from pxr import Usd
+
+        stage = omni.usd.get_context().get_stage()
+
+        # Find camera by name in the stage
+        camera_path = None
+        for prim in Usd.PrimRange(stage.GetPseudoRoot()):
+            if prim.GetTypeName() == "Camera" and prim.GetName() == camera_name:
+                camera_path = str(prim.GetPath())
+                break
+
+        if not camera_path:
+            raise RuntimeError(
+                f"{camera_name} not found in scene. "
+                "Please ensure the camera exists in your robot USD file."
+            )
+
+        print(f"Found {camera_name} at: {camera_path}")
+
+        # Set up Replicator render product
+        self._ego_camera_path = camera_path
+        self._ego_camera_resolution = resolution
+        self._ego_render_product = rep.create.render_product(
+            camera_path, resolution=resolution
+        )
+        self._ego_rgb_annotator = rep.AnnotatorRegistry.get_annotator("rgb")
+        self._ego_rgb_annotator.attach([self._ego_render_product])
+
+        self._ego_camera_ready = True
+        print(f"Egocentric camera ready ({resolution[0]}x{resolution[1]})")
+
+    def capture_egocentric_frame(self) -> Optional[np.ndarray]:
+        """Capture RGB frame from egocentric camera.
+
+        Returns:
+            RGB image as numpy array (H, W, 3), or None if capture failed.
+        """
+        if not self.is_egocentric_camera_ready():
+            raise RuntimeError(
+                "Egocentric camera not initialized. "
+                "Call setup_egocentric_camera() first."
+            )
+
+        # Render frame for annotator
+        self._sim.render()
+        rgb_data = self._ego_rgb_annotator.get_data()
+
+        if rgb_data is None or rgb_data.size == 0:
+            return None
+
+        # Extract RGB channels (remove alpha if present)
+        if len(rgb_data.shape) == 3 and rgb_data.shape[2] >= 3:
+            return rgb_data[:, :, :3].astype(np.uint8)
+        return rgb_data.astype(np.uint8)
+
+    def is_egocentric_camera_ready(self) -> bool:
+        """Check if egocentric camera is ready."""
+        return getattr(self, "_ego_camera_ready", False)
