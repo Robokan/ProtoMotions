@@ -56,7 +56,7 @@ class SceneCfg(InteractiveSceneCfg):
 
         activate_contact_sensors = robot_config.contact_bodies is not None
 
-        # lights
+        # lights - dome light for ambient/sky + distant light for directional shadows (like Isaac Sim stage)
         if True:  # pretty:
             # This is way prettier, but also slower to render
             self.light = AssetBaseCfg(
@@ -73,6 +73,19 @@ class SceneCfg(InteractiveSceneCfg):
                     intensity=3000.0, color=(0.75, 0.75, 0.75)
                 ),
             )
+        
+        # Distant light to match Isaac Sim's default stage lighting
+        self.distant_light = AssetBaseCfg(
+            prim_path="/World/DistantLight",
+            spawn=sim_utils.DistantLightCfg(
+                intensity=3000.0,
+                color=(1.0, 0.98, 0.95),  # Warm white like sunlight
+                angle=0.53,  # Sun angular diameter in degrees
+            ),
+            init_state=AssetBaseCfg.InitialStateCfg(
+                rot=(0.866, 0.0, 0.5, 0.0),  # 60 degrees from vertical
+            ),
+        )
 
         num_objects_per_scene = 0
         if scene_cfgs is not None:
@@ -158,9 +171,7 @@ class SceneCfg(InteractiveSceneCfg):
                     contact_offset=config.sim.physx.contact_offset,
                     rest_offset=config.sim.physx.rest_offset,
                 ),
-                visual_material=sim_utils.PreviewSurfaceCfg(
-                    diffuse_color=(0.9, 0.9, 0.9), metallic=0.5
-                ),
+                # visual_material removed to preserve USD's native materials
             ),
             init_state=ArticulationCfg.InitialStateCfg(
                 pos=(0.0, 0.0, robot_config.default_root_height),

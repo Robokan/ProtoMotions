@@ -48,13 +48,13 @@ class TerrainSimConfig(ConfigBuilder):
     Separate from TerrainConfig which defines terrain geometry.
     """
 
-    static_friction: float = 1.0
-    dynamic_friction: float = 1.0
+    static_friction: float = 2.0
+    dynamic_friction: float = 2.0
     restitution: float = 0.0
     height_offset: float = (
         0.0  # Height offset for the terrain (negative values move terrain down)
     )
-    combine_mode: CombineMode = CombineMode.AVERAGE
+    combine_mode: CombineMode = CombineMode.MAX  # MAX ensures terrain friction dominates even if robot has lower friction
 
 
 @dataclass

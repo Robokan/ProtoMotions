@@ -794,6 +794,19 @@ class IsaacLabSimulator(Simulator):
             env_ids=torch.arange(self.num_envs, device=self.device),
         )
 
+    def _toggle_markers(self):
+        """Toggle visibility of all visualization markers."""
+        if not hasattr(self, '_markers_visible'):
+            self._markers_visible = True
+        
+        self._markers_visible = not self._markers_visible
+        
+        for marker_name, marker_dict in self._visualization_markers.items():
+            marker_dict.marker.set_visibility(self._markers_visible)
+        
+        status = "visible" if self._markers_visible else "hidden"
+        print(f"Markers: {status}")
+
     # =====================================================
     # Group 6: Rendering & Visualization
     # =====================================================

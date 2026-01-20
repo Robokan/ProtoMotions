@@ -52,6 +52,7 @@ During inference, these controls are available:
 - **R**: Reset all environments
 - **O**: Toggle camera view
 - **L**: Start/stop video recording
+- **M**: Toggle markers on/off
 - **Q**: Quit
 
 Example
@@ -604,10 +605,16 @@ def main():
         done_indices = None
         max_episodes = args.collect_max_episodes or 999999
 
+        # Set up window close handler (IsaacLab specific)
+        import omni.kit.app
+        app = omni.kit.app.get_app()
+
+        def check_running():
+            """Check if simulation should continue."""
+            return env.simulator.is_simulation_running() and app.is_running()
+
         try:
-            while (
-                env.simulator.is_simulation_running() and episode_count < max_episodes
-            ):
+            while check_running() and episode_count < max_episodes:
                 episode_count += 1
                 episode_dir = os_module.path.join(
                     args.collect_output_dir, f"episode_{episode_count:05d}"
@@ -619,7 +626,7 @@ def main():
                 print(f"Collecting episode {episode_count}...")
 
                 obs, _ = env.reset(done_indices)
-                if not env.simulator.is_simulation_running():
+                if not check_running():
                     break
 
                 # Randomize lighting at start of each episode
@@ -634,7 +641,7 @@ def main():
                 max_frames = 300  # ~6 seconds at 50Hz
 
                 while frame_idx < max_frames:
-                    if not env.simulator.is_simulation_running():
+                    if not check_running():
                         break
 
                     obs_td = agent.obs_dict_to_tensordict(obs)

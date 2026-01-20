@@ -7,8 +7,8 @@
                 double radius = 5
             }
             dictionary Perspective = {
-                double3 position = (5, 5, 5)
-                double3 target = (-3.978038431995401e-8, -3.978038254359717e-8, 7.956076863990802e-8)
+                double3 position = (2.882328170483559, 2.882328170483561, 2.882328221028638)
+                double3 target = (-3.978038476404322e-8, -3.978038209950796e-8, 7.956076686355118e-8)
             }
             dictionary Right = {
                 double3 position = (0, -5, 0)
@@ -97,6 +97,7 @@ def "Render" (
                 bool omni:rtx:dlss:frameGeneration = 0
                 bool omni:rtx:material:db:nonVisualMaterialCSV:enabled = 0
                 bool omni:rtx:material:db:syncLoads = 1
+                token omni:rtx:post:dlss:execMode = "performance"
                 bool omni:rtx:post:registeredCompositing:invertColorCorrection = 1
                 bool omni:rtx:post:registeredCompositing:invertToneMap = 1
                 int omni:rtx:pt:clampSpp = 64
@@ -106,6 +107,8 @@ def "Render" (
                 int omni:rtx:pt:mgpu:maxPixelsPerRegionExponent = 12
                 int omni:rtx:pt:samplesPerIteration = 64
                 int omni:rtx:pt:samplesPerPixel = 64
+                float omni:rtx:realtime:mgpu:masterDeviceLoadBalancingWeight = 0
+                int omni:rtx:realtime:mgpu:tileCount = 2
                 color3f omni:rtx:rt:ambientLight:color = (0.1, 0.1, 0.1)
                 bool omni:rtx:rt:demoire = 0
                 bool omni:rtx:rt:lightcache:spatialCache:dontResolveConflicts = 1
