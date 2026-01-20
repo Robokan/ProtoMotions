@@ -53,6 +53,10 @@ def robot_config(robot_name: str, **updates) -> RobotConfig:
         from protomotions.robot_configs.rigv1 import Rigv1RobotConfig
 
         config = Rigv1RobotConfig()
+    elif robot_name == "adam":
+        from protomotions.robot_configs.adam import AdamRobotConfig
+
+        config = AdamRobotConfig()
     else:
         raise ValueError(f"Invalid robot name: {robot_name}")
 

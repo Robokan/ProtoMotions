@@ -938,6 +938,23 @@ class IsaacLabSimulator(Simulator):
         # Check both the base class flag and the IsaacLab app state
         return self._simulation_running and self._simulation_app.is_running()
 
+    def is_running(self) -> bool:
+        """Check if the application should continue running.
+        
+        This checks both simulation state and app state (window closed, etc).
+        
+        Returns:
+            True if should continue running, False otherwise.
+        """
+        if getattr(self, '_shutdown_requested', False):
+            return False
+        return self.is_simulation_running()
+
+    def shutdown(self) -> None:
+        """Request application shutdown."""
+        self._shutdown_requested = True
+        self._simulation_running = False
+
     def close(self) -> None:
         """
         Close the simulation application and perform cleanup.
@@ -1294,16 +1311,13 @@ class IsaacLabSimulator(Simulator):
         resolution: Tuple[int, int] = (224, 224),
     ) -> None:
         """Set up egocentric camera for data collection.
-        
-        NOTE: Due to Isaac Sim Replicator bugs, this now captures from the 
-        main viewport instead of the egocentric camera. The egocentric camera
-        path is stored but viewport capture is used for actual frames.
 
         Args:
             camera_name: Name of camera prim in robot USD.
             resolution: Camera resolution (width, height).
         """
         import omni.usd
+        import omni.replicator.core as rep
         from pxr import Usd
 
         stage = omni.usd.get_context().get_stage()
@@ -1322,33 +1336,42 @@ class IsaacLabSimulator(Simulator):
             )
 
         print(f"Found {camera_name} at: {camera_path}")
-        print("WARNING: Using viewport capture due to Replicator issues.")
-        print("         Egocentric view not available - using third-person view.")
 
+        # Set up Replicator render product
         self._ego_camera_path = camera_path
         self._ego_camera_resolution = resolution
+        self._ego_render_product = rep.create.render_product(
+            camera_path, resolution=resolution
+        )
+        self._ego_rgb_annotator = rep.AnnotatorRegistry.get_annotator("rgb")
+        self._ego_rgb_annotator.attach([self._ego_render_product])
+
         self._ego_camera_ready = True
-        self._ego_frame_count = 0
-        print(f"Camera setup complete ({resolution[0]}x{resolution[1]})")
+        print(f"Egocentric camera ready ({resolution[0]}x{resolution[1]})")
 
     def capture_egocentric_frame(self) -> Optional[np.ndarray]:
-        """Capture RGB frame (currently from viewport due to Replicator bugs).
+        """Capture RGB frame from egocentric camera.
 
         Returns:
             RGB image as numpy array (H, W, 3), or None if capture failed.
         """
         if not self.is_egocentric_camera_ready():
             raise RuntimeError(
-                "Camera not initialized. Call setup_egocentric_camera() first."
+                "Egocentric camera not initialized. "
+                "Call setup_egocentric_camera() first."
             )
 
-        self._ego_frame_count += 1
-        resolution = self._ego_camera_resolution
-        
-        # Return placeholder frame - actual egocentric capture requires working Replicator
-        # For now, return a gray frame to indicate data collection is "working"
-        # but frames need Replicator fix to be real egocentric images
-        return np.full((resolution[1], resolution[0], 3), 128, dtype=np.uint8)
+        # Render frame for annotator
+        self._sim.render()
+        rgb_data = self._ego_rgb_annotator.get_data()
+
+        if rgb_data is None or rgb_data.size == 0:
+            return None
+
+        # Extract RGB channels (remove alpha if present)
+        if len(rgb_data.shape) == 3 and rgb_data.shape[2] >= 3:
+            return rgb_data[:, :, :3].astype(np.uint8)
+        return rgb_data.astype(np.uint8)
 
     def is_egocentric_camera_ready(self) -> bool:
         """Check if egocentric camera is ready."""

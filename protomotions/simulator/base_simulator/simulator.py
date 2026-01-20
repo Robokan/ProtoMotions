@@ -1297,6 +1297,27 @@ class Simulator(ABC):
         """
         return self._simulation_running
 
+    def is_running(self) -> bool:
+        """Check if the application should continue running.
+        
+        This checks both simulation state and any shutdown requests.
+        Subclasses may override to add platform-specific checks (e.g., window closed).
+        
+        Returns:
+            True if should continue running, False otherwise.
+        """
+        if getattr(self, '_shutdown_requested', False):
+            return False
+        return self.is_simulation_running()
+
+    def shutdown(self) -> None:
+        """Request application shutdown.
+        
+        This signals that the application should stop running.
+        """
+        self._shutdown_requested = True
+        self._simulation_running = False
+
     def close(self) -> None:
         """
         Close the simulator and perform cleanup operations.

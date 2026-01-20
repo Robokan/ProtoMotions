@@ -1,0 +1,44 @@
+#usda 1.0
+(
+    defaultPrim = "adam"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "adam" (
+    variants = {
+        string Physics = "PhysX"
+        string Sensor = "Sensors"
+    }
+    prepend variantSets = ["Physics", "Sensor"]
+)
+{
+    variantSet "Physics" = {
+        "None" (
+            prepend references = @configuration/adam_base.usd@
+        ) {
+            over "joints" (
+                active = false
+            )
+            {
+            }
+
+        }
+        "PhysX" (
+            prepend payload = @configuration/adam_physics.usd@
+        ) {
+
+        }
+    }
+    variantSet "Sensor" = {
+        "None" {
+
+        }
+        "Sensors" (
+            prepend payload = @configuration/adam_sensor.usd@
+        ) {
+
+        }
+    }
+}
+

@@ -13,6 +13,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+# =============================================================================
+# IMPORTANT: ENGINE-INDEPENDENT CODE
+# =============================================================================
+# This file MUST remain simulator/engine agnostic. Do NOT add any imports or
+# code specific to IsaacLab, IsaacGym, or any other simulation engine.
+#
+# All engine-specific functionality should be abstracted through:
+#   - env.simulator.*  (simulator abstraction layer)
+#   - env.*            (environment abstraction)
+#
+# Examples of what NOT to do:
+#   - import omni.kit.app
+#   - import isaaclab.*
+#   - import isaacgym
+#
+# If you need engine-specific behavior, add it to the appropriate simulator
+# class in protomotions/simulator/<engine>/simulator.py
+# =============================================================================
+#
 """Test trained agents and visualize their behavior.
 
 This script loads trained checkpoints and runs agents in the simulation environment
@@ -489,8 +508,8 @@ def main():
         # Wrap env.reset to update scene position and apply randomization
         _original_reset = env.reset
 
-        def _reset_with_scene_update(env_ids=None):
-            result = _original_reset(env_ids)
+        def _reset_with_scene_update(env_ids=None, **kwargs):
+            result = _original_reset(env_ids, **kwargs)
             # Only update scene if env 0 is being reset
             env0_reset = (
                 env_ids is None
@@ -615,168 +634,140 @@ def main():
         # Create output directory
         os_module.makedirs(args.collect_output_dir, exist_ok=True)
 
-        # Run simulation loop
+        # Run simulation loop - sequential collection with exact frame counts
         agent.eval()
-        episode_count = 0
-        done_indices = None
-        max_episodes = args.collect_max_episodes or 999999
-
-        # Set up window close handler (IsaacLab specific)
-        import omni.kit.app
-        app = omni.kit.app.get_app()
-
-        def check_running():
-            """Check if simulation should continue."""
-            return env.simulator.is_simulation_running() and app.is_running()
+        import numpy as np
+        max_episodes = args.collect_max_episodes or len(target_frame_counts) or 200
+        
+        print(f"Collecting {max_episodes} episodes sequentially...")
+        print("Press Q or close window to stop")
 
         try:
-            while check_running() and episode_count < max_episodes:
-                episode_count += 1
-                motion_idx = episode_count - 1  # 0-indexed for matching
+            for episode_idx in range(max_episodes):
+                if not env.simulator.is_simulation_running():
+                    break
+                
+                motion_idx = episode_idx  # Sequential: episode 0 = motion 0, etc.
+                target_frames = target_frame_counts.get(motion_idx, 100)
+                
+                # Setup episode directory
                 episode_dir = os_module.path.join(
-                    args.collect_output_dir, f"episode_{episode_count:05d}"
+                    args.collect_output_dir, f"episode_{episode_idx + 1:05d}"
                 )
                 os_module.makedirs(
                     os_module.path.join(episode_dir, "rgb"), exist_ok=True
                 )
-
-                # Get target frame count for this episode (must match fullbody dataset)
-                target_frames = target_frame_counts.get(motion_idx, 300)
-                print(f"Collecting episode {episode_count} (motion_idx {motion_idx}, target {target_frames} frames)...")
-
-                obs, _ = env.reset(done_indices)
-                if not check_running():
+                
+                print(f"Episode {episode_idx + 1}: motion {motion_idx} "
+                      f"({target_frames} frames)...")
+                
+                # Force this specific motion
+                all_env_ids = torch.arange(
+                    env.num_envs, device=env.device, dtype=torch.long
+                )
+                forced_ids = torch.full(
+                    (env.num_envs,), motion_idx, 
+                    device=env.device, dtype=torch.long
+                )
+                env.motion_manager.sample_motions(all_env_ids, new_motion_ids=forced_ids)
+                env.motion_manager.motion_times[:] = 0.0
+                
+                # Reset with forced motion
+                obs, _ = env.reset(all_env_ids, disable_motion_resample=True)
+                obs = agent.add_agent_info_to_obs(obs)
+                
+                if not env.simulator.is_simulation_running():
                     break
-
-                # Randomize lighting at start of each episode
+                
                 if randomize_fn and not args.randomize_per_frame:
                     randomize_fn()
-
-                obs = agent.add_agent_info_to_obs(obs)
-
-                frames = []
-                poses = []
-                imu_data = []
-                frame_idx = 0
-
-                # Collect exactly target_frames to match fullbody dataset
-                while frame_idx < target_frames:
-                    if not check_running():
+                
+                # Collect exactly target_frames for this episode
+                frames, poses, imu_data = [], [], []
+                prev_lin_vel = None
+                
+                for frame_idx in range(target_frames):
+                    if not env.simulator.is_simulation_running():
                         break
-
-                    # ========== CAPTURE STATE BEFORE ACTION ==========
-                    # This is the INPUT to GR00T: "where am I now?"
                     
-                    # Get robot state BEFORE step (proprioception)
-                    bodies_state_before = env.simulator.get_bodies_state(env_ids=None)
-                    dof_state_before = env.simulator.get_dof_state(env_ids=None)
+                    # ===== Capture state BEFORE action =====
+                    bodies_state = env.simulator.get_bodies_state(env_ids=None)
+                    dof_state = env.simulator.get_dof_state(env_ids=None)
                     
-                    # Capture RGB from egocentric camera BEFORE step
-                    rgb_image = env.simulator.capture_egocentric_frame()
-                    if rgb_image is not None:
-                        frame_path = os_module.path.join(
+                    # Capture egocentric frame
+                    rgb = env.simulator.capture_egocentric_frame()
+                    if rgb is not None:
+                        path = os_module.path.join(
                             episode_dir, "rgb", f"frame_{frame_idx:05d}.png"
                         )
-                        Image.fromarray(rgb_image).save(frame_path)
+                        Image.fromarray(rgb).save(path)
                         frames.append(f"rgb/frame_{frame_idx:05d}.png")
                     
-                    # ========== COMPUTE ACTION ==========
-                    # This is the OUTPUT from GR00T: "what should I do?"
-                    
+                    # ===== Compute action =====
                     obs_td = agent.obs_dict_to_tensordict(obs)
                     model_outs = agent.model(obs_td)
                     actions = model_outs.get("mean_action", model_outs.get("action"))
-
-                    # Convert actions to target joint angles
                     target_dof = env.simulator._action_to_pd_targets(actions)
                     
-                    # ========== STEP PHYSICS ==========
+                    # ===== Step physics =====
                     obs, rewards, dones, terminated, extras = env.step(actions)
                     obs = agent.add_agent_info_to_obs(obs)
-
-                    # Per-frame randomization if enabled
+                    
                     if randomize_fn and args.randomize_per_frame:
                         randomize_fn()
                     
-                    # Use pre-step state for saving
-                    bodies_state = bodies_state_before
-                    dof_state = dof_state_before
-
-                    poses.append(
-                        {
-                            "body_positions": bodies_state.rigid_body_pos[0]
-                            .cpu()
-                            .numpy()
-                            .tolist(),
-                            "body_rotations": bodies_state.rigid_body_rot[0]
-                            .cpu()
-                            .numpy()
-                            .tolist(),
-                            # Target joint angles (what we COMMAND the robot to do)
-                            # This is what GR00T should learn to predict
-                            "dof_positions": target_dof[0]
-                            .cpu()
-                            .numpy()
-                            .tolist(),
-                            # Actual joint angles after physics (for reference/debugging)
-                            "dof_positions_actual": dof_state.dof_pos[0]
-                            .cpu()
-                            .numpy()
-                            .tolist(),
-                            "frame_idx": frame_idx,
-                        }
-                    )
-
-                    # Collect IMU data (pelvis orientation and velocities)
-                    pelvis_idx = 0  # Pelvis is typically first body
-                    pelvis_quat = bodies_state.rigid_body_rot[0, pelvis_idx].cpu().numpy()
-                    pelvis_ang_vel = bodies_state.rigid_body_ang_vel[0, pelvis_idx].cpu().numpy()
-                    pelvis_lin_vel = bodies_state.rigid_body_vel[0, pelvis_idx].cpu().numpy()
+                    # ===== Save pose data =====
+                    poses.append({
+                        "body_positions": bodies_state.rigid_body_pos[0]
+                            .cpu().numpy().tolist(),
+                        "body_rotations": bodies_state.rigid_body_rot[0]
+                            .cpu().numpy().tolist(),
+                        "dof_positions": target_dof[0]
+                            .detach().cpu().numpy().tolist(),
+                        "dof_positions_actual": dof_state.dof_pos[0]
+                            .cpu().numpy().tolist(),
+                        "frame_idx": frame_idx,
+                    })
                     
-                    # Compute linear acceleration (approximate from velocity change)
-                    if frame_idx > 0 and len(imu_data) > 0:
-                        dt = env.simulator.dt
-                        prev_vel = imu_data[-1].get('_lin_vel', pelvis_lin_vel)
-                        lin_accel = (pelvis_lin_vel - prev_vel) / dt
+                    # ===== Save IMU data =====
+                    pelvis_quat = bodies_state.rigid_body_rot[0, 0].cpu().numpy()
+                    ang_vel = bodies_state.rigid_body_ang_vel[0, 0].cpu().numpy()
+                    lin_vel = bodies_state.rigid_body_vel[0, 0].cpu().numpy()
+                    
+                    if prev_lin_vel is not None:
+                        lin_accel = (lin_vel - prev_lin_vel) / env.simulator.dt
                     else:
-                        lin_accel = np.array([0.0, 0.0, 9.81])  # Gravity default
+                        lin_accel = np.array([0.0, 0.0, 9.81])
+                    prev_lin_vel = lin_vel.copy()
                     
                     imu_data.append({
-                        'orientation': pelvis_quat.tolist(),  # [w, x, y, z]
-                        'angular_velocity': pelvis_ang_vel.tolist(),  # [wx, wy, wz]
-                        'linear_acceleration': lin_accel.tolist(),  # [ax, ay, az]
-                        '_lin_vel': pelvis_lin_vel,  # For next frame's accel calculation
+                        'orientation': pelvis_quat.tolist(),
+                        'angular_velocity': ang_vel.tolist(),
+                        'linear_acceleration': lin_accel.tolist(),
                         'frame_idx': frame_idx,
                     })
-
-                    frame_idx += 1
-
-                    # Don't break early on dones - collect full duration for IMU matching
-
-                # Save episode data (including IMU)
+                
+                # Save episode data
                 episode_data = {
-                    "episode_idx": episode_count,
+                    "episode_idx": episode_idx + 1,
                     "motion_idx": motion_idx,
                     "num_frames": len(frames),
                     "frames": frames,
                     "poses": poses,
-                    "imu": [{k: v for k, v in d.items() if not k.startswith('_')} for d in imu_data],
+                    "imu": imu_data,
                 }
-                torch.save(
-                    episode_data, os_module.path.join(episode_dir, "episode_data.pt")
-                )
-                print(f"  Saved {len(frames)} frames with IMU")
-
-                done_indices = torch.tensor([0], device=env.device)
+                torch.save(episode_data, 
+                           os_module.path.join(episode_dir, "episode_data.pt"))
+                print(f"  Saved {len(frames)} frames")
 
         except KeyboardInterrupt:
-            print("\nCollection interrupted by Ctrl+C")
+            print("\nInterrupted")
 
-        print(
-            f"\nData collection complete! {episode_count} episodes "
-            f"saved to {args.collect_output_dir}"
-        )
-        os_module._exit(0)
+        print(f"\nDone! Saved to {args.collect_output_dir}")
+        
+        # Force exit like simple_test_policy
+        import os as os_exit
+        os_exit._exit(0)
     elif args.full_eval:
         agent.evaluator.eval_count = 0
         agent.evaluator.evaluate()
