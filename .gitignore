@@ -13,4 +13,7 @@ output/
 
 data/*
 *.hdf5
-
+*.obj
+*.stl
+*.dae
+*.usd
