@@ -156,7 +156,7 @@ def create_parser():
     parser.add_argument(
         "--scene-offset",
         type=str,
-        default="0 0 0",
+        default="-2 -2 0",
         help="XYZ offset for the scene (e.g., '0 0 -0.1')",
     )
     parser.add_argument(
@@ -592,26 +592,20 @@ def main():
         # Egocentric data collection mode (via simulator API)
         import os as os_module
         from PIL import Image
-        import json
-        import pandas as pd
 
         print("Starting egocentric data collection...")
         print(f"Output: {args.collect_output_dir}")
         print(f"Resolution: {args.collect_resolution}x{args.collect_resolution}")
 
-        # Load target frame counts from fullbody dataset if available
+        # Compute target frame counts from motion library (full length at 50Hz)
         target_frame_counts = {}
-        fullbody_dataset = args.collect_output_dir.replace("groot_g1_egocentric", "groot_g1_fullbody")
-        if os_module.path.exists(fullbody_dataset):
-            print(f"Loading target frame counts from: {fullbody_dataset}")
-            data_dir = os_module.path.join(fullbody_dataset, "data", "chunk-000")
-            if os_module.path.exists(data_dir):
-                for f in sorted(os_module.listdir(data_dir)):
-                    if f.endswith('.parquet'):
-                        ep_idx = int(f.replace('episode_', '').replace('.parquet', ''))
-                        df = pd.read_parquet(os_module.path.join(data_dir, f))
-                        target_frame_counts[ep_idx] = len(df)
-                print(f"  Loaded frame counts for {len(target_frame_counts)} episodes")
+        sim_dt = env.simulator.dt  # Usually 0.02 (50Hz)
+        for i in range(env.motion_lib.num_motions()):
+            motion_length = env.motion_lib.motion_lengths[i].item()
+            # Full motion length at simulation rate
+            target_frame_counts[i] = int(motion_length / sim_dt)
+        print(f"Using full motion lengths at {1.0/sim_dt:.0f}Hz")
+        print(f"  {len(target_frame_counts)} motions, {min(target_frame_counts.values())}-{max(target_frame_counts.values())} frames each")
 
         # Set up egocentric camera via simulator API
         resolution = (args.collect_resolution, args.collect_resolution)
@@ -703,11 +697,17 @@ def main():
                         Image.fromarray(rgb).save(path)
                         frames.append(f"rgb/frame_{frame_idx:05d}.png")
                     
+                    # ===== Get motion library reference (ground truth) =====
+                    ref_state = env.motion_lib.get_motion_state(
+                        env.motion_manager.motion_ids,
+                        env.motion_manager.motion_times,
+                    )
+                    ref_dof = ref_state.dof_pos[0].detach().cpu().numpy()
+                    
                     # ===== Compute action =====
                     obs_td = agent.obs_dict_to_tensordict(obs)
                     model_outs = agent.model(obs_td)
                     actions = model_outs.get("mean_action", model_outs.get("action"))
-                    target_dof = env.simulator._action_to_pd_targets(actions)
                     
                     # ===== Step physics =====
                     obs, rewards, dones, terminated, extras = env.step(actions)
@@ -717,15 +717,19 @@ def main():
                         randomize_fn()
                     
                     # ===== Save pose data =====
+                    # dof_positions: motion library reference (for GR00T action)
+                    # dof_positions_actual: where robot ended up (for GR00T state)
+                    # root_rotation: pelvis orientation from motion lib (for FK)
+                    ref_root_rot = ref_state.rigid_body_rot[0, 0].detach().cpu().numpy()  # (4,) XYZW
                     poses.append({
                         "body_positions": bodies_state.rigid_body_pos[0]
                             .cpu().numpy().tolist(),
                         "body_rotations": bodies_state.rigid_body_rot[0]
                             .cpu().numpy().tolist(),
-                        "dof_positions": target_dof[0]
-                            .detach().cpu().numpy().tolist(),
+                        "dof_positions": ref_dof.tolist(),
                         "dof_positions_actual": dof_state.dof_pos[0]
                             .cpu().numpy().tolist(),
+                        "root_rotation": ref_root_rot.tolist(),  # Pelvis rotation for FK
                         "frame_idx": frame_idx,
                     })
                     

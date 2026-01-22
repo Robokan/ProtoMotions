@@ -787,6 +787,13 @@ class IsaacLabSimulator(Simulator):
     # Group 5: Control & Computation Methods
     # =====================================================
 
+    def _requested_reset(self):
+        """Handle R key press - request a reset."""
+        if not hasattr(self, 'reset_requested'):
+            self.reset_requested = False
+        self.reset_requested = True
+        print("Reset requested (R key)")
+
     def _push_robot(self):
         vel_w = self._robot.data.root_vel_w
         self._robot.write_root_velocity_to_sim(
@@ -1115,7 +1122,7 @@ class IsaacLabSimulator(Simulator):
         """Update scene position to follow robot.
 
         Called internally after environment resets.
-        If scene rotation randomization is enabled, applies random Z rotation.
+        Applies random XY offset (-1 to 1m) and rotation (-180 to 180 deg).
 
         Args:
             robot_pos: Robot root position as numpy array [x, y, z].
@@ -1123,21 +1130,25 @@ class IsaacLabSimulator(Simulator):
         if not getattr(self, "_scene_loaded", False):
             return
 
+        import random
         from pxr import Gf
 
         offset = self._scene_offset
+        
+        # Random XY offset between -1 and 1 meters
+        rand_x = random.uniform(-1.0, 1.0)
+        rand_y = random.uniform(-1.0, 1.0)
+        
         final_offset = Gf.Vec3d(
-            float(robot_pos[0] + offset[0]),
-            float(robot_pos[1] + offset[1]),
+            float(robot_pos[0] + offset[0] + rand_x),
+            float(robot_pos[1] + offset[1] + rand_y),
             float(offset[2]),
         )
         self._scene_translate_op.Set(final_offset)
 
-        # Apply random rotation if enabled
-        if getattr(self, "_randomize_scene_rotation", False):
-            import random
-            random_angle = random.uniform(-180.0, 180.0)
-            self._scene_rotate_op.Set(random_angle)
+        # Random rotation between -180 and 180 degrees
+        random_angle = random.uniform(-180.0, 180.0)
+        self._scene_rotate_op.Set(random_angle)
 
     def set_scene_rotation_randomization(self, enabled: bool) -> None:
         """Enable or disable random scene rotation on reset.

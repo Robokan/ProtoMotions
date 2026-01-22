@@ -1,0 +1,12 @@
+<mujoco model="test">
+  <compiler angle="radian" meshdir="../mesh/adam_lite"/>
+  <asset>
+    <mesh file="pelvis_0.obj"/>
+  </asset>
+  <worldbody>
+    <body name="pelvis" pos="0 0 1">
+      <joint name="floating_joint" type="free" limited="false"/>
+      <geom type="mesh" mesh="pelvis_0"/>
+    </body>
+  </worldbody>
+</mujoco>

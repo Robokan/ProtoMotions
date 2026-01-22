@@ -830,6 +830,7 @@ def main():
     agent.setup()
     agent.fabric.strategy.barrier()
     agent.load(args.checkpoint)
+    agent.fabric.strategy.barrier()  # Ensure all ranks finish loading before training
 
     # ===================================================================
     # 6. Save Configs (First Run Only - Warm Start or Fresh)
