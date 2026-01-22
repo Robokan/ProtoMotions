@@ -789,9 +789,8 @@ class IsaacLabSimulator(Simulator):
 
     def _requested_reset(self):
         """Handle R key press - request a reset."""
-        if not hasattr(self, 'reset_requested'):
-            self.reset_requested = False
-        self.reset_requested = True
+        # Use parent class attribute that env.step() checks
+        self.user_requested_reset = True
         print("Reset requested (R key)")
 
     def _push_robot(self):
