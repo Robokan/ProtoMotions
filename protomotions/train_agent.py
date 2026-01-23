@@ -731,11 +731,27 @@ def main():
     from protomotions.utils.fabric_config import FabricConfig
     from lightning.fabric import Fabric
 
+    # Check if we need SingleDeviceStrategy (for GPUs with NCCL compatibility issues)
+    # GPUs with compute capability >= 12.0 (e.g., GB10) may have NCCL issues
+    strategy = None
+    if args.ngpu == 1 and args.nodes == 1:
+        try:
+            import torch
+            if torch.cuda.is_available():
+                major, minor = torch.cuda.get_device_capability(0)
+                if major >= 12:  # Compute capability 12.x+ (Blackwell and newer)
+                    from lightning.fabric.strategies import SingleDeviceStrategy
+                    strategy = SingleDeviceStrategy(device="cuda:0")
+                    log.info(f"Detected compute capability {major}.{minor} - using SingleDeviceStrategy to avoid NCCL issues")
+        except Exception:
+            pass  # Fall back to default DDPStrategy
+
     fabric_config = FabricConfig(
         devices=args.ngpu,
         num_nodes=args.nodes,
         loggers=loggers,
         callbacks=callbacks,
+        **({"strategy": strategy} if strategy else {}),
     )
     fabric: Fabric = Fabric(**fabric_config.to_dict())
     fabric.launch()

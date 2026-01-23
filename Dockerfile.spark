@@ -1,0 +1,23 @@
+FROM isaac-sim-lab:spark
+
+# Replace broken bundled torchvision with working version (in same location to preserve torch with CUDA)
+RUN /isaac-sim/python.sh -m pip install torchvision==0.22.0 \
+    --target /isaac-sim/exts/omni.isaac.ml_archive/pip_prebundle \
+    --upgrade --no-deps --force-reinstall
+
+# Install lightning ecosystem without touching torch
+RUN /isaac-sim/python.sh -m pip install lightning-utilities --no-deps
+RUN /isaac-sim/python.sh -m pip install pytorch-lightning --no-deps
+RUN /isaac-sim/python.sh -m pip install lightning --no-deps
+RUN /isaac-sim/python.sh -m pip install "torchmetrics==1.0.0" --no-deps
+RUN /isaac-sim/python.sh -m pip install "packaging<25.0" fsspec tqdm
+
+# Install remaining dependencies
+RUN /isaac-sim/python.sh -m pip install mujoco dm_env
+RUN /isaac-sim/python.sh -m pip install dm_control --no-deps
+RUN /isaac-sim/python.sh -m pip install tensordict==0.9.0 --no-deps
+RUN /isaac-sim/python.sh -m pip install rich typer "hydra-core==1.3.2" easydict "wandb==0.15.12" \
+    trimesh "rtree==1.2.0" termcolor "pydantic==1.10.9" transformers matplotlib scikit-image moviepy pandas
+
+# The actual ProtoMotions code will be mounted at runtime via -v
+WORKDIR /workspace
