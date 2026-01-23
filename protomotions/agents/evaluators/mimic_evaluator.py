@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+import re
 import torch
 import numpy as np
 from typing import Dict, Optional, Tuple, Any
@@ -453,12 +454,37 @@ class MimicEvaluator(BaseEvaluator):
                 # Print motion info only when it changes
                 motion_id = self.motion_manager.motion_ids[0].item()
                 if motion_id != last_printed_motion_id:
+                    motion_desc = None
                     if hasattr(self.motion_lib, 'motion_files') and len(self.motion_lib.motion_files) > motion_id:
-                        motion_name = self.motion_lib.motion_files[motion_id].split('/')[-1]
+                        motion_path = self.motion_lib.motion_files[motion_id]
+                        motion_file = motion_path.split('/')[-1]
+                        
+                        # Check if this is a HumanML3D motion (from humanml folder)
+                        if '/humanml/' in motion_path:
+                            # Extract 6-digit ID: "000123_chunk_0000.motion" -> "000123"
+                            humanml_match = re.match(r'^(\d{6})_chunk_\d+\.motion$', motion_file)
+                            if humanml_match:
+                                humanml_id = humanml_match.group(1)
+                                humanml_text_path = f"/home/bizon/sparkpack/HumanML3D/HumanML3D/texts/{humanml_id}.txt"
+                                try:
+                                    with open(humanml_text_path, 'r') as f:
+                                        # First line: "description#POS_tags#start#end"
+                                        first_line = f.readline().strip()
+                                        motion_desc = first_line.split('#')[0]
+                                except (FileNotFoundError, IOError):
+                                    pass
+                        
+                        # Fallback: parse filename into readable description
+                        if motion_desc is None:
+                            # e.g. "Kung_Fu_Wushu_Butterfly_Kick_clip2_chunk_0000.motion" -> "Kung Fu Wushu Butterfly Kick"
+                            motion_desc = re.sub(r'\.motion$', '', motion_file)  # Remove extension
+                            motion_desc = re.sub(r'_clip_?\d+_chunk_\d+$', '', motion_desc)  # Remove clip/chunk suffix
+                            motion_desc = re.sub(r'_chunk_\d+$', '', motion_desc)  # Remove plain chunk suffix
+                            motion_desc = motion_desc.replace('_', ' ')  # Underscores to spaces
                     else:
-                        motion_name = f"motion_{motion_id}"
+                        motion_desc = f"motion_{motion_id}"
                     motion_length = self.motion_lib.motion_lengths[motion_id].item()
-                    print(f"Playing: {motion_name} (id={motion_id}, length={motion_length:.2f}s)")
+                    print(f"Playing: {motion_desc} (id={motion_id}, length={motion_length:.2f}s)")
                     last_printed_motion_id = motion_id
                     
                 obs = self.agent.add_agent_info_to_obs(obs)

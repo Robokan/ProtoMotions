@@ -792,11 +792,11 @@ class IsaacLabSimulator(Simulator):
         Get the index of the currently tracked robot (for keyboard camera control).
         
         Returns:
-            int: Index of the tracked robot, or 0 if keyboard camera is not enabled.
+            int: Index of the tracked robot, or 0 if camera not yet initialized.
         """
         if hasattr(self, '_keyboard_camera_tracker'):
             return self._keyboard_camera_tracker.robot_index
-        return self._camera_target.get("env", 0)
+        return 0
 
     def _requested_reset(self):
         """Handle R key press - request a reset."""
@@ -838,32 +838,18 @@ class IsaacLabSimulator(Simulator):
             RGB numpy array if mode is "rgb_array", None otherwise
         """
         if not self.headless:
-            # Initialize camera system (keyboard tracker or default)
-            if not hasattr(self, "_camera_initialized"):
-                self._camera_initialized = True
-                
-                if self.config.enable_keyboard_camera:
-                    # Use keyboard camera tracker for interactive control
-                    from protomotions.simulator.isaaclab.utils.keyboard_camera_tracker import (
-                        KeyboardCameraTracker,
-                    )
-                    self._keyboard_camera_tracker = KeyboardCameraTracker(
-                        simulator=self,
-                        num_envs=self.num_envs,
-                    )
-                else:
-                    # Use default perspective viewer
-                    from protomotions.simulator.isaaclab.utils.perspective_viewer import (
-                        PerspectiveViewer,
-                    )
-                    self._perspective_view = PerspectiveViewer()
-                    self._init_camera()
+            # Initialize keyboard camera tracker for interactive control
+            if not hasattr(self, "_keyboard_camera_tracker"):
+                from protomotions.simulator.isaaclab.utils.keyboard_camera_tracker import (
+                    KeyboardCameraTracker,
+                )
+                self._keyboard_camera_tracker = KeyboardCameraTracker(
+                    simulator=self,
+                    num_envs=self.num_envs,
+                )
             else:
                 # Update camera each frame
-                if self.config.enable_keyboard_camera:
-                    self._keyboard_camera_tracker.step()
-                else:
-                    self._update_camera()
+                self._keyboard_camera_tracker.step()
         super().render()
         
         if mode == "rgb_array":

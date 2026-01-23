@@ -217,11 +217,12 @@ class Mimic(BaseEnv):
                 body_markers.append(MarkerConfig(size="small"))
             else:
                 body_markers.append(MarkerConfig(size="regular"))
-            # Red markers: in maskedmimic used for time to target <= 0.1 seconds
-            body_markers_red_cfg = VisualizationMarkerConfig(
-                type="sphere", color=(1.0, 0.0, 0.0), markers=body_markers
-            )
-            visualization_markers["body_markers_red"] = body_markers_red_cfg
+
+        # Red markers: in maskedmimic used for time to target <= 0.1 seconds
+        body_markers_red_cfg = VisualizationMarkerConfig(
+            type="sphere", color=(1.0, 0.0, 0.0), markers=body_markers
+        )
+        visualization_markers["body_markers_red"] = body_markers_red_cfg
 
         # For masked mimic, create two additional separate marker groups for different time ranges
         if self.config.masked_mimic_obs.enabled:
@@ -259,11 +260,23 @@ class Mimic(BaseEnv):
             env_indices = torch.arange(self.num_envs, device=self.device)
             
             if self.inference_mode:
-                # In inference mode, show markers at current time + small offset
-                # This gives smooth marker movement for demos
+                # In inference mode, show markers at next target update time
+                # Color changes based on time until next target (blue > 1s, yellow 0.1-1s, red < 0.1s)
                 motion_lengths = self.motion_lib.motion_lengths[self.motion_manager.motion_ids]
-                target_motion_times = torch.clamp(current_motion_times + 0.1, max=motion_lengths - 0.01)
-                time_to_target = torch.full_like(current_motion_times, 0.1)
+                
+                # Calculate time to next target based on update interval
+                update_interval = getattr(self, 'inference_target_update_interval', 10)
+                steps_since_update = self.progress_buf % update_interval
+                steps_to_next_update = update_interval - steps_since_update
+                time_to_next_update = steps_to_next_update.float() * self.dt
+                
+                # Target is at current time + time to next update
+                target_motion_times = torch.clamp(
+                    current_motion_times + time_to_next_update, 
+                    max=motion_lengths - 0.01
+                )
+                time_to_target = time_to_next_update
+                
                 # Use first time step for body masks (all bodies visible with fixed conditioning)
                 first_valid_indices = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
             else:
