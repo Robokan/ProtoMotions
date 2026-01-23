@@ -389,10 +389,14 @@ def main():
             scene_lib_config,
         )
 
-    # Create fabric config for inference (simplified)
+    # Create fabric config for inference (simplified, using SingleDeviceStrategy to avoid NCCL issues)
+    # SingleDeviceStrategy works on all GPUs and avoids distributed training overhead for inference
+    from lightning.fabric.strategies import SingleDeviceStrategy
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
     fabric_config = FabricConfig(
         devices=1,
         num_nodes=1,
+        strategy=SingleDeviceStrategy(device=device),
         loggers=[],  # No loggers needed for inference
         callbacks=[],  # No callbacks needed for inference
     )
