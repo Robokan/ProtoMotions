@@ -13,3 +13,21 @@ output/
 
 data/*
 *.hdf5
+
+protomotions/data/assets/mesh/adam/*
+protomotions/data/assets/mesh/adam_lite/*
+
+protomotions/data/assets/urdf/for_retargeting/adam*
+protomotions/data/assets/urdf/for_retargeting/adam_lite*
+
+protomotions/data/assets/mjcf/adam*
+protomotions/data/assets/mjcf/adam_lite*
+
+protomotions/data/assets/motion/adam*
+protomotions/data/assets/motion/adam_lite*
+
+protomotions/data/assets/motion/adam*
+protomotions/data/assets/motion/adam_lite*
+
+protomotions/data/assets/usd/adam*
+protomotions/data/assets/usd/adam_lite*
