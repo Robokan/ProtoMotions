@@ -51,3 +51,8 @@ class IsaacLabSimulatorConfig(SimulatorConfig):
     _target_: str = "protomotions.simulator.isaaclab.simulator.IsaacLabSimulator"
     w_last: bool = False
     sim: IsaacLabSimParams = field(default_factory=IsaacLabSimParams)
+    
+    # Enable keyboard camera tracker for interactive camera control
+    # Controls: TAB/= next robot, - prev robot, T tracking, F following,
+    #           LEFT/RIGHT rotate, PAGE_UP/DOWN distance, UP/DOWN height
+    enable_keyboard_camera: bool = False

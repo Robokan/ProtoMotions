@@ -787,6 +787,17 @@ class IsaacLabSimulator(Simulator):
     # Group 5: Control & Computation Methods
     # =====================================================
 
+    def get_tracked_robot_index(self) -> int:
+        """
+        Get the index of the currently tracked robot (for keyboard camera control).
+        
+        Returns:
+            int: Index of the tracked robot, or 0 if keyboard camera is not enabled.
+        """
+        if hasattr(self, '_keyboard_camera_tracker'):
+            return self._keyboard_camera_tracker.robot_index
+        return self._camera_target.get("env", 0)
+
     def _requested_reset(self):
         """Handle R key press - request a reset."""
         # Use parent class attribute that env.step() checks
@@ -827,15 +838,32 @@ class IsaacLabSimulator(Simulator):
             RGB numpy array if mode is "rgb_array", None otherwise
         """
         if not self.headless:
-            if not hasattr(self, "_perspective_view"):
-                from protomotions.simulator.isaaclab.utils.perspective_viewer import (
-                    PerspectiveViewer,
-                )
-
-                self._perspective_view = PerspectiveViewer()
-                self._init_camera()
+            # Initialize camera system (keyboard tracker or default)
+            if not hasattr(self, "_camera_initialized"):
+                self._camera_initialized = True
+                
+                if self.config.enable_keyboard_camera:
+                    # Use keyboard camera tracker for interactive control
+                    from protomotions.simulator.isaaclab.utils.keyboard_camera_tracker import (
+                        KeyboardCameraTracker,
+                    )
+                    self._keyboard_camera_tracker = KeyboardCameraTracker(
+                        simulator=self,
+                        num_envs=self.num_envs,
+                    )
+                else:
+                    # Use default perspective viewer
+                    from protomotions.simulator.isaaclab.utils.perspective_viewer import (
+                        PerspectiveViewer,
+                    )
+                    self._perspective_view = PerspectiveViewer()
+                    self._init_camera()
             else:
-                self._update_camera()
+                # Update camera each frame
+                if self.config.enable_keyboard_camera:
+                    self._keyboard_camera_tracker.step()
+                else:
+                    self._update_camera()
         super().render()
         
         if mode == "rgb_array":
@@ -965,6 +993,9 @@ class IsaacLabSimulator(Simulator):
         """
         Close the simulation application and perform cleanup.
         """
+        # Clean up keyboard camera tracker if used
+        if hasattr(self, '_keyboard_camera_tracker'):
+            self._keyboard_camera_tracker.cleanup()
         super().close()
         self._simulation_app.close()
 
