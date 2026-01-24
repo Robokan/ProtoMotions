@@ -104,16 +104,23 @@ class MaskedMimicObs:
         self.envs_requiring_reset = None
 
         self._initialized = False
+        
+        # Step counter for sequential mode (tracks when last target update happened)
+        self._step_counter = 0
+        self._last_update_step = torch.zeros(
+            self.env.num_envs, dtype=torch.long, device=self.env.device
+        )
 
-    def _shift_and_sample_time_steps(self, env_ids):
+    def _shift_and_sample_time_steps(self, env_ids, is_reset=False):
         """Shift target time steps forward and sample a new future time step.
 
-        Samples new time steps using a beta distribution to determine the offset from
-        the last conditioned time. The new time is added to the end after shifting
-        existing times forward.
+        In normal mode: Samples new time steps using a beta distribution.
+        In sequential mode (inference_sequential_targets=True): Steps through motion
+        at a fixed rate determined by inference_target_hz.
 
         Args:
             env_ids: Tensor of environment indices to update
+            is_reset: Whether this is being called during reset (to space out initial targets)
         """
         num_envs = len(env_ids)
 
@@ -123,17 +130,31 @@ class MaskedMimicObs:
 
         # Get last conditioned time for each environment
         last_conditioned_times = torch.max(self.target_times[env_ids], dim=1)[0]
-        remaining_times = motion_lengths - last_conditioned_times
+        
+        # Check if using sequential mode (step through motion at fixed rate)
+        if getattr(self.env, 'inference_sequential_targets', False):
+            lookahead = getattr(self.env, 'inference_target_lookahead', 1.0)
+            if is_reset:
+                # Reset: space out initial targets evenly
+                target_hz = getattr(self.env, 'inference_target_hz', 1.0)
+                step_size = 1.0 / target_hz  # Space targets by update interval
+                absolute_times = last_conditioned_times + step_size
+            else:
+                # Runtime: new target tracks current playback position + lookahead
+                absolute_times = current_times + lookahead
+        else:
+            # Normal mode: sample from beta distribution
+            remaining_times = motion_lengths - last_conditioned_times
 
-        # Sample beta values for all environments at once
-        beta_dist = torch.distributions.Beta(
-            self.time_sampling_config.alpha, self.time_sampling_config.beta
-        )
-        beta_samples = beta_dist.sample((num_envs,)).to(self.env.device)
+            # Sample beta values for all environments at once
+            beta_dist = torch.distributions.Beta(
+                self.time_sampling_config.alpha, self.time_sampling_config.beta
+            )
+            beta_samples = beta_dist.sample((num_envs,)).to(self.env.device)
 
-        # Calculate new times
-        time_offsets = beta_samples * remaining_times
-        absolute_times = last_conditioned_times + time_offsets
+            # Calculate new times
+            time_offsets = beta_samples * remaining_times
+            absolute_times = last_conditioned_times + time_offsets
 
         # Clip absolute times to be within valid bounds
         min_times = current_times + self.env.dt
@@ -414,9 +435,12 @@ class MaskedMimicObs:
             # Initialize time steps from current time
             self.target_times[self.envs_requiring_reset] = new_times.unsqueeze(-1)
 
+            # Reset step counter for sequential mode
+            self._last_update_step[self.envs_requiring_reset] = self._step_counter
+
             # Sample all future steps
             for _ in range(self.target_pose_config.num_future_steps):
-                self._shift_and_sample_time_steps(self.envs_requiring_reset)
+                self._shift_and_sample_time_steps(self.envs_requiring_reset, is_reset=True)
                 self._shift_and_sample_body_masks(self.envs_requiring_reset)
 
             self.envs_requiring_reset = None
@@ -493,18 +517,41 @@ class MaskedMimicObs:
     def post_physics_step(self):
         """Update masks and target times after each physics simulation step.
 
-        Identifies environments where the current time has passed the first target
-        time and triggers resampling of time steps and body masks for those environments.
+        In normal mode: Identifies environments where the current time has passed
+        the first target time and triggers resampling.
+        In sequential mode: Updates targets at a fixed rate (every N steps based on Hz).
         """
-        current_time = self.env.motion_manager.motion_times
-        resample_env_ids = []
+        self._step_counter += 1
+        
+        # Check if using sequential mode (fixed rate target updates)
+        sequential_mode = getattr(self.env, 'inference_sequential_targets', False)
+        
+        if sequential_mode:
+            # Sequential mode: update at fixed Hz rate
+            target_hz = getattr(self.env, 'inference_target_hz', 1.0)
+            # Calculate steps between updates
+            steps_per_update = int(1.0 / (target_hz * self.env.dt))
+            steps_per_update = max(1, steps_per_update)  # At least 1 step
+            
+            # Check which envs need update based on step count
+            steps_since_update = self._step_counter - self._last_update_step
+            needs_update = steps_since_update >= steps_per_update
+            resample_env_ids = torch.nonzero(needs_update).squeeze(-1)
+            
+            if len(resample_env_ids) > 0:
+                self._last_update_step[resample_env_ids] = self._step_counter
+                self._shift_and_sample_time_steps(resample_env_ids)
+                self._shift_and_sample_body_masks(resample_env_ids)
+        else:
+            # Normal mode: update when motion time passes target time
+            current_time = self.env.motion_manager.motion_times
 
-        outdated_target_times = current_time >= self.target_times[:, 0]
-        resample_env_ids = torch.nonzero(outdated_target_times).squeeze(-1)
+            outdated_target_times = current_time >= self.target_times[:, 0]
+            resample_env_ids = torch.nonzero(outdated_target_times).squeeze(-1)
 
-        if len(resample_env_ids) > 0:
-            self._shift_and_sample_time_steps(resample_env_ids)
-            self._shift_and_sample_body_masks(resample_env_ids)
+            if len(resample_env_ids) > 0:
+                self._shift_and_sample_time_steps(resample_env_ids)
+                self._shift_and_sample_body_masks(resample_env_ids)
 
     def _shift_and_sample_body_masks(self, env_ids: torch.Tensor):
         """Shift body masks forward and sample new masks for the last time step.
