@@ -183,6 +183,10 @@ class BaseEnv:
         # Simulates lower-frequency command updates like GR00T at 5-10 Hz
         self.inference_target_update_interval = 1
         self._inference_step_counter = 0
+        
+        # Sequential target mode - step through motion at fixed rate instead of random sampling
+        self.inference_sequential_targets = False
+        self.inference_target_hz = 1.0  # Default 1 Hz = 1 target per second
 
         # Cache terrain height correction flag (optimization for flat terrain)
         self.skip_height_correction = (

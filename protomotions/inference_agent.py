@@ -148,6 +148,24 @@ def create_parser():
         help="How often to update motion targets (1=every step, 5=every 5 steps). Higher values simulate lower-frequency command updates like GR00T at 5-10 Hz.",
     )
     parser.add_argument(
+        "--sequential-targets",
+        action="store_true",
+        default=False,
+        help="Step through motion sequentially instead of random sampling. Use with --target-hz to set rate.",
+    )
+    parser.add_argument(
+        "--target-hz",
+        type=float,
+        default=5.0,
+        help="Target update rate in Hz when using --sequential-targets (default: 5.0 Hz)",
+    )
+    parser.add_argument(
+        "--target-lookahead",
+        type=float,
+        default=1.0,
+        help="How far ahead in motion (seconds) to place targets (default: 1.0s). Independent of update rate.",
+    )
+    parser.add_argument(
         "--scene-usd",
         type=str,
         default=None,
@@ -457,13 +475,20 @@ def main():
     
     # Set target update interval (simulates lower-frequency commands like GR00T)
     env.inference_target_update_interval = args.target_update_interval
+    
+    # Set sequential target mode (step through motion at fixed rate instead of random sampling)
+    env.inference_sequential_targets = args.sequential_targets
+    env.inference_target_hz = args.target_hz
+    env.inference_target_lookahead = args.target_lookahead
+    if args.sequential_targets:
+        print(f"Sequential targets enabled: {args.target_hz} Hz update rate, {args.target_lookahead}s lookahead")
 
     # Store scene args for loading after reset (need robot position)
     _scene_usd = args.scene_usd if args.simulator == "isaaclab" else None
     _scene_offset = [float(x) for x in args.scene_offset.split()] if args.scene_offset else [0, 0, 0]
     if len(_scene_offset) != 3:
         _scene_offset = [0.0, 0.0, 0.0]
-    if args.target_update_interval > 1:
+    if args.target_update_interval > 1 and not args.sequential_targets:
         print(f"Target update interval: every {args.target_update_interval} steps (simulating ~{50//args.target_update_interval} Hz commands)")
 
     # Determine root_dir for agent based on checkpoint path
