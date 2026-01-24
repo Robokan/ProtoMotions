@@ -1,0 +1,1601 @@
+robot:
+  asset:
+    asset_root: protomotions/data/assets
+    self_collisions: true
+    asset_file_name: mjcf/g1_bm_box_feet.xml
+    usd_asset_file_name: usd/g1_bm_box_feet/g1_bm_box_feet.usda
+    usd_bodies_root_prim_path: /World/envs/env_.*/Robot/pelvis/
+    replace_cylinder_with_capsule: true
+    thickness: 0.01
+    max_angular_velocity: 1000.0
+    max_linear_velocity: 1000.0
+    density: 0.001
+    angular_damping: 0.0
+    linear_damping: 0.0
+    disable_gravity: null
+    fix_base_link: null
+  common_naming_to_robot_body_names:
+    all_left_foot_bodies:
+    - left_ankle_roll_link
+    all_right_foot_bodies:
+    - right_ankle_roll_link
+    all_left_hand_bodies:
+    - left_rubber_hand
+    all_right_hand_bodies:
+    - right_rubber_hand
+    head_body_name:
+    - head
+    torso_body_name:
+    - torso_link
+  default_root_height: 0.8
+  default_dof_pos:
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  contact_bodies: null
+  trackable_bodies_subset:
+  - torso_link
+  - head
+  - right_ankle_roll_link
+  - left_ankle_roll_link
+  - left_rubber_hand
+  - right_rubber_hand
+  non_termination_contact_bodies: all
+  init_state: null
+  mimic_small_marker_bodies: null
+  contact_pairs_multiplier: 16
+  control:
+    override_control_info:
+      .*_hip_(pitch|yaw)_joint:
+        stiffness: 40.17923847137318
+        damping: 2.5578897650279457
+        armature: 0.01017752
+        friction: null
+        effort_limit: 88
+        velocity_limit: 32
+      .*_hip_roll_joint:
+        stiffness: 99.09842777666113
+        damping: 6.3088018534966395
+        armature: 0.025101925
+        friction: null
+        effort_limit: 139
+        velocity_limit: 20
+      .*_knee_joint:
+        stiffness: 99.09842777666113
+        damping: 6.3088018534966395
+        armature: 0.025101925
+        friction: null
+        effort_limit: 139
+        velocity_limit: 20
+      .*_ankle_.*:
+        stiffness: 28.50124619574858
+        damping: 1.814445686584846
+        armature: 0.00721945
+        friction: null
+        effort_limit: 50
+        velocity_limit: 37
+      waist_yaw_joint:
+        stiffness: 40.17923847137318
+        damping: 2.5578897650279457
+        armature: 0.01017752
+        friction: null
+        effort_limit: 88
+        velocity_limit: 32
+      waist_(roll|pitch)_joint:
+        stiffness: 28.50124619574858
+        damping: 1.814445686584846
+        armature: 0.00721945
+        friction: null
+        effort_limit: 50
+        velocity_limit: 37
+      .*_(shoulder|elbow)_.*:
+        stiffness: 14.25062309787429
+        damping: 0.907222843292423
+        armature: 0.003609725
+        friction: null
+        effort_limit: 25
+        velocity_limit: 37
+      .*_wrist_roll_joint:
+        stiffness: 14.25062309787429
+        damping: 0.907222843292423
+        armature: 0.003609725
+        friction: null
+        effort_limit: 25
+        velocity_limit: 37
+      .*_wrist_pitch_joint:
+        stiffness: 16.77832748089279
+        damping: 1.06814150219
+        armature: 0.00425
+        friction: null
+        effort_limit: 5
+        velocity_limit: 22
+      .*_wrist_yaw_joint:
+        stiffness: 16.77832748089279
+        damping: 1.06814150219
+        armature: 0.00425
+        friction: null
+        effort_limit: 5
+        velocity_limit: 22
+    control_type: built_in_pd
+    action_scale: 1.0
+    clamp_actions: 1.0
+    soft_pos_limit: 0.9
+    control_info:
+      left_hip_pitch_joint:
+        stiffness: 40.17923847137318
+        damping: 2.5578897650279457
+        armature: 0.01017752
+        friction: 0.03
+        effort_limit: 88
+        velocity_limit: 32
+      left_hip_roll_joint:
+        stiffness: 99.09842777666113
+        damping: 6.3088018534966395
+        armature: 0.025101925
+        friction: 0.03
+        effort_limit: 139
+        velocity_limit: 20
+      left_hip_yaw_joint:
+        stiffness: 40.17923847137318
+        damping: 2.5578897650279457
+        armature: 0.01017752
+        friction: 0.03
+        effort_limit: 88
+        velocity_limit: 32
+      left_knee_joint:
+        stiffness: 99.09842777666113
+        damping: 6.3088018534966395
+        armature: 0.025101925
+        friction: 0.03
+        effort_limit: 139
+        velocity_limit: 20
+      left_ankle_pitch_joint:
+        stiffness: 28.50124619574858
+        damping: 1.814445686584846
+        armature: 0.00721945
+        friction: 0.03
+        effort_limit: 50
+        velocity_limit: 37
+      left_ankle_roll_joint:
+        stiffness: 28.50124619574858
+        damping: 1.814445686584846
+        armature: 0.00721945
+        friction: 0.03
+        effort_limit: 50
+        velocity_limit: 37
+      right_hip_pitch_joint:
+        stiffness: 40.17923847137318
+        damping: 2.5578897650279457
+        armature: 0.01017752
+        friction: 0.03
+        effort_limit: 88
+        velocity_limit: 32
+      right_hip_roll_joint:
+        stiffness: 99.09842777666113
+        damping: 6.3088018534966395
+        armature: 0.025101925
+        friction: 0.03
+        effort_limit: 139
+        velocity_limit: 20
+      right_hip_yaw_joint:
+        stiffness: 40.17923847137318
+        damping: 2.5578897650279457
+        armature: 0.01017752
+        friction: 0.03
+        effort_limit: 88
+        velocity_limit: 32
+      right_knee_joint:
+        stiffness: 99.09842777666113
+        damping: 6.3088018534966395
+        armature: 0.025101925
+        friction: 0.03
+        effort_limit: 139
+        velocity_limit: 20
+      right_ankle_pitch_joint:
+        stiffness: 28.50124619574858
+        damping: 1.814445686584846
+        armature: 0.00721945
+        friction: 0.03
+        effort_limit: 50
+        velocity_limit: 37
+      right_ankle_roll_joint:
+        stiffness: 28.50124619574858
+        damping: 1.814445686584846
+        armature: 0.00721945
+        friction: 0.03
+        effort_limit: 50
+        velocity_limit: 37
+      waist_yaw_joint:
+        stiffness: 40.17923847137318
+        damping: 2.5578897650279457
+        armature: 0.01017752
+        friction: 0.03
+        effort_limit: 88
+        velocity_limit: 32
+      waist_roll_joint:
+        stiffness: 28.50124619574858
+        damping: 1.814445686584846
+        armature: 0.00721945
+        friction: 0.03
+        effort_limit: 50
+        velocity_limit: 37
+      waist_pitch_joint:
+        stiffness: 28.50124619574858
+        damping: 1.814445686584846
+        armature: 0.00721945
+        friction: 0.03
+        effort_limit: 50
+        velocity_limit: 37
+      left_shoulder_pitch_joint:
+        stiffness: 14.25062309787429
+        damping: 0.907222843292423
+        armature: 0.003609725
+        friction: 0.03
+        effort_limit: 25
+        velocity_limit: 37
+      left_shoulder_roll_joint:
+        stiffness: 14.25062309787429
+        damping: 0.907222843292423
+        armature: 0.003609725
+        friction: 0.03
+        effort_limit: 25
+        velocity_limit: 37
+      left_shoulder_yaw_joint:
+        stiffness: 14.25062309787429
+        damping: 0.907222843292423
+        armature: 0.003609725
+        friction: 0.03
+        effort_limit: 25
+        velocity_limit: 37
+      left_elbow_joint:
+        stiffness: 14.25062309787429
+        damping: 0.907222843292423
+        armature: 0.003609725
+        friction: 0.03
+        effort_limit: 25
+        velocity_limit: 37
+      left_wrist_roll_joint:
+        stiffness: 14.25062309787429
+        damping: 0.907222843292423
+        armature: 0.003609725
+        friction: 0.03
+        effort_limit: 25
+        velocity_limit: 37
+      left_wrist_pitch_joint:
+        stiffness: 16.77832748089279
+        damping: 1.06814150219
+        armature: 0.00425
+        friction: 0.03
+        effort_limit: 5
+        velocity_limit: 22
+      left_wrist_yaw_joint:
+        stiffness: 16.77832748089279
+        damping: 1.06814150219
+        armature: 0.00425
+        friction: 0.03
+        effort_limit: 5
+        velocity_limit: 22
+      right_shoulder_pitch_joint:
+        stiffness: 14.25062309787429
+        damping: 0.907222843292423
+        armature: 0.003609725
+        friction: 0.03
+        effort_limit: 25
+        velocity_limit: 37
+      right_shoulder_roll_joint:
+        stiffness: 14.25062309787429
+        damping: 0.907222843292423
+        armature: 0.003609725
+        friction: 0.03
+        effort_limit: 25
+        velocity_limit: 37
+      right_shoulder_yaw_joint:
+        stiffness: 14.25062309787429
+        damping: 0.907222843292423
+        armature: 0.003609725
+        friction: 0.03
+        effort_limit: 25
+        velocity_limit: 37
+      right_elbow_joint:
+        stiffness: 14.25062309787429
+        damping: 0.907222843292423
+        armature: 0.003609725
+        friction: 0.03
+        effort_limit: 25
+        velocity_limit: 37
+      right_wrist_roll_joint:
+        stiffness: 14.25062309787429
+        damping: 0.907222843292423
+        armature: 0.003609725
+        friction: 0.03
+        effort_limit: 25
+        velocity_limit: 37
+      right_wrist_pitch_joint:
+        stiffness: 16.77832748089279
+        damping: 1.06814150219
+        armature: 0.00425
+        friction: 0.03
+        effort_limit: 5
+        velocity_limit: 22
+      right_wrist_yaw_joint:
+        stiffness: 16.77832748089279
+        damping: 1.06814150219
+        armature: 0.00425
+        friction: 0.03
+        effort_limit: 5
+        velocity_limit: 22
+  kinematic_info:
+    body_names:
+    - pelvis
+    - head
+    - left_hip_pitch_link
+    - left_hip_roll_link
+    - left_hip_yaw_link
+    - left_knee_link
+    - left_ankle_pitch_link
+    - left_ankle_roll_link
+    - right_hip_pitch_link
+    - right_hip_roll_link
+    - right_hip_yaw_link
+    - right_knee_link
+    - right_ankle_pitch_link
+    - right_ankle_roll_link
+    - waist_yaw_link
+    - waist_roll_link
+    - torso_link
+    - left_shoulder_pitch_link
+    - left_shoulder_roll_link
+    - left_shoulder_yaw_link
+    - left_elbow_link
+    - left_wrist_roll_link
+    - left_wrist_pitch_link
+    - left_wrist_yaw_link
+    - left_rubber_hand
+    - right_shoulder_pitch_link
+    - right_shoulder_roll_link
+    - right_shoulder_yaw_link
+    - right_elbow_link
+    - right_wrist_roll_link
+    - right_wrist_pitch_link
+    - right_wrist_yaw_link
+    - right_rubber_hand
+    dof_names:
+    - left_hip_pitch_joint
+    - left_hip_roll_joint
+    - left_hip_yaw_joint
+    - left_knee_joint
+    - left_ankle_pitch_joint
+    - left_ankle_roll_joint
+    - right_hip_pitch_joint
+    - right_hip_roll_joint
+    - right_hip_yaw_joint
+    - right_knee_joint
+    - right_ankle_pitch_joint
+    - right_ankle_roll_joint
+    - waist_yaw_joint
+    - waist_roll_joint
+    - waist_pitch_joint
+    - left_shoulder_pitch_joint
+    - left_shoulder_roll_joint
+    - left_shoulder_yaw_joint
+    - left_elbow_joint
+    - left_wrist_roll_joint
+    - left_wrist_pitch_joint
+    - left_wrist_yaw_joint
+    - right_shoulder_pitch_joint
+    - right_shoulder_roll_joint
+    - right_shoulder_yaw_joint
+    - right_elbow_joint
+    - right_wrist_roll_joint
+    - right_wrist_pitch_joint
+    - right_wrist_yaw_joint
+    parent_indices:
+    - -1
+    - 0
+    - 0
+    - 2
+    - 3
+    - 4
+    - 5
+    - 6
+    - 0
+    - 8
+    - 9
+    - 10
+    - 11
+    - 12
+    - 0
+    - 14
+    - 15
+    - 16
+    - 17
+    - 18
+    - 19
+    - 20
+    - 21
+    - 22
+    - 23
+    - 16
+    - 25
+    - 26
+    - 27
+    - 28
+    - 29
+    - 30
+    - 31
+    local_pos:
+    - - 0.0
+      - 0.0
+      - 0.7929999828338623
+    - - 0.0
+      - 0.0
+      - 0.4000000059604645
+    - - 0.0
+      - 0.06445199996232986
+      - -0.10270000249147415
+    - - 0.0
+      - 0.052000001072883606
+      - -0.03046499937772751
+    - - 0.025001000612974167
+      - 0.0
+      - -0.12411999702453613
+    - - -0.0782729983329773
+      - 0.0021488999482244253
+      - -0.17734000086784363
+    - - 0.0
+      - -9.444500028621405e-05
+      - -0.30000999569892883
+    - - 0.0
+      - 0.0
+      - -0.01755799911916256
+    - - 0.0
+      - -0.06445199996232986
+      - -0.10270000249147415
+    - - 0.0
+      - -0.052000001072883606
+      - -0.03046499937772751
+    - - 0.025001000612974167
+      - 0.0
+      - -0.12411999702453613
+    - - -0.0782729983329773
+      - -0.0021488999482244253
+      - -0.17734000086784363
+    - - 0.0
+      - 9.444500028621405e-05
+      - -0.30000999569892883
+    - - 0.0
+      - 0.0
+      - -0.01755799911916256
+    - - 0.0
+      - 0.0
+      - 0.0
+    - - -0.003963499795645475
+      - 0.0
+      - 0.04399999976158142
+    - - 0.0
+      - 0.0
+      - 0.0
+    - - 0.00395630020648241
+      - 0.10022000223398209
+      - 0.2477799952030182
+    - - 0.0
+      - 0.03799999877810478
+      - -0.013830999843776226
+    - - 0.0
+      - 0.006240000016987324
+      - -0.10320000350475311
+    - - 0.015783000737428665
+      - 0.0
+      - -0.08051799982786179
+    - - 0.10000000149011612
+      - 0.001887909951619804
+      - -0.009999999776482582
+    - - 0.03799999877810478
+      - 0.0
+      - 0.0
+    - - 0.04600000008940697
+      - 0.0
+      - 0.0
+    - - 0.11999999731779099
+      - 0.0
+      - 0.0
+    - - 0.00395630020648241
+      - -0.10021000355482101
+      - 0.2477799952030182
+    - - 0.0
+      - -0.03799999877810478
+      - -0.013830999843776226
+    - - 0.0
+      - -0.006240000016987324
+      - -0.10320000350475311
+    - - 0.015783000737428665
+      - 0.0
+      - -0.08051799982786179
+    - - 0.10000000149011612
+      - -0.001887909951619804
+      - -0.009999999776482582
+    - - 0.03799999877810478
+      - 0.0
+      - 0.0
+    - - 0.04600000008940697
+      - 0.0
+      - 0.0
+    - - 0.11999999731779099
+      - 0.0
+      - 0.0
+    local_rot_ref_mat:
+    - - - 1.0
+        - 0.0
+        - 0.0
+      - - 0.0
+        - 1.0
+        - 0.0
+      - - 0.0
+        - 0.0
+        - 1.0
+    - - - 1.0
+        - 0.0
+        - 0.0
+      - - 0.0
+        - 1.0
+        - 0.0
+      - - 0.0
+        - 0.0
+        - 1.0
+    - - - 1.0
+        - 0.0
+        - 0.0
+      - - 0.0
+        - 1.0
+        - 0.0
+      - - 0.0
+        - 0.0
+        - 1.0
+    - - - 0.9847439527511597
+        - -0.0
+        - -0.17400965094566345
+      - - 0.0
+        - 1.0
+        - -0.0
+      - - 0.17400965094566345
+        - 0.0
+        - 0.9847439527511597
+    - - - 1.0
+        - 0.0
+        - 0.0
+      - - 0.0
+        - 1.0
+        - 0.0
+      - - 0.0
+        - 0.0
+        - 1.0
+    - - - 0.9847439527511597
+        - 0.0
+        - 0.17400965094566345
+      - - 0.0
+        - 1.0
+        - 0.0
+      - - -0.17400965094566345
+        - 0.0
+        - 0.9847439527511597
+    - - - 1.0
+        - 0.0
+        - 0.0
+      - - 0.0
+        - 1.0
+        - 0.0
+      - - 0.0
+        - 0.0
+        - 1.0
+    - - - 1.0
+        - 0.0
+        - 0.0
+      - - 0.0
+        - 1.0
+        - 0.0
+      - - 0.0
+        - 0.0
+        - 1.0
+    - - - 1.0
+        - 0.0
+        - 0.0
+      - - 0.0
+        - 1.0
+        - 0.0
+      - - 0.0
+        - 0.0
+        - 1.0
+    - - - 0.9847439527511597
+        - -0.0
+        - -0.17400965094566345
+      - - 0.0
+        - 1.0
+        - -0.0
+      - - 0.17400965094566345
+        - 0.0
+        - 0.9847439527511597
+    - - - 1.0
+        - 0.0
+        - 0.0
+      - - 0.0
+        - 1.0
+        - 0.0
+      - - 0.0
+        - 0.0
+        - 1.0
+    - - - 0.9847439527511597
+        - 0.0
+        - 0.17400965094566345
+      - - 0.0
+        - 1.0
+        - 0.0
+      - - -0.17400965094566345
+        - 0.0
+        - 0.9847439527511597
+    - - - 1.0
+        - 0.0
+        - 0.0
+      - - 0.0
+        - 1.0
+        - 0.0
+      - - 0.0
+        - 0.0
+        - 1.0
+    - - - 1.0
+        - 0.0
+        - 0.0
+      - - 0.0
+        - 1.0
+        - 0.0
+      - - 0.0
+        - 0.0
+        - 1.0
+    - - - 1.0
+        - 0.0
+        - 0.0
+      - - 0.0
+        - 1.0
+        - 0.0
+      - - 0.0
+        - 0.0
+        - 1.0
+    - - - 1.0
+        - 0.0
+        - 0.0
+      - - 0.0
+        - 1.0
+        - 0.0
+      - - 0.0
+        - 0.0
+        - 1.0
+    - - - 1.0
+        - 0.0
+        - 0.0
+      - - 0.0
+        - 1.0
+        - 0.0
+      - - 0.0
+        - 0.0
+        - 1.0
+    - - - 1.0
+        - 0.0001993141049752012
+        - -3.237802248534649e-10
+      - - -0.00019159000657964498
+        - 0.961246132850647
+        - -0.27569156885147095
+      - - -5.494890137924813e-05
+        - 0.27569156885147095
+        - 0.961246132850647
+    - - - 1.0
+        - -0.0
+        - 0.0
+      - - 0.0
+        - 0.9612622857093811
+        - 0.2756352722644806
+      - - -0.0
+        - -0.2756352722644806
+        - 0.9612622857093811
+    - - - 1.0
+        - 0.0
+        - 0.0
+      - - 0.0
+        - 1.0
+        - 0.0
+      - - 0.0
+        - 0.0
+        - 1.0
+    - - - 1.0
+        - 0.0
+        - 0.0
+      - - 0.0
+        - 1.0
+        - 0.0
+      - - 0.0
+        - 0.0
+        - 1.0
+    - - - 1.0
+        - 0.0
+        - 0.0
+      - - 0.0
+        - 1.0
+        - 0.0
+      - - 0.0
+        - 0.0
+        - 1.0
+    - - - 1.0
+        - 0.0
+        - 0.0
+      - - 0.0
+        - 1.0
+        - 0.0
+      - - 0.0
+        - 0.0
+        - 1.0
+    - - - 1.0
+        - 0.0
+        - 0.0
+      - - 0.0
+        - 1.0
+        - 0.0
+      - - 0.0
+        - 0.0
+        - 1.0
+    - - - 1.0
+        - 0.0
+        - 0.0
+      - - 0.0
+        - 1.0
+        - 0.0
+      - - 0.0
+        - 0.0
+        - 1.0
+    - - - 1.0
+        - -0.0001993141049752012
+        - -3.237802248534649e-10
+      - - 0.00019159000657964498
+        - 0.961246132850647
+        - 0.27569156885147095
+      - - -5.494890137924813e-05
+        - -0.27569156885147095
+        - 0.961246132850647
+    - - - 1.0
+        - 0.0
+        - 0.0
+      - - 0.0
+        - 0.9612622857093811
+        - -0.2756352722644806
+      - - 0.0
+        - 0.2756352722644806
+        - 0.9612622857093811
+    - - - 1.0
+        - 0.0
+        - 0.0
+      - - 0.0
+        - 1.0
+        - 0.0
+      - - 0.0
+        - 0.0
+        - 1.0
+    - - - 1.0
+        - 0.0
+        - 0.0
+      - - 0.0
+        - 1.0
+        - 0.0
+      - - 0.0
+        - 0.0
+        - 1.0
+    - - - 1.0
+        - 0.0
+        - 0.0
+      - - 0.0
+        - 1.0
+        - 0.0
+      - - 0.0
+        - 0.0
+        - 1.0
+    - - - 1.0
+        - 0.0
+        - 0.0
+      - - 0.0
+        - 1.0
+        - 0.0
+      - - 0.0
+        - 0.0
+        - 1.0
+    - - - 1.0
+        - 0.0
+        - 0.0
+      - - 0.0
+        - 1.0
+        - 0.0
+      - - 0.0
+        - 0.0
+        - 1.0
+    - - - 1.0
+        - 0.0
+        - 0.0
+      - - 0.0
+        - 1.0
+        - 0.0
+      - - 0.0
+        - 0.0
+        - 1.0
+    hinge_axes_map:
+      2:
+      - - 0.0
+        - 1.0
+        - 0.0
+      3:
+      - - 1.0
+        - 0.0
+        - 0.0
+      4:
+      - - 0.0
+        - 0.0
+        - 1.0
+      5:
+      - - 0.0
+        - 1.0
+        - 0.0
+      6:
+      - - 0.0
+        - 1.0
+        - 0.0
+      7:
+      - - 1.0
+        - 0.0
+        - 0.0
+      8:
+      - - 0.0
+        - 1.0
+        - 0.0
+      9:
+      - - 1.0
+        - 0.0
+        - 0.0
+      10:
+      - - 0.0
+        - 0.0
+        - 1.0
+      11:
+      - - 0.0
+        - 1.0
+        - 0.0
+      12:
+      - - 0.0
+        - 1.0
+        - 0.0
+      13:
+      - - 1.0
+        - 0.0
+        - 0.0
+      14:
+      - - 0.0
+        - 0.0
+        - 1.0
+      15:
+      - - 1.0
+        - 0.0
+        - 0.0
+      16:
+      - - 0.0
+        - 1.0
+        - 0.0
+      17:
+      - - 0.0
+        - 1.0
+        - 0.0
+      18:
+      - - 1.0
+        - 0.0
+        - 0.0
+      19:
+      - - 0.0
+        - 0.0
+        - 1.0
+      20:
+      - - 0.0
+        - 1.0
+        - 0.0
+      21:
+      - - 1.0
+        - 0.0
+        - 0.0
+      22:
+      - - 0.0
+        - 1.0
+        - 0.0
+      23:
+      - - 0.0
+        - 0.0
+        - 1.0
+      25:
+      - - 0.0
+        - 1.0
+        - 0.0
+      26:
+      - - 1.0
+        - 0.0
+        - 0.0
+      27:
+      - - 0.0
+        - 0.0
+        - 1.0
+      28:
+      - - 0.0
+        - 1.0
+        - 0.0
+      29:
+      - - 1.0
+        - 0.0
+        - 0.0
+      30:
+      - - 0.0
+        - 1.0
+        - 0.0
+      31:
+      - - 0.0
+        - 0.0
+        - 1.0
+    nq: 36
+    nv: 35
+    num_bodies: 33
+    num_dofs: 29
+    dof_limits_lower:
+    - -2.5306999683380127
+    - -0.5235999822616577
+    - -2.7576000690460205
+    - -0.08726699650287628
+    - -0.8726699948310852
+    - -0.26179999113082886
+    - -2.5306999683380127
+    - -2.967099905014038
+    - -2.7576000690460205
+    - -0.08726699650287628
+    - -0.8726699948310852
+    - -0.26179999113082886
+    - -2.618000030517578
+    - -0.5199999809265137
+    - -0.5199999809265137
+    - -3.089200019836426
+    - -1.5881999731063843
+    - -2.618000030517578
+    - -1.0471999645233154
+    - -1.9722199440002441
+    - -1.6144299507141113
+    - -1.6144299507141113
+    - -3.089200019836426
+    - -2.251499891281128
+    - -2.618000030517578
+    - -1.0471999645233154
+    - -1.9722199440002441
+    - -1.6144299507141113
+    - -1.6144299507141113
+    dof_limits_upper:
+    - 2.8798000812530518
+    - 2.967099905014038
+    - 2.7576000690460205
+    - 2.8798000812530518
+    - 0.5235999822616577
+    - 0.26179999113082886
+    - 2.8798000812530518
+    - 0.5235999822616577
+    - 2.7576000690460205
+    - 2.8798000812530518
+    - 0.5235999822616577
+    - 0.26179999113082886
+    - 2.618000030517578
+    - 0.5199999809265137
+    - 0.5199999809265137
+    - 2.6703999042510986
+    - 2.251499891281128
+    - 2.618000030517578
+    - 2.094399929046631
+    - 1.9722199440002441
+    - 1.6144299507141113
+    - 1.6144299507141113
+    - 2.6703999042510986
+    - 1.5881999731063843
+    - 2.618000030517578
+    - 2.094399929046631
+    - 1.9722199440002441
+    - 1.6144299507141113
+    - 1.6144299507141113
+  number_of_actions: 29
+  simulation_params:
+    isaacgym:
+      fps: 100
+      decimation: 2
+      substeps: 2
+      physx:
+        num_threads: 4
+        solver_type: 1
+        num_position_iterations: 8
+        num_velocity_iterations: 4
+        contact_offset: 0.02
+        rest_offset: 0.0
+        bounce_threshold_velocity: 0.2
+        max_depenetration_velocity: 1
+        default_buffer_size_multiplier: 2.0
+      flex:
+        num_inner_iterations: 10
+        warm_start: 0.25
+    isaaclab:
+      fps: 200
+      decimation: 4
+      physx:
+        num_threads: 4
+        solver_type: 1
+        num_position_iterations: 8
+        num_velocity_iterations: 4
+        contact_offset: 0.02
+        rest_offset: 0.0
+        bounce_threshold_velocity: 0.2
+        max_depenetration_velocity: 1
+        default_buffer_size_multiplier: 2.0
+        gpu_found_lost_pairs_capacity: 2097152
+        gpu_max_rigid_contact_count: 8388608
+        gpu_found_lost_aggregate_pairs_capacity: 33554432
+    genesis:
+      fps: 100
+      decimation: 2
+      substeps: 2
+    newton:
+      fps: 200
+      decimation: 4
+simulator:
+  _target_: protomotions.simulator.isaaclab.simulator.IsaacLabSimulator
+  w_last: false
+  headless: true
+  num_envs: 2048
+  sim:
+    fps: 200
+    decimation: 4
+    physx:
+      num_threads: 4
+      solver_type: 1
+      num_position_iterations: 8
+      num_velocity_iterations: 4
+      contact_offset: 0.02
+      rest_offset: 0.0
+      bounce_threshold_velocity: 0.2
+      max_depenetration_velocity: 1
+      default_buffer_size_multiplier: 2.0
+      gpu_found_lost_pairs_capacity: 2097152
+      gpu_max_rigid_contact_count: 8388608
+      gpu_found_lost_aggregate_pairs_capacity: 33554432
+  experiment_name: masked_mimic_g1_phuma_terrain
+  camera: null
+  record_viewer: false
+  viewer_record_dir: output/recordings/viewer
+  domain_randomization: null
+terrain:
+  _target_: protomotions.components.terrains.terrain.Terrain
+  map_length: 20.0
+  map_width: 20.0
+  border_size: 40.0
+  num_levels: 7
+  num_terrains: 7
+  terrain_proportions:
+  - 0.2
+  - 0.1
+  - 0.1
+  - 0.1
+  - 0.05
+  - 0.0
+  - 0.0
+  - 0.45
+  slope_threshold: 0.9
+  num_samples_per_axis: 16
+  sample_width: 1.0
+  terrain_obs_num_samples: 256
+  horizontal_scale: 0.1
+  vertical_scale: 0.005
+  spacing_between_scenes: 10.0
+  minimal_humanoid_spacing: 0
+  terrain_path: null
+  load_terrain: false
+  save_terrain: false
+  sim_config:
+    static_friction: 2.0
+    dynamic_friction: 2.0
+    restitution: 0.0
+    height_offset: 0.0
+    combine_mode: max
+scene_lib:
+  _target_: protomotions.components.scene_lib.SceneLib
+  scene_file: null
+  subset_method: first
+  replicate_method: weighted
+  pointcloud_samples_per_object: null
+  num_objects_per_env: null
+motion_lib:
+  _target_: protomotions.components.motion_lib.MotionLib
+  motion_file: data/motions/g1_phuma_slurmrank.pt
+  world_size: 1
+  get_motion_state_use_blend: true
+env:
+  max_episode_length: 1000
+  _target_: protomotions.envs.mimic.env.Mimic
+  humanoid_obs:
+    max_coords_obs:
+      enabled: true
+      num_historical_steps: 3
+      local_obs: true
+      root_height_obs: true
+      observe_contacts: false
+    reduced_coords_obs:
+      enabled: true
+      num_historical_steps: 3
+    action_history:
+      enabled: true
+      num_historical_steps: 1
+  scene_obs:
+    enabled: false
+    obs_object_index: null
+  termination_height: 0.15
+  enable_height_termination: false
+  motion_manager:
+    _target_: protomotions.envs.motion_manager.mimic_motion_manager.MimicMotionManager
+    init_start_prob: 0.2
+    subset_method: null
+    exclude_motion_ids: null
+    realign_motion_with_humanoid_on_each_step: false
+    resample_on_reset: true
+  ref_respawn_offset: 0.05
+  ref_object_respawn_offset: 0.0
+  ref_contact_smooth_window: 0
+  skip_correct_terrain_height_on_flat: true
+  show_terrain_markers: false
+  save_dir: ''
+  reward_config:
+    gt_rew:
+      function: !!python/name:protomotions.envs.utils.rewards.mean_squared_error_exp ''
+      variables:
+        x: current_state.rigid_body_pos
+        ref_x: ref_state.rigid_body_pos
+        coefficient: '-100.0'
+      indices_subset: null
+      weight: 0.5
+      multiplicative: false
+      min_value: null
+      max_value: null
+      zero_during_grace_period: false
+    gr_rew:
+      function: !!python/name:protomotions.envs.utils.rewards.rotation_error_exp ''
+      variables:
+        q: current_state.rigid_body_rot
+        ref_q: ref_state.rigid_body_rot
+        coefficient: '-5.0'
+      indices_subset: null
+      weight: 0.3
+      multiplicative: false
+      min_value: null
+      max_value: null
+      zero_during_grace_period: false
+  mimic_obs:
+    enabled: true
+    mimic_phase_obs:
+      enabled: false
+    mimic_time_left_obs:
+      enabled: false
+    mimic_target_pose:
+      enabled: true
+      type: max-coords-simple
+      with_time: true
+      with_contacts: false
+      with_velocities: true
+      future_steps: 1
+      num_future_steps: 1
+  mimic_early_termination:
+  - mimic_early_termination_key: max_joint_err
+    mimic_early_termination_thresh: 0.5
+    less_than: false
+  mimic_bootstrap_on_episode_end: true
+  reset_grace_period: 5
+  masked_mimic_obs:
+    enabled: true
+    masked_mimic_masking:
+      joint_masking:
+        masked_mimic_fixed_conditioning: null
+        force_max_conditioned_bodies_prob: 0.1
+        force_small_num_conditioned_bodies_prob: 0.1
+        visible_target_pose_prob: 0.8
+        masked_mimic_repeat_mask_probability: 0.8
+      time_sampling:
+        alpha: 2.0
+        beta: 5.0
+    masked_mimic_target_pose:
+      num_future_steps: 2
+    historical_obs:
+      num_historical_conditioned_steps: 3
+      use_reduced_coords_obs: false
+  sync_motion: false
+agent:
+  batch_size: 1024
+  training_max_steps: 18500000
+  _target_: protomotions.agents.masked_mimic.agent.MaskedMimic
+  model:
+    _target_: protomotions.agents.masked_mimic.model.MaskedMimicModel
+    in_keys: []
+    out_keys: []
+    encoder:
+      input_models:
+      - output_models:
+        - normalize_obs: true
+          norm_clamp_value: 5
+          _target_: protomotions.agents.common.common.Flatten
+          in_keys:
+          - mimic_target_poses
+          out_keys:
+          - mimic_target_poses_norm
+          module_operations:
+          - {}
+        - normalize_obs: false
+          norm_clamp_value: 5.0
+          _target_: protomotions.agents.common.common.Flatten
+          in_keys:
+          - masked_mimic_target_bodies_masks
+          out_keys:
+          - masked_mimic_target_bodies_masks_flattened
+          module_operations:
+          - {}
+        _target_: protomotions.agents.common.common.MultiOutputModule
+        in_keys:
+        - mimic_target_poses
+        - masked_mimic_target_bodies_masks
+        out_keys:
+        - mimic_target_poses_norm
+        - masked_mimic_target_bodies_masks_flattened
+      - normalize_obs: false
+        norm_clamp_value: 5.0
+        num_out: 512
+        layers:
+        - units: 1024
+          activation: relu
+          use_layer_norm: false
+        - units: 1024
+          activation: relu
+          use_layer_norm: false
+        - units: 1024
+          activation: relu
+          use_layer_norm: false
+        - units: 1024
+          activation: relu
+          use_layer_norm: false
+        - units: 1024
+          activation: relu
+          use_layer_norm: false
+        _target_: protomotions.agents.common.mlp.MLPWithConcat
+        in_keys:
+        - mimic_target_poses_norm
+        - masked_mimic_target_bodies_masks_flattened
+        out_keys:
+        - encoder_trunk_out
+        output_activation: relu
+        module_operations:
+        - {}
+      - output_models:
+        - normalize_obs: false
+          norm_clamp_value: 5.0
+          num_out: 64
+          layers:
+          - units: 256
+            activation: relu
+            use_layer_norm: false
+          - units: 128
+            activation: relu
+            use_layer_norm: false
+          _target_: protomotions.agents.common.mlp.MLPWithConcat
+          in_keys:
+          - encoder_trunk_out
+          out_keys:
+          - encoder_mu
+          output_activation: null
+          module_operations:
+          - {}
+        - normalize_obs: false
+          norm_clamp_value: 5.0
+          num_out: 64
+          layers:
+          - units: 256
+            activation: relu
+            use_layer_norm: false
+          - units: 128
+            activation: relu
+            use_layer_norm: false
+          _target_: protomotions.agents.common.mlp.MLPWithConcat
+          in_keys:
+          - encoder_trunk_out
+          out_keys:
+          - encoder_logvar
+          output_activation: null
+          module_operations:
+          - {}
+        _target_: protomotions.agents.common.common.MultiOutputModule
+        in_keys:
+        - encoder_trunk_out
+        out_keys:
+        - encoder_mu
+        - encoder_logvar
+      _target_: protomotions.agents.common.common.SequentialModule
+      in_keys:
+      - mimic_target_poses
+      - masked_mimic_target_bodies_masks
+      out_keys:
+      - encoder_mu
+      - encoder_logvar
+    prior:
+      input_models:
+      - output_models:
+        - normalize_obs: true
+          norm_clamp_value: 5
+          num_out: 512
+          layers:
+          - units: 256
+            activation: relu
+            use_layer_norm: false
+          - units: 256
+            activation: relu
+            use_layer_norm: false
+          _target_: protomotions.agents.common.mlp.MLPWithConcat
+          in_keys:
+          - masked_mimic_target_poses
+          out_keys:
+          - masked_mimic_target_poses_token
+          output_activation: null
+          module_operations:
+          - new_shape:
+            - batch_size
+            - 2
+            - -1
+          - {}
+        - normalize_obs: true
+          norm_clamp_value: 5
+          num_out: 512
+          layers:
+          - units: 256
+            activation: relu
+            use_layer_norm: false
+          - units: 256
+            activation: relu
+            use_layer_norm: false
+          _target_: protomotions.agents.common.mlp.MLPWithConcat
+          in_keys:
+          - historical_pose_obs
+          out_keys:
+          - historical_pose_obs_token
+          output_activation: null
+          module_operations:
+          - new_shape:
+            - batch_size
+            - 3
+            - -1
+          - {}
+        _target_: protomotions.agents.common.common.MultiOutputModule
+        in_keys:
+        - masked_mimic_target_poses
+        - historical_pose_obs
+        out_keys:
+        - masked_mimic_target_poses_token
+        - historical_pose_obs_token
+      - _target_: protomotions.agents.common.transformer.Transformer
+        in_keys:
+        - masked_mimic_target_poses_token
+        - historical_pose_obs_token
+        - masked_mimic_target_poses_masks
+        out_keys:
+        - transformer_out
+        input_and_mask_mapping:
+          masked_mimic_target_poses_token: masked_mimic_target_poses_masks
+        transformer_token_size: 512
+        latent_dim: 512
+        num_heads: 4
+        ff_size: 1024
+        num_layers: 4
+        dropout: 0
+        activation: relu
+        output_activation: relu
+      - output_models:
+        - normalize_obs: false
+          norm_clamp_value: 5.0
+          num_out: 64
+          layers:
+          - units: 256
+            activation: relu
+            use_layer_norm: false
+          - units: 128
+            activation: relu
+            use_layer_norm: false
+          _target_: protomotions.agents.common.mlp.MLPWithConcat
+          in_keys:
+          - transformer_out
+          out_keys:
+          - prior_mu
+          output_activation: null
+          module_operations:
+          - {}
+        - normalize_obs: false
+          norm_clamp_value: 5.0
+          num_out: 64
+          layers:
+          - units: 256
+            activation: relu
+            use_layer_norm: false
+          - units: 128
+            activation: relu
+            use_layer_norm: false
+          _target_: protomotions.agents.common.mlp.MLPWithConcat
+          in_keys:
+          - transformer_out
+          out_keys:
+          - prior_logvar
+          output_activation: null
+          module_operations:
+          - {}
+        _target_: protomotions.agents.common.common.MultiOutputModule
+        in_keys:
+        - transformer_out
+        out_keys:
+        - prior_mu
+        - prior_logvar
+      _target_: protomotions.agents.common.common.SequentialModule
+      in_keys:
+      - masked_mimic_target_poses
+      - masked_mimic_target_bodies_masks
+      - historical_pose_obs
+      out_keys:
+      - prior_mu
+      - prior_logvar
+    trunk:
+      input_models:
+      - output_models:
+        - normalize_obs: true
+          norm_clamp_value: 5
+          _target_: protomotions.agents.common.common.Flatten
+          in_keys:
+          - max_coords_obs
+          out_keys:
+          - max_coords_obs_norm
+          module_operations:
+          - {}
+        - normalize_obs: true
+          norm_clamp_value: 5
+          _target_: protomotions.agents.common.common.Flatten
+          in_keys:
+          - terrain
+          out_keys:
+          - terrain_norm
+          module_operations:
+          - {}
+        - normalize_obs: true
+          norm_clamp_value: 5
+          _target_: protomotions.agents.common.common.Flatten
+          in_keys:
+          - historical_previous_actions
+          out_keys:
+          - historical_previous_actions_norm
+          module_operations:
+          - {}
+        - normalize_obs: false
+          norm_clamp_value: 5.0
+          _target_: protomotions.agents.common.common.Flatten
+          in_keys:
+          - vae_latent
+          out_keys:
+          - vae_latent_flattened
+          module_operations:
+          - {}
+        _target_: protomotions.agents.common.common.MultiOutputModule
+        in_keys:
+        - max_coords_obs
+        - terrain
+        - historical_previous_actions
+        - vae_latent
+        out_keys:
+        - max_coords_obs_norm
+        - terrain_norm
+        - historical_previous_actions_norm
+        - vae_latent_flattened
+      - normalize_obs: false
+        norm_clamp_value: 5.0
+        num_out: 29
+        layers:
+        - units: 1024
+          activation: relu
+          use_layer_norm: false
+        - units: 1024
+          activation: relu
+          use_layer_norm: false
+        - units: 1024
+          activation: relu
+          use_layer_norm: false
+        _target_: protomotions.agents.common.mlp.MLPWithConcat
+        in_keys:
+        - max_coords_obs_norm
+        - terrain_norm
+        - historical_previous_actions_norm
+        - vae_latent_flattened
+        out_keys:
+        - actor_trunk_out
+        output_activation: tanh
+        module_operations:
+        - {}
+      _target_: protomotions.agents.common.common.SequentialModule
+      in_keys:
+      - max_coords_obs
+      - terrain
+      - historical_previous_actions
+      - vae_latent
+      out_keys:
+      - actor_trunk_out
+    vae:
+      kld_schedule:
+        init_kld_coeff: 0.0001
+        end_kld_coeff: 0.01
+        start_epoch: 500
+        end_epoch: 2000
+      vae_latent_dim: 64
+      vae_noise_type: normal
+    optimizer:
+      _target_: torch.optim.Adam
+      lr: 2.0e-05
+      weight_decay: 0.0
+      eps: 1.0e-08
+      betas: !!python/tuple
+      - 0.9
+      - 0.999
+  num_steps: 32
+  gradient_clip_val: 50.0
+  fail_on_bad_grads: false
+  check_grad_mag: true
+  gamma: 0.99
+  bounds_loss_coef: 0.0
+  task_reward_w: 1.0
+  num_mini_epochs: 6
+  training_early_termination: null
+  save_epoch_checkpoint_every: 1000
+  save_last_checkpoint_every: 10
+  max_episode_length_manager: null
+  evaluator:
+    _target_: protomotions.agents.evaluators.mimic_evaluator.MimicEvaluator
+    eval_metrics_every: 200
+    robot_state_metrics_device: cpu
+    eval_metric_keys:
+    - gt_err
+    - gr_err
+    - gr_err_degrees
+    - gt_rew
+    - gr_rew
+    max_eval_steps: 600
+    save_predicted_motion_lib_every: 3
+  normalize_rewards: true
+  normalized_reward_clamp_value: 5.0
+  expert_model_path: /home/bizon/sparkpack/ProtoMotions/results/g1_isaaclab_finetune/last.ckpt

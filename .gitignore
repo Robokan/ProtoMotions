@@ -12,6 +12,8 @@ results/*
 output/
 
 data/*
+!data/pretrained_models/
+!data/pretrained_models/**
 *.hdf5
 
 protomotions/data/assets/mesh/adam/*
