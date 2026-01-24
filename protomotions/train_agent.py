@@ -736,7 +736,7 @@ def main():
     strategy = None
     if args.ngpu == 1 and args.nodes == 1:
         try:
-            import torch
+            # Note: torch is already imported at module level (line 296)
             if torch.cuda.is_available():
                 major, minor = torch.cuda.get_device_capability(0)
                 if major >= 12:  # Compute capability 12.x+ (Blackwell and newer)
