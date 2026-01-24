@@ -260,29 +260,14 @@ class Mimic(BaseEnv):
             env_indices = torch.arange(self.num_envs, device=self.device)
             
             if self.inference_mode:
-                # In inference mode, show markers at target time
+                # In inference mode, show all conditionable bodies with color based on time-to-target
                 # Color changes based on time until target (blue > 1s, yellow 0.1-1s, red < 0.1s)
                 motion_lengths = self.motion_lib.motion_lengths[self.motion_manager.motion_ids]
                 
-                # For sequential mode, use the actual target times from the obs callback
-                if getattr(self, 'inference_sequential_targets', False):
-                    # Use the first target time from the obs callback
-                    target_motion_times = self.masked_mimic_obs_cb.target_times[:, 0]
-                    target_motion_times = torch.clamp(target_motion_times, max=motion_lengths - 0.01)
-                    time_to_target = target_motion_times - current_motion_times
-                else:
-                    # Original behavior: calculate based on update interval
-                    update_interval = getattr(self, 'inference_target_update_interval', 10)
-                    steps_since_update = self.progress_buf % update_interval
-                    steps_to_next_update = update_interval - steps_since_update
-                    time_to_next_update = steps_to_next_update.float() * self.dt
-                    
-                    # Target is at current time + time to next update
-                    target_motion_times = torch.clamp(
-                        current_motion_times + time_to_next_update, 
-                        max=motion_lengths - 0.01
-                    )
-                    time_to_target = time_to_next_update
+                # Get the first target time from the obs callback (works for both sequential and random modes)
+                target_motion_times = self.masked_mimic_obs_cb.target_times[:, 0]
+                target_motion_times = torch.clamp(target_motion_times, max=motion_lengths - 0.01)
+                time_to_target = target_motion_times - current_motion_times
                 
                 # Use first time step for body masks (all bodies visible with fixed conditioning)
                 first_valid_indices = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
