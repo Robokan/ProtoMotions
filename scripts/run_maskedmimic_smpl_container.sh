@@ -1,27 +1,20 @@
 #!/bin/bash
-# Run ProtoMotions demo with IsaacLab
-# Uses the fine-tuned G1 motion tracker checkpoint for IsaacLab
-#
-# Usage:
-#   ./run_demo_g1.sh                                    # Default demo
-#   ./run_demo_g1.sh --scene /path/to/warehouse.usd    # With custom scene
-#   ./run_demo_g1.sh --checkpoint results/my_model/last.ckpt
-
-set -e  # Exit on error
-
-# Configuration - adjust paths for your setup
-export PROTOMOTIONS_PATH="${PROTOMOTIONS_PATH:-/home/bizon/sparkpack/ProtoMotions}"
-cd "$PROTOMOTIONS_PATH"
-
-# Activate IsaacLab environment
-source /home/bizon/sparkpack/IsaacLab/env_isaaclab/bin/activate
-source /home/bizon/sparkpack/IsaacLab/_isaac_sim/setup_conda_env.sh
+# Run MaskedMimic SMPL demo in container
+# Works from either ProtoMotions or originals/ProtoMotions
+set -e
 
 # Detect which ProtoMotions directory we're in
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROTOMOTIONS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 echo "Using ProtoMotions at: $PROTOMOTIONS_DIR"
+
+# Set PYTHONPATH to use this ProtoMotions
+ISAACLAB_PATH="/workspace/sparkpack/IsaacLab"
+export PYTHONPATH="${PROTOMOTIONS_DIR}:${ISAACLAB_PATH}/source:${ISAACLAB_PATH}/source/isaaclab:${ISAACLAB_PATH}/source/isaaclab_tasks:${ISAACLAB_PATH}/source/isaaclab_rl:${ISAACLAB_PATH}/source/isaaclab_mimic"
+
+# Disable torch dynamo (Triton not available on ARM/aarch64)
+export TORCHDYNAMO_DISABLE=1
 
 cd "$PROTOMOTIONS_DIR"
 
@@ -48,7 +41,7 @@ echo "  (update 5x/sec, each target 0.5s ahead in motion)"
 echo ""
 
 # Run inference with sample SMPL motion
-python protomotions/inference_agent.py \
+/isaac-sim/python.sh protomotions/inference_agent.py \
     --checkpoint data/pretrained_models/masked_mimic/smpl/last.ckpt \
     --motion-file examples/data/smpl_humanoid_sit_armchair.motion \
     --simulator isaaclab \
