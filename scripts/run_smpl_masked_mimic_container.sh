@@ -10,7 +10,7 @@ PROTOMOTIONS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 echo "Using ProtoMotions at: $PROTOMOTIONS_DIR"
 
 # Set PYTHONPATH to use this ProtoMotions
-ISAACLAB_PATH="/workspace/sparkpack/IsaacLab"
+ISAACLAB_PATH="$PROTOMOTIONS_DIR/../IsaacLab"
 export PYTHONPATH="${PROTOMOTIONS_DIR}:${ISAACLAB_PATH}/source:${ISAACLAB_PATH}/source/isaaclab:${ISAACLAB_PATH}/source/isaaclab_tasks:${ISAACLAB_PATH}/source/isaaclab_rl:${ISAACLAB_PATH}/source/isaaclab_mimic"
 
 # Disable torch dynamo (Triton not available on ARM/aarch64)
