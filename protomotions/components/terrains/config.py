@@ -118,6 +118,10 @@ class ComplexTerrainConfig(TerrainConfig):
     )
     minimal_humanoid_spacing: float = 0
 
+    # Height multiplier for curriculum learning (1.0 = normal, 0.1 = nearly flat)
+    # Scales step_height, slope, and obstacle heights
+    height_multiplier: float = 1.0
+
     # minimal_humanoid_spacing: float = 1.0
 
     # terrain_proportions: List[float] = field(default_factory=lambda: [0.3, 0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.4])

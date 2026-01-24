@@ -351,10 +351,13 @@ class Terrain:
                 start_y = self.border + subterrain_idx * self.width_per_env_pixels
                 end_y = self.border + (subterrain_idx + 1) * self.width_per_env_pixels
 
-                slope = difficulty * 0.4
-                step_height = 0.05 + 0.175 * difficulty
-                discrete_obstacles_height = 0.025 + difficulty * 0.15
-                stepping_stones_size = 2 - 1.8 * difficulty
+                # Get height multiplier for curriculum learning (default 1.0)
+                height_mult = getattr(self.config, 'height_multiplier', 1.0)
+                
+                slope = difficulty * 0.4 * height_mult
+                step_height = (0.05 + 0.175 * difficulty) * height_mult
+                discrete_obstacles_height = (0.025 + difficulty * 0.15) * height_mult
+                stepping_stones_size = 2 - 1.8 * difficulty  # Size not affected by height
                 if choice < self.proportions[0]:
                     if choice < 0.05:
                         slope *= -1
@@ -367,11 +370,13 @@ class Terrain:
                     pyramid_sloped_subterrain(
                         subterrain, slope=slope, platform_size=3.0
                     )
+                    # Ensure step is at least vertical_scale to avoid division by zero
+                    uniform_step = max(0.025 * height_mult, self.vertical_scale)
                     random_uniform_subterrain(
                         subterrain,
-                        min_height=-0.1,
-                        max_height=0.1,
-                        step=0.025,
+                        min_height=-0.1 * height_mult,
+                        max_height=0.1 * height_mult,
+                        step=uniform_step,
                         downsampled_scale=0.2,
                     )
                 elif choice < self.proportions[3]:
