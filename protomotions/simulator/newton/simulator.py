@@ -153,7 +153,7 @@ class NewtonSimulator(Simulator):
         self.graph = None
         self.use_cuda_graph = False
 
-        if wp.get_device().is_cuda and wp.is_mempool_enabled(wp.get_device()):
+        if self.config.sim.use_cuda_graph and wp.get_device().is_cuda and wp.is_mempool_enabled(wp.get_device()):
             print(f"[INFO] Using CUDA graph ({self.control_type.name})")
             self.use_cuda_graph = True
             zeros = torch.zeros(
@@ -377,7 +377,7 @@ class NewtonSimulator(Simulator):
         self.robot_view = ArticulationView(
             self.model,
             pattern="robot",
-            include_joints=self._newton_dof_names.keys(),
+            include_joints=list(self._newton_dof_names.keys()),
             include_links=self._body_names,
         )
 
@@ -697,6 +697,9 @@ class NewtonSimulator(Simulator):
     @staticmethod
     def _count_sensor_sensing_objects(sensor: SensorContact) -> int:
         """Count matched sensing objects across all Newton worlds."""
+        # sensing_indices is the current API (sensing_objs was removed in Newton 1.3.0)
+        if hasattr(sensor, "sensing_indices"):
+            return len(sensor.sensing_indices)
         return sum(len(world_objs) for world_objs in getattr(sensor, "sensing_objs", []))
 
     @staticmethod

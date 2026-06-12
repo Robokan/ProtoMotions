@@ -196,7 +196,10 @@ class SceneCfg(InteractiveSceneCfg):
             ),
             init_state=ArticulationCfg.InitialStateCfg(
                 pos=(0.0, 0.0, robot_config.default_root_height),
-                joint_pos={".*": 0.0},
+                joint_pos={
+                    name: float(robot_config.default_dof_pos[i])
+                    for i, name in enumerate(robot_config.kinematic_info.dof_names)
+                } if robot_config.default_dof_pos is not None else {".*": 0.0},
                 joint_vel={".*": 0.0},
             ),
             actuators=actuators,

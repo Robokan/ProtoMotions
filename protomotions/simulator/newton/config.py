@@ -61,6 +61,10 @@ class NewtonSimParams(SimParams):
         default=200,
         metadata={"help": "CCD (continuous collision detection) iterations."}
     )
+    use_cuda_graph: bool = field(
+        default=True,
+        metadata={"help": "Use CUDA graph capture for faster stepping. Disable if OOM during graph creation."}
+    )
 
 
 @dataclass

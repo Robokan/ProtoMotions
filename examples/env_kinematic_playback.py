@@ -198,6 +198,15 @@ def main():
     motion_lib_config = configs["motion_lib"]
     env_config: EnvConfig = configs["env"]
 
+    # Kinematic viewer doesn't need contact sensors (PhysX tensor API isn't
+    # available until the sim is fully running — disabling avoids the import error).
+    robot_config.contact_bodies = None
+
+    # Disable projectiles — they cause write_root_state_to_sim failures during
+    # scene init in IsaacLab 3.0 before the first physics step completes.
+    if hasattr(simulator_config, "projectile"):
+        simulator_config.projectile.num_projectiles = 0
+
     print(f"Robot config class: {type(robot_config).__name__}")
     print(f"Simulator config class: {type(simulator_config).__name__}")
     print(f"Environment config class: {type(env_config).__name__}")

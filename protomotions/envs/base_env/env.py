@@ -1105,6 +1105,10 @@ class BaseEnv:
                 dof_limits_upper=self.robot_config.kinematic_info.dof_limits_upper,
             )
 
+        # Random get-up resets: spawn some envs in random orientation + random joints
+        if self.config.random_getup_prob > 0.0:
+            self._apply_random_getup_reset(new_states, env_ids)
+
         self.simulator.reset_envs(new_states, new_object_states, env_ids)
 
         default_mask = ~torch.isin(env_ids, ref_env_ids)
@@ -1145,6 +1149,40 @@ class BaseEnv:
         self.compute_observations(env_ids, context=self.context)
 
         return self.get_obs(), {}
+
+    def _apply_random_getup_reset(self, new_states, env_ids):
+        """Override a random fraction of envs with random orientation and joint positions.
+
+        For each selected env: random root quaternion (any orientation) and joint positions
+        sampled uniformly within DOF limits. Root position z is raised slightly so the robot
+        doesn't start embedded in the ground.
+        """
+        num_resets = env_ids.shape[0]
+        prob = self.config.random_getup_prob
+        getup_mask = torch.rand(num_resets, device=self.device) < prob
+        if not getup_mask.any():
+            return
+
+        getup_indices = getup_mask.nonzero(as_tuple=True)[0]
+
+        # Random quaternion via Gaussian → normalize (uniform on S3)
+        rand_quat = torch.randn(len(getup_indices), 4, device=self.device)
+        rand_quat = rand_quat / rand_quat.norm(dim=-1, keepdim=True)  # xyzw
+
+        # Random DOF positions uniform within limits
+        dof_low = self.robot_config.kinematic_info.dof_limits_lower.to(self.device)
+        dof_high = self.robot_config.kinematic_info.dof_limits_upper.to(self.device)
+        rand_dof = dof_low + torch.rand(len(getup_indices), dof_low.shape[0], device=self.device) * (dof_high - dof_low)
+
+        new_states.root_rot[getup_indices] = rand_quat
+        new_states.dof_pos[getup_indices] = rand_dof
+        # Zero velocities so the robot starts stationary
+        if new_states.root_vel is not None:
+            new_states.root_vel[getup_indices] = 0.0
+        if new_states.root_ang_vel is not None:
+            new_states.root_ang_vel[getup_indices] = 0.0
+        if new_states.dof_vel is not None:
+            new_states.dof_vel[getup_indices] = 0.0
 
     def _get_ref_reset_envs(
         self, env_ids, force_default_mask, disable_motion_resample=False

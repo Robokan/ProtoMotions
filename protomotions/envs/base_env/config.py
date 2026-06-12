@@ -109,3 +109,8 @@ class EnvConfig:
         default=None,
         metadata={"help": "Single action processing config dict with 'fn' key. Use make_pd_action_config() helper."}
     )
+
+    random_getup_prob: float = field(
+        default=0.0,
+        metadata={"help": "Fraction of resets that spawn robot in random orientation+joints for get-up training. 0 = disabled."}
+    )

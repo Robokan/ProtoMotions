@@ -611,6 +611,8 @@ class MotionLib:
             file_path, map_location=self.device, weights_only=False
         )
 
+        self.contacts = None  # default; overridden below if present in file
+        self.lrs = None  # default; overridden below if present in file
         for field in loaded_data:
             assert loaded_data[field] is not None, f"Field {field} is None"
             setattr(self, field, loaded_data[field])
