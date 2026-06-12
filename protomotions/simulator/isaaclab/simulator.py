@@ -1033,6 +1033,15 @@ class IsaacLabSimulator(Simulator):
         vp_api = get_active_viewport()
         capture_viewport_to_file(vp_api, file_name)
 
+    def is_simulation_running(self) -> bool:
+        """
+        Check if the simulation is running.
+
+        Also returns False once the Isaac Sim window is closed (app shutdown
+        requested), so playback loops exit cleanly instead of hanging.
+        """
+        return self._simulation_running and self._simulation_app.is_running()
+
     def close(self) -> None:
         """
         Close the simulation application and perform cleanup.
