@@ -192,7 +192,7 @@ class SceneCfg(InteractiveSceneCfg):
                 ),
                 visual_material=sim_utils.PreviewSurfaceCfg(
                     diffuse_color=(0.9, 0.9, 0.9), metallic=0.5
-                ),
+                ) if robot_config.asset.apply_default_visual_material else None,
             ),
             init_state=ArticulationCfg.InitialStateCfg(
                 pos=(0.0, 0.0, robot_config.default_root_height),

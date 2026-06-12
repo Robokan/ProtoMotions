@@ -20,7 +20,7 @@ Output: packed ProtoMotions MotionLib .pt file ready for training
 
 Usage:
     cd ~/sparkpack/ProtoMotions
-    python data/scripts/convert_go2_poselib_to_proto.py \\
+    python data/scripts/convert_quadruped_poselib_to_proto.py \\
         --yaml-file /path/to/full_set.yaml \\
         --motion-dir /path/to/go2/npy_clips/ \\
         --output data/motions/go2/go2_full.pt
@@ -47,6 +47,7 @@ from protomotions.utils.rotations import quaternion_to_matrix
 
 app = typer.Typer(pretty_exceptions_enable=False)
 
+# Defaults target Go2; override via CLI options for other robots (e.g. anymal_d).
 MJCF_PATH = "protomotions/data/assets/mjcf/go2.xml"
 # Poselib uses 'trunk' for the root body; MJCF uses 'base_link' — same body, different name.
 POSELIB_ROOT_NAME = "trunk"
@@ -75,9 +76,14 @@ def load_poselib_npy(npy_path: str):
     return rotation, root_translation, fps, node_names
 
 
-def verify_skeleton_order(node_names: list, kinematic_body_names: list):
+def verify_skeleton_order(
+    node_names: list,
+    kinematic_body_names: list,
+    poselib_root_name: str = POSELIB_ROOT_NAME,
+    mjcf_root_name: str = MJCF_ROOT_NAME,
+):
     """Verify poselib body order matches MJCF body order (modulo root name)."""
-    poselib_names = [MJCF_ROOT_NAME if n == POSELIB_ROOT_NAME else n for n in node_names]
+    poselib_names = [mjcf_root_name if n == poselib_root_name else n for n in node_names]
     if poselib_names != kinematic_body_names:
         raise ValueError(
             f"Skeleton mismatch!\nPoselib: {poselib_names}\nMJCF:    {kinematic_body_names}"
@@ -185,6 +191,15 @@ def main(
         help="Directory to save per-clip .motion files. Defaults to <output_dir>/clips/",
     ),
     force_remake: bool = typer.Option(False, help="Re-convert clips even if .motion already exists"),
+    mjcf_path: str = typer.Option(
+        MJCF_PATH, help="MJCF file defining the robot kinematics"
+    ),
+    poselib_root_name: str = typer.Option(
+        POSELIB_ROOT_NAME, help="Root body name in the poselib skeleton"
+    ),
+    mjcf_root_name: str = typer.Option(
+        MJCF_ROOT_NAME, help="Root body name in the MJCF"
+    ),
 ):
     device = torch.device("cpu")
     dtype = torch.float32
@@ -200,9 +215,9 @@ def main(
     os.makedirs(intermediate_dir, exist_ok=True)
     os.makedirs(output.parent, exist_ok=True)
 
-    # Load kinematic info from Go2 MJCF
-    print(f"Loading MJCF from {MJCF_PATH}")
-    kinematic_info = extract_kinematic_info(MJCF_PATH)
+    # Load kinematic info from the robot MJCF
+    print(f"Loading MJCF from {mjcf_path}")
+    kinematic_info = extract_kinematic_info(mjcf_path)
     print(f"Bodies: {kinematic_info.body_names}")
     print(f"DOFs:   {kinematic_info.dof_names}")
 
@@ -236,7 +251,12 @@ def main(
             rotation_np, root_translation_np, fps, node_names = load_poselib_npy(str(npy_path))
 
             if not skeleton_verified:
-                verify_skeleton_order(node_names, kinematic_info.body_names)
+                verify_skeleton_order(
+                    node_names,
+                    kinematic_info.body_names,
+                    poselib_root_name=poselib_root_name,
+                    mjcf_root_name=mjcf_root_name,
+                )
                 skeleton_verified = True
 
             motion = convert_clip(

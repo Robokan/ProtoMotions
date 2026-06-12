@@ -61,6 +61,10 @@ def robot_config(robot_name: str, **updates) -> RobotConfig:
         from protomotions.robot_configs.go2 import Go2RobotConfig
 
         config = Go2RobotConfig()
+    elif robot_name == "anymal_d":
+        from protomotions.robot_configs.anymal_d import AnymalDRobotConfig
+
+        config = AnymalDRobotConfig()
     else:
         raise ValueError(f"Invalid robot name: {robot_name}")
 

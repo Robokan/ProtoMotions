@@ -986,7 +986,11 @@ class IsaacLabSimulator(Simulator):
                 self._get_simulator_root_state(self._camera_target["env"])
                 .root_pos.cpu()
                 .numpy()
+                .copy()
             )
+            # Fix the tracked height to the robot's nominal standing height so
+            # the camera follows in x/y only and doesn't bounce with the body.
+            char_root_pos[2] = self.robot_config.default_root_height
             height_offset = 0.2
         else:
             in_scene_object_id = self._camera_target["element"] - 1

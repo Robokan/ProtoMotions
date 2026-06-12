@@ -1,0 +1,107 @@
+<mujoco model="anymal_d">
+  <compiler angle="radian" />
+
+  <worldbody>
+    <body name="base" pos="0 0 0.6">
+      <inertial pos="0 0 0" mass="28.0" diaginertia="0.3 0.7 0.8" />
+      <joint name="floating_base_joint" type="free" limited="false" actuatorfrclimited="false" />
+      <geom size="0.32 0.14 0.09" type="box" />
+      <body name="LF_HIP" pos="0.304 0.109 0.0">
+        <inertial pos="0 0 0" mass="2.781" diaginertia="0.005 0.005 0.005" />
+        <joint name="LF_HAA" axis="1 0 0" range="-0.7853985 0.6108655"
+          limited="true" damping="0.1" armature="0.01" frictionloss="0.2" />
+        <geom size="0.06 0.04" quat="0.707107 0.707107 0 0" type="cylinder" />
+        <body name="LF_THIGH" pos="0.069 0.006 0.0">
+          <inertial pos="0 0.003 -0.14" mass="3.071" diaginertia="0.02 0.02 0.004" />
+          <joint name="LF_HFE" axis="0 1 0" range="-9.42477796076938 9.42477796076938"
+            limited="true" damping="0.1" armature="0.01" frictionloss="0.2" />
+          <geom type="capsule" size="0.045" fromto="0 0 0 0.0 0.1805 -0.285" />
+          <body name="LF_SHANK" pos="0.0 0.1805 -0.285">
+            <inertial pos="0.05 0 -0.2" mass="0.58" diaginertia="0.008 0.008 0.001" />
+            <joint name="LF_KFE" axis="0 1 0" range="-9.42477796076938 9.42477796076938"
+              limited="true" damping="0.1" armature="0.01" frictionloss="0.2" />
+            <geom type="capsule" size="0.03" fromto="0 0 0 0.1 0.0222 -0.3925" />
+            <geom size="0.031" pos="0.1 0.0222 -0.3925" type="sphere" />
+            <body name="LF_FOOT" pos="0.1 0.0222 -0.3925" />
+          </body>
+        </body>
+      </body>
+      <body name="LH_HIP" pos="-0.304 0.109 0.0">
+        <inertial pos="0 0 0" mass="2.781" diaginertia="0.005 0.005 0.005" />
+        <joint name="LH_HAA" axis="1 0 0" range="-0.7853985 0.6108655"
+          limited="true" damping="0.1" armature="0.01" frictionloss="0.2" />
+        <geom size="0.06 0.04" quat="0.707107 0.707107 0 0" type="cylinder" />
+        <body name="LH_THIGH" pos="-0.069 0.006 0.0">
+          <inertial pos="0 0.003 -0.14" mass="3.071" diaginertia="0.02 0.02 0.004" />
+          <joint name="LH_HFE" axis="0 1 0" range="-9.42477796076938 9.42477796076938"
+            limited="true" damping="0.1" armature="0.01" frictionloss="0.2" />
+          <geom type="capsule" size="0.045" fromto="0 0 0 0.0 0.1805 -0.285" />
+          <body name="LH_SHANK" pos="0.0 0.1805 -0.285">
+            <inertial pos="-0.05 0 -0.2" mass="0.58" diaginertia="0.008 0.008 0.001" />
+            <joint name="LH_KFE" axis="0 1 0" range="-9.42477796076938 9.42477796076938"
+              limited="true" damping="0.1" armature="0.01" frictionloss="0.2" />
+            <geom type="capsule" size="0.03" fromto="0 0 0 -0.1 0.0223 -0.3925" />
+            <geom size="0.031" pos="-0.1 0.0223 -0.3925" type="sphere" />
+            <body name="LH_FOOT" pos="-0.1 0.0223 -0.3925" />
+          </body>
+        </body>
+      </body>
+      <body name="RF_HIP" pos="0.304 -0.109 0.0">
+        <inertial pos="0 0 0" mass="2.781" diaginertia="0.005 0.005 0.005" />
+        <joint name="RF_HAA" axis="1 0 0" range="-0.6108655 0.7853985"
+          limited="true" damping="0.1" armature="0.01" frictionloss="0.2" />
+        <geom size="0.06 0.04" quat="0.707107 0.707107 0 0" type="cylinder" />
+        <body name="RF_THIGH" pos="0.069 -0.006 0.0">
+          <inertial pos="0 -0.003 -0.14" mass="3.071" diaginertia="0.02 0.02 0.004" />
+          <joint name="RF_HFE" axis="0 1 0" range="-9.42477796076938 9.42477796076938"
+            limited="true" damping="0.1" armature="0.01" frictionloss="0.2" />
+          <geom type="capsule" size="0.045" fromto="0 0 0 0.0 -0.1805 -0.285" />
+          <body name="RF_SHANK" pos="0.0 -0.1805 -0.285">
+            <inertial pos="0.05 0 -0.2" mass="0.58" diaginertia="0.008 0.008 0.001" />
+            <joint name="RF_KFE" axis="0 1 0" range="-9.42477796076938 9.42477796076938"
+              limited="true" damping="0.1" armature="0.01" frictionloss="0.2" />
+            <geom type="capsule" size="0.03" fromto="0 0 0 0.1 -0.0222 -0.3925" />
+            <geom size="0.031" pos="0.1 -0.0222 -0.3925" type="sphere" />
+            <body name="RF_FOOT" pos="0.1 -0.0222 -0.3925" />
+          </body>
+        </body>
+      </body>
+      <body name="RH_HIP" pos="-0.304 -0.109 0.0">
+        <inertial pos="0 0 0" mass="2.781" diaginertia="0.005 0.005 0.005" />
+        <joint name="RH_HAA" axis="1 0 0" range="-0.6108655 0.7853985"
+          limited="true" damping="0.1" armature="0.01" frictionloss="0.2" />
+        <geom size="0.06 0.04" quat="0.707107 0.707107 0 0" type="cylinder" />
+        <body name="RH_THIGH" pos="-0.069 -0.006 0.0">
+          <inertial pos="0 -0.003 -0.14" mass="3.071" diaginertia="0.02 0.02 0.004" />
+          <joint name="RH_HFE" axis="0 1 0" range="-9.42477796076938 9.42477796076938"
+            limited="true" damping="0.1" armature="0.01" frictionloss="0.2" />
+          <geom type="capsule" size="0.045" fromto="0 0 0 -0.0 -0.1805 -0.285" />
+          <body name="RH_SHANK" pos="-0.0 -0.1805 -0.285">
+            <inertial pos="-0.05 0 -0.2" mass="0.58" diaginertia="0.008 0.008 0.001" />
+            <joint name="RH_KFE" axis="0 1 0" range="-9.42477796076938 9.42477796076938"
+              limited="true" damping="0.1" armature="0.01" frictionloss="0.2" />
+            <geom type="capsule" size="0.03" fromto="0 0 0 -0.1 -0.0222 -0.3925" />
+            <geom size="0.031" pos="-0.1 -0.0222 -0.3925" type="sphere" />
+            <body name="RH_FOOT" pos="-0.1 -0.0222 -0.3925" />
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <motor name="LF_HAA" joint="LF_HAA" ctrllimited="true" ctrlrange="-80.0 80.0" />
+    <motor name="LF_HFE" joint="LF_HFE" ctrllimited="true" ctrlrange="-80.0 80.0" />
+    <motor name="LF_KFE" joint="LF_KFE" ctrllimited="true" ctrlrange="-80.0 80.0" />
+    <motor name="LH_HAA" joint="LH_HAA" ctrllimited="true" ctrlrange="-80.0 80.0" />
+    <motor name="LH_HFE" joint="LH_HFE" ctrllimited="true" ctrlrange="-80.0 80.0" />
+    <motor name="LH_KFE" joint="LH_KFE" ctrllimited="true" ctrlrange="-80.0 80.0" />
+    <motor name="RF_HAA" joint="RF_HAA" ctrllimited="true" ctrlrange="-80.0 80.0" />
+    <motor name="RF_HFE" joint="RF_HFE" ctrllimited="true" ctrlrange="-80.0 80.0" />
+    <motor name="RF_KFE" joint="RF_KFE" ctrllimited="true" ctrlrange="-80.0 80.0" />
+    <motor name="RH_HAA" joint="RH_HAA" ctrllimited="true" ctrlrange="-80.0 80.0" />
+    <motor name="RH_HFE" joint="RH_HFE" ctrllimited="true" ctrlrange="-80.0 80.0" />
+    <motor name="RH_KFE" joint="RH_KFE" ctrllimited="true" ctrlrange="-80.0 80.0" />
+  </actuator>
+
+</mujoco>

@@ -113,6 +113,9 @@ class RobotAssetConfig:
     linear_damping: Optional[float] = None
     disable_gravity: Optional[bool] = None
     fix_base_link: Optional[bool] = None
+    apply_default_visual_material: bool = True
+    """Apply the uniform light-gray override material when spawning in IsaacLab.
+    Set False to keep the USD's own authored materials/textures."""
 
     def __post_init__(self):
         """Validate that asset_file_name is set."""
