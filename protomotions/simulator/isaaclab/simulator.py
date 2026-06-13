@@ -336,6 +336,8 @@ class IsaacLabSimulator(Simulator):
         self.keyboard_interface.add_callback(";", self._cancel_video_record)
         self.keyboard_interface.add_callback("Q", self.close)
         self.keyboard_interface.add_callback("O", self._toggle_camera_target)
+        self.keyboard_interface.add_callback("EQUAL", self._next_camera_env)
+        self.keyboard_interface.add_callback("MINUS", self._prev_camera_env)
         self.keyboard_interface.add_callback("J", self._throw_projectile)
         self.keyboard_interface.add_callback("M", self._toggle_markers)
 

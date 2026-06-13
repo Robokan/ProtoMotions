@@ -95,6 +95,12 @@ def create_parser():
     parser.add_argument(
         "--seed", type=int, default=0, help="Random seed for reproducibility"
     )
+    parser.add_argument(
+        "--overrides",
+        nargs="*",
+        default=[],
+        help="Config overrides in format key=value (e.g., terrain.motion_support_manifest=path.yaml)",
+    )
 
     return parser
 
@@ -197,6 +203,25 @@ def main():
     scene_lib_config = configs["scene_lib"]
     motion_lib_config = configs["motion_lib"]
     env_config: EnvConfig = configs["env"]
+
+    # Apply CLI overrides (e.g., terrain.motion_support_manifest=...)
+    if args.overrides:
+        from protomotions.utils.config_utils import (
+            apply_config_overrides,
+            parse_cli_overrides,
+        )
+
+        cli_overrides = parse_cli_overrides(args.overrides)
+        if cli_overrides:
+            apply_config_overrides(
+                cli_overrides,
+                env_config,
+                simulator_config,
+                robot_config,
+                terrain_config=terrain_config,
+                motion_lib_config=motion_lib_config,
+                scene_lib_config=scene_lib_config,
+            )
 
     # Kinematic viewer doesn't need contact sensors (PhysX tensor API isn't
     # available until the sim is fully running — disabling avoids the import error).
@@ -315,6 +340,8 @@ def main():
     print("  L - start/stop recording")
     print("  ; - cancel recording")
     print("  O - toggle camera target")
+    print("  = - watch next robot")
+    print("  - - watch previous robot")
     print("  Q - close simulator")
 
     actions = torch.zeros(env.num_envs, robot_config.number_of_actions, device=device)

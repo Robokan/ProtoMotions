@@ -14,10 +14,10 @@
 # limitations under the License.
 #
 """
-Go2 Mimic Environment Configuration
+Quadruped Mimic Environment Configuration
 =====================================
 
-Full-body motion tracking for the Unitree Go2 quadruped.
+Full-body motion tracking for quadruped robots (Go2, ANYmal-D, ...).
 Same as mimic/mlp.py but with 10% random get-up resets.
 """
 from protomotions.robot_configs.base import RobotConfig

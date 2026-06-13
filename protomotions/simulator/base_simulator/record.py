@@ -105,6 +105,16 @@ class RecordingMixin:
             ) % self.num_envs
             print("Updated camera target to env", self._camera_target["env"])
 
+    def _next_camera_env(self) -> None:
+        """Move the camera target to the next environment."""
+        self._camera_target["env"] = (self._camera_target["env"] + 1) % self.num_envs
+        print("Camera target: env", self._camera_target["env"])
+
+    def _prev_camera_env(self) -> None:
+        """Move the camera target to the previous environment."""
+        self._camera_target["env"] = (self._camera_target["env"] - 1) % self.num_envs
+        print("Camera target: env", self._camera_target["env"])
+
     # -------------------------
     # Marker management
     # -------------------------

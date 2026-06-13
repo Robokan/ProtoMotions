@@ -476,6 +476,27 @@ class BaseEnv:
         """Default object state (empty if no scenes)."""
         return self.scene_lib.get_default_object_state(self.device)
 
+    @cached_property
+    def _motion_support_anchors(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Per-motion support cell anchors from the terrain.
+
+        Returns:
+            anchor_xy: World (x, y) anchor per motion id [num_motions, 2]
+            has_support: Whether the motion has a support cell [num_motions]
+        """
+        support_origins = getattr(self.terrain, "motion_support_origins", {})
+        num_motions = self.motion_lib.num_motions()
+        anchor_xy = torch.zeros((num_motions, 2), device=self.device)
+        has_support = torch.zeros(
+            num_motions, dtype=torch.bool, device=self.device
+        )
+        for motion_id, (anchor_x, anchor_y) in support_origins.items():
+            if motion_id < num_motions:
+                anchor_xy[motion_id, 0] = anchor_x
+                anchor_xy[motion_id, 1] = anchor_y
+                has_support[motion_id] = True
+        return anchor_xy, has_support
+
     def update_respawn_root_offset_by_env_ids(
         self,
         env_ids,
@@ -507,6 +528,24 @@ class BaseEnv:
             scene_pos = self.scene_lib.get_scene_positions(self.terrain, self.device)
             respawn_offset[scene_mask, :2] = scene_pos[env_ids[scene_mask], :2]
 
+        # Motion-support envs: anchor the motion at its dedicated support cell
+        # so the reference motion aligns exactly with the stamped support
+        # geometry. The offset is the cell anchor itself (NOT offset by
+        # ref_root) because the support boxes were stamped in motion-local
+        # coordinates anchored there: world_ref = ref + anchor.
+        # Only applies to reference resets (ref_state set), which run after
+        # motion_manager.sample_motions() assigned fresh motion ids.
+        support_mask = torch.zeros_like(non_scene_mask)
+        support_origins = getattr(self.terrain, "motion_support_origins", {})
+        if support_origins and ref_state is not None and self.motion_manager is not None:
+            anchor_xy, has_support = self._motion_support_anchors
+            motion_ids = self.motion_manager.motion_ids[env_ids]
+            support_mask = non_scene_mask & has_support[motion_ids]
+            if support_mask.any():
+                respawn_offset[support_mask, :2] = anchor_xy[motion_ids[support_mask]]
+                # Exclude support envs from random location sampling below
+                non_scene_mask = non_scene_mask & ~support_mask
+
         if non_scene_mask.any():
             num_non_scene = non_scene_mask.sum().item()
             respawn_position_xy = self.terrain.sample_valid_locations(
@@ -519,19 +558,30 @@ class BaseEnv:
                 ref_root = ref_state.root_pos[non_scene_mask, :2]
             respawn_offset[non_scene_mask, :2] = respawn_position_xy - ref_root
 
-            if not self.skip_height_correction:
-                if ref_state is not None:
-                    rigid_body_pos = ref_state.rigid_body_pos[non_scene_mask].clone()
-                    rigid_body_pos_spawned = rigid_body_pos + respawn_offset[
-                        non_scene_mask
-                    ].unsqueeze(1)
-                else:
-                    rigid_body_pos_spawned = respawn_offset[non_scene_mask].unsqueeze(1)
+        if non_scene_mask.any() and not self.skip_height_correction:
+            if ref_state is not None:
+                rigid_body_pos = ref_state.rigid_body_pos[non_scene_mask].clone()
+                rigid_body_pos_spawned = rigid_body_pos + respawn_offset[
+                    non_scene_mask
+                ].unsqueeze(1)
+            else:
+                rigid_body_pos_spawned = respawn_offset[non_scene_mask].unsqueeze(1)
 
-                terrain_heights = self.terrain.find_terrain_height_for_max_below_body(
-                    rigid_body_pos_spawned
-                )
-                respawn_offset[non_scene_mask, 2] = terrain_heights
+            terrain_heights = self.terrain.find_terrain_height_for_max_below_body(
+                rigid_body_pos_spawned
+            )
+            respawn_offset[non_scene_mask, 2] = terrain_heights
+
+        if support_mask.any():
+            # Support cells share the motion's ground frame: the cell floor is
+            # flat and the boxes reproduce the clip's elevations, so the only
+            # z offset needed is the cell floor's world height. The
+            # max-below-body heuristic must NOT be used here — with matching
+            # geometry every foot has near-zero clearance and a box-top
+            # tie-break would lift the robot by a full box height.
+            respawn_offset[support_mask, 2] = getattr(
+                self.terrain, "motion_support_floor_z", 0.0
+            )
 
         respawn_offset[:, 2] += self.config.ref_respawn_offset
 
@@ -586,6 +636,25 @@ class BaseEnv:
             z_offset = self.terrain.find_terrain_height_for_max_below_body(
                 target_pos_spawned
             )
+
+            # Motions anchored in support cells already match the terrain
+            # geometry — their z offset is the constant cell-floor height.
+            # The max-below-body heuristic flips discontinuously when feet
+            # cross box edges, which would bounce the whole reference pose.
+            support_origins = getattr(self.terrain, "motion_support_origins", {})
+            if support_origins and self.motion_manager is not None:
+                _, has_support = self._motion_support_anchors
+                support_mask = has_support[self.motion_manager.motion_ids[env_ids]]
+                if support_mask.any():
+                    z_offset = torch.where(
+                        support_mask,
+                        torch.full_like(
+                            z_offset,
+                            getattr(self.terrain, "motion_support_floor_z", 0.0),
+                        ),
+                        z_offset,
+                    )
+
             new_offset[:, :, 2] = z_offset.unsqueeze(1)
 
         return new_offset
