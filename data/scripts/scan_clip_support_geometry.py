@@ -127,6 +127,15 @@ def main(
         "robot body order; requires --robot-name OR uses default quadruped index "
         "layout base + 4x(HIP,THIGH,SHANK,FOOT))",
     ),
+    motion_lib: Path = typer.Option(
+        None,
+        help="Packed MotionLib .pt file. When given together with --exclude-file, "
+        "writes the motion IDs of needs_support clips (for flat-ground training "
+        "via motion_manager.exclude_motions_file).",
+    ),
+    exclude_file: Path = typer.Option(
+        None, help="Output exclusion file (one motion ID per line)."
+    ),
 ):
     # Default quadruped layout: feet at indices 4, 8, 12, 16
     foot_indices = [4, 8, 12, 16]
@@ -151,6 +160,21 @@ def main(
     print(f"\nScanned {len(clips)} clips: {counts['flat']} flat, "
           f"{counts['needs_support']} need support, {counts['no_stance']} no stance detected")
     print(f"Manifest written to {output}")
+
+    if motion_lib is not None and exclude_file is not None:
+        lib = torch.load(motion_lib, weights_only=False, map_location="cpu")
+        motion_files = lib["motion_files"] if isinstance(lib, dict) else lib.motion_files
+        flagged = {
+            name for name, r in manifest.items()
+            if r["classification"] == "needs_support"
+        }
+        excluded_ids = [
+            i for i, f in enumerate(motion_files) if Path(f).name in flagged
+        ]
+        with open(exclude_file, "w") as f:
+            f.write("\n".join(str(i) for i in excluded_ids) + "\n")
+        print(f"Exclusion file written to {exclude_file}: "
+              f"{len(excluded_ids)} of {len(motion_files)} motions excluded")
 
 
 if __name__ == "__main__":
