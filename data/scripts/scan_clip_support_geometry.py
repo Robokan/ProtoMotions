@@ -51,7 +51,13 @@ STANCE_HEIGHT_STD_MAX = 0.02  # [m] max foot z std-dev within a stance segment
 # (leg extended downward, weight passing through). A sitting robot holding a
 # paw up is slow and height-stable too, but the paw is at/above root height
 # and bears no load — no structure needed.
-ROOT_CLEARANCE_MIN = 0.25  # [m] root must be this far above the foot
+#
+# Absolute thresholds, visually validated on both ANYmal-D and Go2. (A
+# height-scaled variant was tried and over-flagged the smaller robot; the
+# retargets do not scale structure heights linearly with robot size.) For
+# same-source datasets, use --force-flag-manifest for cross-robot consistency.
+ROOT_CLEARANCE_MIN = 0.25  # [m] strict pass: root must stand above the foot
+RELAXED_CLEARANCE_MIN = 0.12  # [m] relaxed box-generation pass
 
 # Support detection
 ELEVATION_THRESHOLD = 0.10  # [m] stance height above ground to need support
@@ -92,7 +98,12 @@ def collect_stance_points(
     return points
 
 
-def scan_clip(motion_path: Path, foot_indices: list) -> dict:
+def scan_clip(
+    motion_path: Path,
+    foot_indices: list,
+    standing_height: float,
+    force_flag: bool = False,
+) -> dict:
     """Scan one clip; return classification and support boxes."""
     m = torch.load(motion_path, weights_only=False, map_location="cpu")
     body_pos = m["rigid_body_pos"].numpy()  # (N, B, 3)
@@ -102,13 +113,17 @@ def scan_clip(motion_path: Path, foot_indices: list) -> dict:
     foot_pos = body_pos[:, foot_indices, :]  # (N, F, 3)
     foot_speed = np.linalg.norm(body_vel[:, foot_indices, :], axis=-1)  # (N, F)
 
+    root_clearance = ROOT_CLEARANCE_MIN
+    relaxed_clearance = RELAXED_CLEARANCE_MIN
+    elevation_threshold = ELEVATION_THRESHOLD
+
     # Strict pass decides classification: sustained, height-stable,
     # load-bearing stances only (rejects jump apexes and sit/beg poses).
     root_z = body_pos[:, 0, 2]
     stance_points = collect_stance_points(
         foot_pos, foot_speed, root_z,
         STANCE_SPEED_THRESHOLD, MIN_STANCE_FRAMES,
-        STANCE_HEIGHT_STD_MAX, ROOT_CLEARANCE_MIN,
+        STANCE_HEIGHT_STD_MAX, root_clearance,
     )
     if not stance_points:
         return {"classification": "no_stance", "support_boxes": []}
@@ -116,8 +131,8 @@ def scan_clip(motion_path: Path, foot_indices: list) -> dict:
     stance_points = np.array(stance_points)
     ground_z = float(np.percentile(stance_points[:, 2], 10))
 
-    elevated = stance_points[stance_points[:, 2] > ground_z + ELEVATION_THRESHOLD]
-    if len(elevated) == 0:
+    elevated = stance_points[stance_points[:, 2] > ground_z + elevation_threshold]
+    if len(elevated) == 0 and not force_flag:
         return {"classification": "flat", "support_boxes": []}
 
     # The clip is confirmed to need support. Regenerate stance points with a
@@ -127,11 +142,20 @@ def scan_clip(motion_path: Path, foot_indices: list) -> dict:
     relaxed = np.array(
         collect_stance_points(
             foot_pos, foot_speed, root_z,
-            speed_thr=0.45, min_frames=3, std_max=0.05, clearance=0.12,
+            speed_thr=0.45, min_frames=3, std_max=0.05, clearance=relaxed_clearance,
         )
     )
     if len(relaxed):
-        elevated = relaxed[relaxed[:, 2] > ground_z + ELEVATION_THRESHOLD]
+        relaxed_elevated = relaxed[relaxed[:, 2] > ground_z + elevation_threshold]
+        if len(relaxed_elevated):
+            elevated = relaxed_elevated
+
+    if len(elevated) == 0:
+        # Force-flagged (needs support per the sibling dataset) but no boxes
+        # are derivable here: classify needs_support with no boxes so the clip
+        # is EXCLUDED from flat training (the terrain builder skips no-box
+        # entries — feet-in-air training would be worse than skipping).
+        return {"classification": "needs_support", "support_boxes": []}
 
     # Cluster elevated stances by height (simple 5cm binning), one box per
     # height level covering the horizontal extent of its stance cluster.
@@ -218,6 +242,18 @@ def main(
     exclude_file: Path = typer.Option(
         None, help="Output exclusion file (one motion ID per line)."
     ),
+    standing_height: float = typer.Option(
+        0.6,
+        help="Robot nominal standing height [m] (default_root_height). Scales "
+        "the load-bearing and elevation thresholds, e.g. 0.6 for ANYmal-D, "
+        "0.34 for Go2.",
+    ),
+    force_flag_manifest: Path = typer.Option(
+        None,
+        help="Another robot's support manifest (same source captures): clips "
+        "flagged needs_support there are force-flagged here too, with boxes "
+        "from this robot's relaxed stance pass.",
+    ),
 ):
     # Default quadruped layout: feet at indices 4, 8, 12, 16
     foot_indices = [4, 8, 12, 16]
@@ -226,15 +262,27 @@ def main(
     if not clips:
         raise typer.Exit(f"No .motion files in {clips_dir}")
 
+    force_names = set()
+    if force_flag_manifest is not None:
+        other = yaml.safe_load(open(force_flag_manifest))
+        force_names = {
+            k for k, v in other.items() if v["classification"] == "needs_support"
+        }
+
     manifest = {}
     counts = {"flat": 0, "needs_support": 0, "no_stance": 0}
     for clip in clips:
-        result = scan_clip(clip, foot_indices)
+        result = scan_clip(
+            clip, foot_indices, standing_height, force_flag=clip.name in force_names
+        )
         manifest[clip.name] = result
         counts[result["classification"]] += 1
         if result["classification"] == "needs_support":
-            top = max(b["top_z"] for b in result["support_boxes"])
-            print(f"NEEDS SUPPORT: {clip.name} ({len(result['support_boxes'])} boxes, max height {top:.2f}m)")
+            if result["support_boxes"]:
+                top = max(b["top_z"] for b in result["support_boxes"])
+                print(f"NEEDS SUPPORT: {clip.name} ({len(result['support_boxes'])} boxes, max height {top:.2f}m)")
+            else:
+                print(f"NEEDS SUPPORT (no boxes derivable — excluded only): {clip.name}")
 
     with open(output, "w") as f:
         yaml.safe_dump(manifest, f, sort_keys=True)
