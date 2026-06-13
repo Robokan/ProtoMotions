@@ -38,9 +38,14 @@ import yaml
 
 app = typer.Typer(pretty_exceptions_enable=False)
 
-# Stance detection
+# Stance detection. Both criteria must hold so that jump apexes (briefly slow
+# but never height-stable) are not mistaken for planted stances:
+# - sustained low speed: ballistic feet stay below the speed threshold only
+#   ~0.05s around the apex, half the minimum window
+# - stable height: a planted foot holds constant z; an airborne foot does not
 STANCE_SPEED_THRESHOLD = 0.25  # [m/s] foot slower than this counts as planted
 MIN_STANCE_FRAMES = 6  # minimum consecutive frames (~0.1s @ 60fps)
+STANCE_HEIGHT_STD_MAX = 0.02  # [m] max foot z std-dev within a stance segment
 
 # Support detection
 ELEVATION_THRESHOLD = 0.10  # [m] stance height above ground to need support
@@ -75,11 +80,14 @@ def scan_clip(motion_path: Path, foot_indices: list) -> dict:
     foot_pos = body_pos[:, foot_indices, :]  # (N, F, 3)
     foot_speed = np.linalg.norm(body_vel[:, foot_indices, :], axis=-1)  # (N, F)
 
-    # Collect all stance foot positions across feet
+    # Collect all stance foot positions across feet. Reject segments whose
+    # height is not stable — those are airborne (jump apex), not supported.
     stance_points = []  # (x, y, z)
     for f in range(foot_pos.shape[1]):
         for s, e in find_stance_segments(foot_speed[:, f]):
             seg = foot_pos[s:e, f, :]
+            if seg[:, 2].std() > STANCE_HEIGHT_STD_MAX:
+                continue
             stance_points.append(seg.mean(axis=0))
     if not stance_points:
         return {"classification": "no_stance", "support_boxes": []}
@@ -109,10 +117,15 @@ def scan_clip(motion_path: Path, foot_indices: list) -> dict:
             }
         )
 
+    # Root xy travel bounds (motion-local coords) — used by the terrain
+    # builder to size this clip's support cell.
+    root_xy = body_pos[:, 0, :2]
     return {
         "classification": "needs_support",
         "ground_z": round(ground_z, 3),
         "duration_s": round(body_pos.shape[0] / fps, 2),
+        "root_xy_min": [round(float(v), 3) for v in root_xy.min(axis=0)],
+        "root_xy_max": [round(float(v), 3) for v in root_xy.max(axis=0)],
         "support_boxes": boxes,
     }
 
