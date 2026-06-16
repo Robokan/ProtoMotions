@@ -45,6 +45,17 @@ SRC_MJCF = REPO / "protomotions/data/assets/mjcf/dog_v2_nomesh.xml"
 OUT_MJCF = REPO / "protomotions/data/assets/mjcf/dog_v2_bones.xml"
 OUT_MESH = REPO / "protomotions/data/assets/mesh/dog_v2_bones"
 
+
+def _glob_bones(prefix):
+    """Left-side dm bone names matching BONE<prefix>*.stl (robust to the messy,
+    inconsistent phalanx suffixes). Returns names without the BONE prefix/.stl."""
+    out = []
+    for p in sorted(DM_ASSETS.glob(f"BONE{prefix}*.stl")):
+        n = p.stem[len("BONE"):]
+        if "_L" in n and "_R" not in n:  # left-side only (R is substituted later)
+            out.append(n)
+    return out
+
 # Per hind/front segment (LEFT side): dm bone STLs, the dm geom `pos` that places
 # them in the dm body frame, the dm child-joint offset (= bone long axis), and
 # our bone length along +X. Right side is the mirror (y negated, _R meshes).
@@ -75,8 +86,12 @@ SEGMENTS = {
         # The scapula is a large flat blade, NOT a between-joints limb segment;
         # our short Shoulder->Arm bone (0.081) would shrink it. Keep it near the
         # overall dog scale (~0.95, like the matched limb bones) so it reads as a
-        # real shoulder blade extending up toward the withers.
+        # real shoulder blade. anchor_glenoid shifts it along the bone axis so the
+        # GLENOID (bottom, where the humerus attaches) sits exactly at the LeftArm
+        # joint -- the body then connects near the scapula's middle and the blade
+        # extends back/up past the joint, as on a real dog.
         scale=0.95,
+        anchor_glenoid=True,
     ),
     "Arm": dict(
         stls=["humerus_L"],
@@ -90,22 +105,26 @@ SEGMENTS = {
         child=(0.003, -0.015, -0.19),
         our_len=0.181204,
     ),
-    "Foot": dict(  # hind paw: metatarsals + tarsal bones; our bone points -Y
+    "Foot": dict(  # hind paw: metatarsals + tarsals + TOE phalanges; bone -Y
         stls=["Calcaneal_tuber_L", "Metatarsi_L_1", "Metatarsi_L_2",
               "Metatarsi_L_3", "Metatarsi_L_4", "Tarsus_L_I", "Tarsus_L_II",
               "Tarsus_L_III", "Tarsus_L_IV", "Tarsus_central_L",
-              "Tibial_tarsal_L"],
+              "Tibial_tarsal_L"]
+        # toe phalanges (live in dm's toe body, but all bones share one global
+        # frame so the foot offset places them correctly)
+        + _glob_bones("Phalanges_B"),
         gpos=(0.52847, -0.072695, -0.15831),
         child=(-0.015043, 0.0081311, -0.11993),
         our_len=0.109944,
         our_axis=(0.0, -1.0, 0.0),
     ),
-    "Hand": dict(  # front paw: metacarpals + carpal (wrist) bones
+    "Hand": dict(  # front paw: carpals + metacarpals + FINGER phalanges
         stls=["Carpal_III_L", "Carpal_II_L", "Carpal_IV_L", "Carpal_I_L",
               "Carpal_L", "Carpal_Sesamoid_L", "Os_metacarpale_III_L",
               "Os_metacarpale_II_L", "Os_metacarpale_IV_L", "Os_metacarpale_I_L",
-              "Os_metacarpale_V_L.001", "Os_metacarpale_V_L",
-              "Phalanx_distalis_digiti_I_L"],
+              "Os_metacarpale_V_L.001", "Os_metacarpale_V_L"]
+        # finger phalanges (dm finger body; same global frame -> hand offset)
+        + _glob_bones("Phalanx_") + _glob_bones("Phalanxpmxinutlis"),
         gpos=(-0.1484, -0.053, -0.090221),
         child=(0.02, 0, -0.06),
         our_len=0.073296,
@@ -147,8 +166,6 @@ def bake_segment(seg, side):
 
     dm_axis = child / np.linalg.norm(child)
     our_axis = np.array(spec.get("our_axis", (1.0, 0.0, 0.0)))
-    if side == "Right":  # our right foot uses the same -Y axis as the left
-        pass
     s = spec.get("scale") or spec["our_len"] / np.linalg.norm(child)
     cross = np.cross(dm_axis, our_axis)
     R = tf.rotation_matrix(
@@ -156,6 +173,12 @@ def bake_segment(seg, side):
         cross if np.linalg.norm(cross) > 1e-9 else [0, 0, 1],
     )[:3, :3]
     mesh.vertices = (s * (R @ mesh.vertices.T)).T  # fit into OUR body frame
+    if spec.get("anchor_glenoid"):
+        # the child joint (glenoid) currently sits at s*|child| along our_axis;
+        # slide the whole bone so it lands at our_len (the leg attachment), the
+        # blade then extending back past the body origin.
+        shift = (spec["our_len"] - s * np.linalg.norm(child))
+        mesh.vertices = mesh.vertices + shift * our_axis
     return mesh
 
 
