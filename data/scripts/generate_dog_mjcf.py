@@ -209,6 +209,24 @@ def add_capsule(body_el, name, vec, radius, group="0"):
     )
 
 
+def add_capsule_fromto(body_el, name, p0, p1, radius, group="0"):
+    """Add a capsule geom spanning p0 -> p1 (both in the body frame)."""
+    if _norm([p1[a] - p0[a] for a in range(3)]) < 1e-4:
+        add_capsule(body_el, name, p1, radius, group)
+        return
+    ET.SubElement(
+        body_el,
+        "geom",
+        {
+            "name": f"geom_{name}",
+            "type": "capsule",
+            "fromto": f"{_fmt_vec(p0)} {_fmt_vec(p1)}",
+            "size": f"{radius:.6g}",
+            "group": group,
+        },
+    )
+
+
 def build_mjcf(bvh_path, output_path):
     names, parents, offsets_m, children, end_offsets_m = build_bvh_tree(bvh_path)
 
@@ -266,22 +284,24 @@ def build_mjcf(bvh_path, output_path):
         radius = region_radius(names[i])
         kids = children[i]
         if parents[i] < 0:
-            # trunk: span toward Spine1 (through Spine) for a meaty body capsule.
-            # Spine offset is 0 from Hips, so use the Spine1 world-ish direction:
-            # Spine(child)=0 -> use Spine1 offset (Spine offset + Spine1 offset).
-            tip = None
+            # trunk = PELVIS: a short lateral capsule between the two hind-hip
+            # sockets (LeftUpLeg <-> RightUpLeg). Do NOT span up the spine — the
+            # Spine/Spine1 bodies already capsule the back. A long Hips->Spine1
+            # rod overlapped the tail (Tail starts at +0.07m on the same axis
+            # the spine runs) and penetrated the ground when the pelvis pitched
+            # down while sitting.
+            lu = ru = None
             for k in kids:
-                if names[k] == "Spine":
-                    # accumulate Spine + its Spine1 child
-                    sp = offsets_m[k]
-                    for kk in children[k]:
-                        if names[kk] == "Spine1":
-                            tip = [sp[a] + offsets_m[kk][a] for a in range(3)]
-                    if tip is None:
-                        tip = sp
-            if tip is None:
-                tip = [0.18, 0.0, 0.0]
-            add_capsule(body_el, bname, tip, RADIUS_TRUNK)
+                if names[k] == "LeftUpLeg":
+                    lu = offsets_m[k]
+                elif names[k] == "RightUpLeg":
+                    ru = offsets_m[k]
+            if lu is not None and ru is not None:
+                add_capsule_fromto(body_el, bname, lu, ru, RADIUS_TRUNK)
+            else:
+                # fallback: a short stub toward the first child
+                tip = offsets_m[kids[0]] if kids else [0.06, 0.0, 0.0]
+                add_capsule(body_el, bname, tip, RADIUS_TRUNK)
         elif kids:
             # span to the first child's offset (the bone direction)
             tip = offsets_m[kids[0]]

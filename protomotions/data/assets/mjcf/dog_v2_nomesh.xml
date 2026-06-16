@@ -9,7 +9,7 @@
   <worldbody>
     <body name="trunk" pos="0 0 0">
       <freejoint name="root"/>
-      <geom name="geom_trunk" type="capsule" fromto="0 0 0 0.19342 0 0" size="0.045" group="0"/>
+      <geom name="geom_trunk" type="capsule" fromto="0.0609197 -0.0780399 0.0487499 0.0609197 -0.0780397 -0.0487499" size="0.045" group="0"/>
       <body name="Spine" pos="0 0 0">
         <joint name="Spine_x" type="hinge" axis="1 0 0" pos="0 0 0" limited="false"/>
         <joint name="Spine_y" type="hinge" axis="0 1 0" pos="0 0 0" limited="false"/>
