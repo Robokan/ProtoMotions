@@ -348,8 +348,16 @@ def main():
         _clip_req["delta"] = -1
 
     if hasattr(env.simulator, "_custom_key_handlers"):
+        # n/p and =/- both cycle the played-back clip (=/- mirror the Newton
+        # viewer; with a single env they would otherwise just switch which robot
+        # the camera follows, which is a no-op).
         env.simulator._custom_key_handlers.update(
-            {"n": _request_next, "p": _request_prev}
+            {
+                "n": _request_next,
+                "p": _request_prev,
+                "=": _request_next,
+                "-": _request_prev,
+            }
         )
 
     def _apply_clip_switch():
@@ -377,10 +385,8 @@ def main():
     print("  L - start/stop recording")
     print("  ; - cancel recording")
     print("  O - toggle camera target")
-    print("  = - watch next robot")
-    print("  - - watch previous robot")
-    print("  N - next motion clip")
-    print("  P - previous motion clip")
+    print("  N / = - next motion clip")
+    print("  P / - - previous motion clip")
     print("  Q - close simulator")
 
     actions = torch.zeros(env.num_envs, robot_config.number_of_actions, device=device)
