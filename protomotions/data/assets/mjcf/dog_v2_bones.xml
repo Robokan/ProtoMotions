@@ -21,31 +21,43 @@
     <mesh name="bone_RightForeArm" file="../mesh/dog_v2_bones/bone_RightForeArm.obj"/>
     <mesh name="bone_RightFoot" file="../mesh/dog_v2_bones/bone_RightFoot.obj"/>
     <mesh name="bone_RightHand" file="../mesh/dog_v2_bones/bone_RightHand.obj"/>
+    <mesh name="bone_trunk" file="../mesh/dog_v2_bones/bone_trunk.obj"/>
+    <mesh name="bone_Spine" file="../mesh/dog_v2_bones/bone_Spine.obj"/>
+    <mesh name="bone_Spine1" file="../mesh/dog_v2_bones/bone_Spine1.obj"/>
+    <mesh name="bone_Neck" file="../mesh/dog_v2_bones/bone_Neck.obj"/>
+    <mesh name="bone_Head" file="../mesh/dog_v2_bones/bone_Head.obj"/>
+    <mesh name="bone_Tail" file="../mesh/dog_v2_bones/bone_Tail.obj"/>
+    <mesh name="bone_Tail1" file="../mesh/dog_v2_bones/bone_Tail1.obj"/>
   </asset>
   <worldbody>
     <body name="trunk" pos="0 0 0">
       <freejoint name="root"/>
-      <geom name="geom_trunk" type="capsule" fromto="0.0609197 -0.0780399 0.0487499 0.0609197 -0.0780397 -0.0487499" size="0.045" group="0"/>
+      <geom name="geom_trunk" type="capsule" fromto="0.0609197 -0.0780399 0.0487499 0.0609197 -0.0780397 -0.0487499" size="0.045" group="0" rgba="0.5 0.5 0.5 0"/>
+          <geom name="bone_trunk" type="mesh" mesh="bone_trunk" contype="0" conaffinity="0" density="0" group="2" rgba="0.93 0.90 0.83 1"/>
       <body name="Spine" pos="0 0 0">
         <joint name="Spine_x" type="hinge" axis="1 0 0" pos="0 0 0" limited="false"/>
         <joint name="Spine_y" type="hinge" axis="0 1 0" pos="0 0 0" limited="false"/>
         <joint name="Spine_z" type="hinge" axis="0 0 1" pos="0 0 0" limited="false"/>
-        <geom name="geom_Spine" type="capsule" fromto="0 0 0 0.19342 0 0" size="0.04" group="0"/>
+        <geom name="geom_Spine" type="capsule" fromto="0 0 0 0.19342 0 0" size="0.04" group="0" rgba="0.5 0.5 0.5 0"/>
+          <geom name="bone_Spine" type="mesh" mesh="bone_Spine" contype="0" conaffinity="0" density="0" group="2" rgba="0.93 0.90 0.83 1"/>
         <body name="Spine1" pos="0.19342 0 0">
           <joint name="Spine1_x" type="hinge" axis="1 0 0" pos="0 0 0" limited="false"/>
           <joint name="Spine1_y" type="hinge" axis="0 1 0" pos="0 0 0" limited="false"/>
           <joint name="Spine1_z" type="hinge" axis="0 0 1" pos="0 0 0" limited="false"/>
-          <geom name="geom_Spine1" type="capsule" fromto="0 0 0 0.22905 0.006108 0" size="0.04" group="0"/>
+          <geom name="geom_Spine1" type="capsule" fromto="0 0 0 0.22905 0.006108 0" size="0.04" group="0" rgba="0.5 0.5 0.5 0"/>
+          <geom name="bone_Spine1" type="mesh" mesh="bone_Spine1" contype="0" conaffinity="0" density="0" group="2" rgba="0.93 0.90 0.83 1"/>
           <body name="Neck" pos="0.22905 0.006108 0">
             <joint name="Neck_x" type="hinge" axis="1 0 0" pos="0 0 0" limited="false"/>
             <joint name="Neck_y" type="hinge" axis="0 1 0" pos="0 0 0" limited="false"/>
             <joint name="Neck_z" type="hinge" axis="0 0 1" pos="0 0 0" limited="false"/>
-            <geom name="geom_Neck" type="capsule" fromto="0 0 0 0.14252 0.000314335 0" size="0.035" group="0"/>
+            <geom name="geom_Neck" type="capsule" fromto="0 0 0 0.14252 0.000314335 0" size="0.035" group="0" rgba="0.5 0.5 0.5 0"/>
+          <geom name="bone_Neck" type="mesh" mesh="bone_Neck" contype="0" conaffinity="0" density="0" group="2" rgba="0.93 0.90 0.83 1"/>
             <body name="Head" pos="0.14252 0.000314335 0">
               <joint name="Head_x" type="hinge" axis="1 0 0" pos="0 0 0" limited="false"/>
               <joint name="Head_y" type="hinge" axis="0 1 0" pos="0 0 0" limited="false"/>
               <joint name="Head_z" type="hinge" axis="0 0 1" pos="0 0 0" limited="false"/>
-              <geom name="geom_Head" type="capsule" fromto="0 0 0 0.17306 0 0" size="0.045" group="0"/>
+              <geom name="geom_Head" type="capsule" fromto="0 0 0 0.17306 0 0" size="0.045" group="0" rgba="0.5 0.5 0.5 0"/>
+          <geom name="bone_Head" type="mesh" mesh="bone_Head" contype="0" conaffinity="0" density="0" group="2" rgba="0.93 0.90 0.83 1"/>
             </body>
           </body>
           <body name="LeftShoulder" pos="0.201564 0.037666 0.043774">
@@ -152,12 +164,14 @@
         <joint name="Tail_x" type="hinge" axis="1 0 0" pos="0 0 0" limited="false"/>
         <joint name="Tail_y" type="hinge" axis="0 1 0" pos="0 0 0" limited="false"/>
         <joint name="Tail_z" type="hinge" axis="0 0 1" pos="0 0 0" limited="false"/>
-        <geom name="geom_Tail" type="capsule" fromto="0 0 0 0.12216 0 0" size="0.018" group="0"/>
+        <geom name="geom_Tail" type="capsule" fromto="0 0 0 0.12216 0 0" size="0.018" group="0" rgba="0.5 0.5 0.5 0"/>
+          <geom name="bone_Tail" type="mesh" mesh="bone_Tail" contype="0" conaffinity="0" density="0" group="2" rgba="0.93 0.90 0.83 1"/>
         <body name="Tail1" pos="0.12216 0 0">
           <joint name="Tail1_x" type="hinge" axis="1 0 0" pos="0 0 0" limited="false"/>
           <joint name="Tail1_y" type="hinge" axis="0 1 0" pos="0 0 0" limited="false"/>
           <joint name="Tail1_z" type="hinge" axis="0 0 1" pos="0 0 0" limited="false"/>
-          <geom name="geom_Tail1" type="capsule" fromto="0 0 0 0.12216 0 0" size="0.018" group="0"/>
+          <geom name="geom_Tail1" type="capsule" fromto="0 0 0 0.12216 0 0" size="0.018" group="0" rgba="0.5 0.5 0.5 0"/>
+          <geom name="bone_Tail1" type="mesh" mesh="bone_Tail1" contype="0" conaffinity="0" density="0" group="2" rgba="0.93 0.90 0.83 1"/>
         </body>
       </body>
     </body>

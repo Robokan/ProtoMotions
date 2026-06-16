@@ -182,6 +182,55 @@ def bake_segment(seg, side):
     return mesh
 
 
+# Midline axial bones (one body each, no L/R). These are NOT between-joints
+# segments -- our simplified spine/tail has only 1 joint where the dog has many
+# vertebrae -- so we do NOT stretch them to our segment length. Instead bake at
+# a fixed reasonable scale (~the overall dog scale) and center the cluster on our
+# segment, aligning its long axis to our bone axis. center=0 centers at the body
+# origin (the trunk/pelvis bar); otherwise centered at the segment midpoint.
+AXIAL = {
+    "trunk": dict(stls=["Pelvis", "Sacrum"], our_axis=(0, 0, 1),
+                  our_len=0.0975, center=0.0),
+    "Spine": dict(stls=[f"L_{i}" for i in range(1, 8)], our_axis=(1, 0, 0),
+                  our_len=0.19342),
+    "Spine1": dict(stls=["Ribcage"], our_axis=(1, 0, 0), our_len=0.22905),
+    "Neck": dict(stls=[f"C_{i}" for i in range(1, 8)], our_axis=(1, 0, 0),
+                 our_len=0.14252),
+    "Head": dict(stls=["MergedSkull", "Jaw"], our_axis=(1, 0, 0), our_len=0.17306),
+    "Tail": dict(stls=[f"Ca_{i}" for i in range(1, 11)], our_axis=(1, 0, 0),
+                 our_len=0.12216),
+    "Tail1": dict(stls=[f"Ca_{i}" for i in range(11, 22)], our_axis=(1, 0, 0),
+                  our_len=0.12216),
+}
+AXIAL_SCALE = 0.95  # overall dog scale (matches the limb bones); no stretching
+
+
+def bake_axial(seg):
+    spec = AXIAL[seg]
+    meshes = []
+    for n in spec["stls"]:
+        p = DM_ASSETS / f"BONE{n}.stl"
+        if p.exists():
+            meshes.append(trimesh.load(p, process=False))  # raw = global frame
+    mesh = trimesh.util.concatenate(meshes)
+    v = mesh.vertices
+    c = v.mean(0)
+    vc = v - c
+    # PCA long axis of the cluster -> align to our bone axis
+    _, _, Vt = np.linalg.svd(vc, full_matrices=False)
+    dm_axis = Vt[0]
+    our_axis = np.array(spec["our_axis"], float)
+    cross = np.cross(dm_axis, our_axis)
+    R = tf.rotation_matrix(
+        np.arccos(np.clip(dm_axis @ our_axis, -1, 1)),
+        cross if np.linalg.norm(cross) > 1e-9 else [0, 0, 1],
+    )[:3, :3]
+    vc = (AXIAL_SCALE * (R @ vc.T)).T  # centered at origin, scaled, aligned
+    center = spec.get("center", 0.5 * spec["our_len"])
+    mesh.vertices = vc + center * our_axis  # center on the segment
+    return mesh
+
+
 def main():
     OUT_MESH.mkdir(parents=True, exist_ok=True)
     geoms = {}  # body_name -> mesh asset name
@@ -194,6 +243,13 @@ def main():
             geoms[body] = asset
             print(f"baked {asset}: {len(mesh.vertices)} verts  "
                   f"bbox={np.round(mesh.bounds[1] - mesh.bounds[0], 3)}")
+    for seg in AXIAL:  # midline axial bones (trunk, spine, neck, head, tail)
+        mesh = bake_axial(seg)
+        asset = f"bone_{seg}"
+        mesh.export(OUT_MESH / f"{asset}.obj")
+        geoms[seg] = asset
+        print(f"baked {asset}: {len(mesh.vertices)} verts  "
+              f"bbox={np.round(mesh.bounds[1] - mesh.bounds[0], 3)}")
 
     # patch the MJCF: add <asset> meshes and a cosmetic <geom> in each leg body
     xml = SRC_MJCF.read_text()
