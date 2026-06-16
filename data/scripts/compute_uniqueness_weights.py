@@ -76,6 +76,7 @@ def clip_descriptor(m: dict, sl: slice, fps: float, feet: list[int]) -> np.ndarr
     root_z = gts[:, 0, 2]
     root_v = gvs[:, 0, :]
     root_w = gavs[:, 0, :]
+    root_q = m["grs"][sl][:, 0].numpy()  # (T, 4) root orientation, xyzw
     ground = np.percentile(gts[:, feet, 2], 5)
 
     feats = []
@@ -84,8 +85,23 @@ def clip_descriptor(m: dict, sl: slice, fps: float, feet: list[int]) -> np.ndarr
     # planar travel speed
     sp = np.linalg.norm(root_v[:, :2], axis=1)
     feats += [sp.mean(), sp.std(), sp.max()]
-    # signed travel components -> direction (backwards / sideways locomotion)
-    feats += [root_v[:, 0].mean(), root_v[:, 1].mean()]
+    # HEADING-RELATIVE travel: project planar velocity onto the robot's own
+    # forward/left axes (from the root quaternion), NOT world axes -- otherwise
+    # walking backwards looks identical to walking forwards (both just "moving")
+    # and rare backward/sideways gaits never register as unique. fwd<0 => backward.
+    x, y, z, w = root_q[:, 0], root_q[:, 1], root_q[:, 2], root_q[:, 3]
+    fwd = np.stack([1 - 2 * (y * y + z * z), 2 * (x * y + z * w)], axis=1)
+    fwd /= np.linalg.norm(fwd, axis=1, keepdims=True) + 1e-8
+    left = np.stack([-fwd[:, 1], fwd[:, 0]], axis=1)
+    v_fwd = (root_v[:, :2] * fwd).sum(1)
+    v_lat = (root_v[:, :2] * left).sum(1)
+    # signed mean forward (backward = negative), forward variability, |lateral|
+    feats += [v_fwd.mean(), v_fwd.std(), np.abs(v_lat).mean()]
+    # categorical gait signals: a slow backward walk (~-0.2 m/s) is too close to
+    # standing/slow by mean velocity, but the FRACTION of the clip spent moving
+    # backward (or sideways) cleanly separates a dedicated backward/strafe gait
+    # (~0.8) from a forward walk (~0) or standing (~0.5).
+    feats += [float((v_fwd < -0.05).mean()), float((np.abs(v_lat) > 0.15).mean())]
     # vertical motion -> hops / jumps
     feats += [np.abs(root_v[:, 2]).mean(), np.abs(root_v[:, 2]).max()]
     # turning (yaw rate) and overall angular agitation
@@ -101,31 +117,64 @@ def clip_descriptor(m: dict, sl: slice, fps: float, feet: list[int]) -> np.ndarr
     return np.asarray(feats, dtype=np.float64)
 
 
-def uniqueness_weights(desc: np.ndarray, max_ratio: float) -> np.ndarray:
-    """Inverse-density weights from a (N, F) descriptor matrix."""
+def feature_importance(n_feat: int) -> np.ndarray:
+    """Per-dimension importance in the uniqueness distance metric.
+
+    A backward walk is identical to a forward walk in pose and joint activity --
+    only its travel direction differs. With ~36 joint-pose dims all walks share,
+    an unweighted Euclidean distance buries the few BEHAVIORAL dims (direction,
+    vertical motion, climbing, turning) and rare gaits never look unique. We up-
+    weight those behavioral dims and down-weight the many fine-pose dims so that
+    *what the robot is doing* drives uniqueness, not *exactly how its joints sit*.
+    Layout (see clip_descriptor): 15 scalar feats then 3*D pose/activity dims.
+    """
+    imp = np.ones(n_feat)
+    imp[0:3] = 1.0     # 0-2  root height / posture
+    imp[3:6] = 1.5     # 3-5  planar speed magnitude
+    imp[6] = 4.0       # 6    signed forward speed (backward = negative)
+    imp[7:9] = 2.0     # 7-8  forward-speed variability, |lateral| speed
+    imp[9] = 8.0       # 9    fraction of clip moving BACKWARD (categorical)
+    imp[10] = 6.0      # 10   fraction moving SIDEWAYS (categorical)
+    imp[11:13] = 3.0   # 11-12 vertical motion (hops / jumps)
+    imp[13:15] = 2.0   # 13-14 turning
+    imp[15:17] = 3.0   # 15-16 feet elevation (climbing)
+    imp[17:] = 0.5     # 17+  per-dof pose mean/std + activity (all walks share)
+    return imp
+
+
+def uniqueness_weights(desc: np.ndarray, max_ratio: float, k: int = 10) -> np.ndarray:
+    """Novelty weights from a (N, F) descriptor matrix.
+
+    Weight is the mean distance to a clip's k nearest neighbours, NOT a Gaussian
+    kernel density. kNN distance is local, so it upweights a small *category*
+    (e.g. 6 backward walks) and not just lone outliers: a backward walk's nearest
+    few neighbours are the other backward walks, but the rest of its k are far-off
+    forward walks, so its mean-kNN distance is large. A forward walk sitting in a
+    cluster of 200 has all-close neighbours -> small distance -> low weight. A
+    global-bandwidth kernel density buries such near-cluster categories.
+    """
     # z-score each dimension (guard zero-variance dims)
     mu = desc.mean(axis=0)
     sd = desc.std(axis=0)
     sd[sd < 1e-8] = 1.0
     z = (desc - mu) / sd
+    # emphasize behavioral dims over fine-pose dims
+    z = z * feature_importance(desc.shape[1])
 
     # pairwise euclidean distances
     diff = z[:, None, :] - z[None, :, :]
     dist = np.sqrt((diff * diff).sum(axis=2))  # (N, N)
 
-    # bandwidth = median of off-diagonal distances (robust scale)
-    iu = np.triu_indices(len(z), k=1)
-    sigma = np.median(dist[iu])
-    if sigma < 1e-8:
-        sigma = 1.0
-
-    # local density = sum of Gaussian affinities (includes self=1)
-    density = np.exp(-(dist ** 2) / (2.0 * sigma ** 2)).sum(axis=1)
-    w = 1.0 / density
+    # mean distance to the k nearest neighbours (excluding self at distance 0)
+    k = min(k, len(z) - 1)
+    nn = np.sort(dist, axis=1)[:, 1:k + 1]
+    w = nn.mean(axis=1)
 
     # clamp dynamic range so a lone outlier can't monopolise sampling
     lo = w.min()
-    w = np.minimum(w, lo * max_ratio)
+    if lo < 1e-8:
+        lo = w[w > 1e-8].min() if (w > 1e-8).any() else 1.0
+    w = np.clip(w, lo, lo * max_ratio)
     return w / w.sum()
 
 
