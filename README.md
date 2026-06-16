@@ -147,6 +147,20 @@ python protomotions/train_agent.py \
                 terrain.motion_support_motion_lib=data/motions/anymal_d/anymal_d_split.pt
 ```
 
+**Deployable (sim2real) training for Go2 / ANYmal-D.** Use the BeyondMimic "bones deploy" config — an asymmetric actor-critic where the **actor sees only on-board signals** (reduced-coords joint proprioception, projected gravity, local angular velocity, the reference as a root-relative future trajectory; **no root height, no root linear velocity, no global position**), while the privileged critic gets full state. Adds L2C2 noise regularization and domain randomization, and exports to ONNX with observation computation baked in. (The sim-only dog is not deployable and uses `quadruped_mlp.py`.)
+
+```bash
+python protomotions/train_agent.py \
+    --robot-name go2 --simulator isaaclab \
+    --experiment-path examples/experiments/mimic/quadruped_bm_deploy.py \
+    --experiment-name go2_bm_deploy \
+    --motion-file data/motions/go2/go2_full.pt \
+    --num-envs 8192 --batch-size 32768
+
+# export the trained tracker to ONNX (obs baked in) for hardware deployment
+python deployment/export_bm_tracker_onnx.py --checkpoint results/go2_bm_deploy/last.ckpt
+```
+
 **Preview the reference motions** before training (`N`/`=` next clip, `P`/`-` previous; weighted random when one finishes):
 
 ```bash
