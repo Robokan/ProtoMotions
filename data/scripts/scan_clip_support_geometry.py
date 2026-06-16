@@ -65,6 +65,10 @@ BALLISTIC_ACCEL_THRESHOLD = -4.0  # [m/s^2] below this = airborne (jump)
 # platform lasts far longer (observed >1.3s). Require a sustained run so jumps
 # (which never settle onto an elevated surface) are not mistaken for climbs.
 MIN_SUPPORT_SECONDS = 1.0  # continuous supported-elevated stand to count
+# Minimum height of the surface the feet rest on for it to count as a support
+# structure (vs a low artifact / a curb the robot just steps over). Real climbs
+# observed at 0.5-1.0m; lie-down/hop artifacts at 0.14-0.19m.
+MIN_PLATFORM_ELEVATION = 0.30  # [m] above the clip's ground baseline
 
 # Load-bearing test: a foot only needs support if the body stands above it
 # (leg extended downward, weight passing through). A sitting robot holding a
@@ -177,16 +181,32 @@ def scan_clip(
     kernel = np.ones(win) / win
     root_s = np.convolve(root_z, kernel, mode="same")  # smooth before 2nd deriv
     root_acc = np.gradient(np.gradient(root_s)) * fps * fps
-    all4_elev = ((foot_pos[:, :, 2] - ground_z) > elevation_threshold).all(axis=1)
+    foot_elev = foot_pos[:, :, 2] - ground_z  # (N, F) per-foot height above ground
+    all4_elev = (foot_elev > elevation_threshold).all(axis=1)
     supported = root_acc > BALLISTIC_ACCEL_THRESHOLD
-    support_frame = all4_elev & supported
-    # longest sustained supported-elevated run
-    best = run = 0
-    for v in support_frame:
-        run = run + 1 if v else 0
-        best = max(best, run)
+    # PLATFORM-HEIGHT gate: the surface the feet rest on must be a real block,
+    # not a low artifact. When a robot lies down later in a clip a foot can dip
+    # very low, dragging ground_z down so the normal standing feet look "elevated"
+    # by ~0.15m (anymal 1_clip_2); and a small hop tops out ~0.2m. Genuine climbs
+    # put all feet (and the body) far higher. Require the supporting surface at a
+    # frame (mean foot height above ground) to clear MIN_PLATFORM_ELEVATION.
+    high_enough = foot_elev.mean(axis=1) > MIN_PLATFORM_ELEVATION
+    support_frame = all4_elev & supported & high_enough
+
+    # Contiguous supported-elevated segments lasting >= MIN_SUPPORT_SECONDS. Each
+    # is a window where the robot genuinely stands on an elevated surface; a clip
+    # may have several (climb up, stand, climb down) interleaved with flat travel.
     min_support_frames = max(1, int(round(MIN_SUPPORT_SECONDS * fps)))
-    standing_on_elevated = best >= min_support_frames
+    support_segments = []
+    s = None
+    for i, v in enumerate(np.append(support_frame, False)):
+        if v and s is None:
+            s = i
+        elif not v and s is not None:
+            if i - s >= min_support_frames:
+                support_segments.append([s, i])
+            s = None
+    standing_on_elevated = len(support_segments) > 0
 
     if not (all_feet_elevated and standing_on_elevated) and not force_flag:
         return {"classification": "flat", "support_boxes": []}
@@ -256,12 +276,24 @@ def scan_clip(
     # Root xy travel bounds (motion-local coords) — used by the terrain
     # builder to size this clip's support cell.
     root_xy = body_pos[:, 0, :2]
+    # Supported-elevated time windows (seconds), for clip splitting: the robot
+    # only needs terrain during these; the rest of the clip is flat-trainable.
+    support_segments_s = [
+        [round(a / fps, 2), round(b / fps, 2)] for a, b in support_segments
+    ]
+    spans_whole = (
+        len(support_segments) == 1
+        and support_segments[0][0] <= int(0.05 * len(support_frame))
+        and support_segments[0][1] >= int(0.95 * len(support_frame))
+    )
     return {
         "classification": "needs_support",
         "ground_z": round(ground_z, 3),
         "duration_s": round(body_pos.shape[0] / fps, 2),
         "root_xy_min": [round(float(v), 3) for v in root_xy.min(axis=0)],
         "root_xy_max": [round(float(v), 3) for v in root_xy.max(axis=0)],
+        "support_segments": support_segments_s,
+        "splittable": not spans_whole,
         "support_boxes": boxes,
     }
 
