@@ -47,6 +47,14 @@ STANCE_SPEED_THRESHOLD = 0.25  # [m/s] foot slower than this counts as planted
 MIN_STANCE_FRAMES = 6  # minimum consecutive frames (~0.1s @ 60fps)
 STANCE_HEIGHT_STD_MAX = 0.02  # [m] max foot z std-dev within a stance segment
 
+# Detection params for "foot rests on an elevated surface" (classification +
+# box placement). Looser than the legacy strict pass so real climbs whose feet
+# only briefly settle (e.g. 20_clip_1) aren't missed; the all-4-feet + elevation
+# gate keeps rearing/sitting out regardless.
+STANCE_DETECT_SPEED = 0.45  # [m/s]
+STANCE_DETECT_MIN_FRAMES = 3  # frames (~0.05s)
+STANCE_DETECT_STD_MAX = 0.05  # [m]
+
 # Load-bearing test: a foot only needs support if the body stands above it
 # (leg extended downward, weight passing through). A sitting robot holding a
 # paw up is slow and height-stable too, but the paw is at/above root height
@@ -82,19 +90,23 @@ def find_stance_segments(speed: np.ndarray, speed_thr: float, min_frames: int) -
     return segments
 
 
-def collect_stance_points(
-    foot_pos, foot_speed, root_z, speed_thr, min_frames, std_max, clearance
+def foot_elevated_stances(
+    foot_pos, foot_speed, f, ground_z, speed_thr, min_frames, std_max, elev_thr
 ):
-    """Mean (x, y, z) of every stance segment passing all filters."""
+    """Elevated planted stance points (x,y,z) for ONE foot index `f`.
+
+    A stance is: slow (planted), height-stable, and its mean height is more
+    than `elev_thr` above the clip's ground. No load-bearing/clearance test —
+    "is this foot resting on an elevated surface" is purely about the foot.
+    """
     points = []
-    for f in range(foot_pos.shape[1]):
-        for s, e in find_stance_segments(foot_speed[:, f], speed_thr, min_frames):
-            seg = foot_pos[s:e, f, :]
-            if seg[:, 2].std() > std_max:
-                continue
-            if (root_z[s:e].mean() - seg[:, 2].mean()) < clearance:
-                continue
-            points.append(seg.mean(axis=0))
+    for s, e in find_stance_segments(foot_speed[:, f], speed_thr, min_frames):
+        seg = foot_pos[s:e, f, :]
+        if seg[:, 2].std() > std_max:
+            continue
+        if (seg[:, 2].mean() - ground_z) <= elev_thr:
+            continue
+        points.append(seg.mean(axis=0))
     return points
 
 
@@ -112,49 +124,47 @@ def scan_clip(
 
     foot_pos = body_pos[:, foot_indices, :]  # (N, F, 3)
     foot_speed = np.linalg.norm(body_vel[:, foot_indices, :], axis=-1)  # (N, F)
-
-    root_clearance = ROOT_CLEARANCE_MIN
-    relaxed_clearance = RELAXED_CLEARANCE_MIN
+    nfeet = foot_pos.shape[1]
     elevation_threshold = ELEVATION_THRESHOLD
 
-    # Strict pass decides classification: sustained, height-stable,
-    # load-bearing stances only (rejects jump apexes and sit/beg poses).
-    root_z = body_pos[:, 0, 2]
-    stance_points = collect_stance_points(
-        foot_pos, foot_speed, root_z,
-        STANCE_SPEED_THRESHOLD, MIN_STANCE_FRAMES,
-        STANCE_HEIGHT_STD_MAX, root_clearance,
-    )
-    if not stance_points:
-        return {"classification": "no_stance", "support_boxes": []}
+    # Ground baseline: robust low percentile of all foot heights (the original
+    # floor the clip was captured on).
+    ground_z = float(np.percentile(foot_pos[:, :, 2], 5))
 
-    stance_points = np.array(stance_points)
-    ground_z = float(np.percentile(stance_points[:, 2], 10))
+    # CLASSIFICATION (owner's criterion): a clip needs support ONLY if ALL FOUR
+    # feet each leave the ground onto an elevated surface at some point — i.e.
+    # the robot fully transfers its weight off the original floor (climbs onto
+    # a block / up stairs). If even one foot stays grounded throughout, the
+    # robot is still floor-supported and the elevated feet are just lifted in
+    # the air (rearing, sitting with paws up, side-stepping) — NO support.
+    # "Leaves the ground onto a surface" = a sustained, height-stable, planted
+    # stance whose height is elevated above the ground. (No load-bearing test —
+    # that wrongly rejected tall robots whose body sits level with high feet.)
+    # One detection for both classification and box placement: a foot "rests on
+    # an elevated surface" if it has a planted (slow), height-stable, sustained
+    # stance elevated above the ground. Moderately loose so real climbs aren't
+    # missed (e.g. 20_clip_1's feet at 0.3-0.4m); the all-4 requirement + the
+    # elevation threshold keep rearing/sitting (grounded feet) out regardless.
+    per_foot = [
+        foot_elevated_stances(
+            foot_pos, foot_speed, k, ground_z,
+            STANCE_DETECT_SPEED, STANCE_DETECT_MIN_FRAMES,
+            STANCE_DETECT_STD_MAX, elevation_threshold,
+        )
+        for k in range(nfeet)
+    ]
+    all_feet_elevated = all(len(p) > 0 for p in per_foot)
 
-    elevated = stance_points[stance_points[:, 2] > ground_z + elevation_threshold]
-    if len(elevated) == 0 and not force_flag:
+    if not all_feet_elevated and not force_flag:
         return {"classification": "flat", "support_boxes": []}
 
-    # The clip is confirmed to need support. Regenerate stance points with a
-    # RELAXED pass so brief transitional contacts (e.g. a quick touch on an
-    # intermediate step while climbing down) also get geometry. Relaxing only
-    # box generation cannot flip flat clips to needs_support.
-    relaxed = np.array(
-        collect_stance_points(
-            foot_pos, foot_speed, root_z,
-            speed_thr=0.45, min_frames=3, std_max=0.05, clearance=relaxed_clearance,
-        )
-    )
-    if len(relaxed):
-        relaxed_elevated = relaxed[relaxed[:, 2] > ground_z + elevation_threshold]
-        if len(relaxed_elevated):
-            elevated = relaxed_elevated
+    # Box placement: all elevated stance points across the four feet.
+    relaxed_pts = [p for foot in per_foot for p in foot]
+    elevated = np.array(relaxed_pts) if relaxed_pts else np.empty((0, 3))
 
     if len(elevated) == 0:
-        # Force-flagged (needs support per the sibling dataset) but no boxes
-        # are derivable here: classify needs_support with no boxes so the clip
-        # is EXCLUDED from flat training (the terrain builder skips no-box
-        # entries — feet-in-air training would be worse than skipping).
+        # Flagged (e.g. force-flagged) but no elevated stances derivable: exclude
+        # from flat training (terrain builder skips no-box entries).
         return {"classification": "needs_support", "support_boxes": []}
 
     # Cluster elevated stances by height (simple 5cm binning), one box per
