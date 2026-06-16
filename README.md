@@ -86,6 +86,76 @@ Train your robot to perform AMASS motor skills in **12 hours**, by just changing
   <img src="data/static/h1_2_gym.gif" alt="H1_2 AMASS training" height="280">
 </p>
 
+### 🐕 Quadruped Motion Imitation (Go2, ANYmal-D, dog)
+
+Train quadrupeds to imitate retargeted mocap across all engines (IsaacGym, IsaacLab, Newton). Three robots are registered out of the box:
+
+| Robot | `--robot-name` | Asset | Source motions |
+|-------|----------------|-------|----------------|
+| Unitree **Go2** | `go2` | `mjcf/go2.xml` (+ USD) | poselib NPY (MANN/ASE) |
+| **ANYmal-D** | `anymal_d` | `mjcf/anymal_d.xml` | poselib NPY |
+| dm_control **dog** | `dog_v2` | `mjcf/dog_v2_nomesh.xml` (BVH-matched cylinder skeleton) | MANN BVH library |
+
+**1. Prepare motions.** Convert retargeted poselib clips to a packed MotionLib `.pt`, or retarget the dm_control dog directly from BVH:
+
+```bash
+# Go2 / ANYmal-D — poselib NPY → ProtoMotions .pt
+python data/scripts/convert_quadruped_poselib_to_proto.py \
+    --yaml-file /path/to/full_set.yaml --motion-dir /path/to/clips/ \
+    --robot-name go2 --output data/motions/go2/go2_full.pt
+
+# dm_control dog — identity retarget from the MANN BVH library (Y-up→Z-up)
+python data/scripts/retarget_bvh_to_dog.py --clips /path/to/bvh/ --mirror
+```
+
+**2. (Optional) Motion-support terrain.** Some clips climb onto blocks/platforms. The scanner flags those clips, builds per-clip support structures, and spawns the flagged clips on them so the reference motion lines up. A clip needs support only when **all four feet leave the floor onto a sustained, elevated, non-falling surface** — pure jumps (free-fall), rearing/sitting (a foot stays down), and lie-downs (surface too low) are correctly left flat.
+
+```bash
+python data/scripts/scan_clip_support_geometry.py \
+    --clips-dir data/motions/anymal_d/clips \
+    --motion-lib data/motions/anymal_d/anymal_d_full.pt \
+    --output data/motions/anymal_d/support_manifest.yaml --standing-height 0.6
+```
+
+**3. (Optional) Split mixed clips.** A clip that walks on flat ground *and* climbs a platform is split at the airborne-event boundaries — the climb (+1s of ground each side) becomes a support sub-clip on terrain, the rest trains on flat ground, and no jump is ever cut in half:
+
+```bash
+python data/scripts/split_support_clips.py \
+    --motion-lib data/motions/anymal_d/anymal_d_full.pt \
+    --manifest   data/motions/anymal_d/support_manifest.yaml \
+    --out-lib    data/motions/anymal_d/anymal_d_split.pt \
+    --out-manifest data/motions/anymal_d/support_manifest_split.yaml
+```
+
+**4. (Optional) Weight by uniqueness.** Re-weight `motion_weights` so rare behaviours (jumps, climbs, backward/sideways gaits) are sampled more and redundant forward walks less — training (and the viewer) draw clips via `multinomial(motion_weights)`:
+
+```bash
+python data/scripts/compute_uniqueness_weights.py \
+    --motion-lib data/motions/anymal_d/anymal_d_split.pt --feet 4 8 12 16
+```
+
+**5. Train** with the quadruped experiment, on any engine:
+
+```bash
+python protomotions/train_agent.py \
+    --robot-name anymal_d --simulator isaaclab \
+    --experiment-path examples/experiments/mimic/quadruped_mlp.py \
+    --experiment-name anymal_split_terrain \
+    --motion-file data/motions/anymal_d/anymal_d_split.pt \
+    --num-envs 12288 --batch-size 49152 \
+    --overrides terrain.motion_support_manifest=data/motions/anymal_d/support_manifest_split.yaml \
+                terrain.motion_support_motion_lib=data/motions/anymal_d/anymal_d_split.pt
+```
+
+**Preview the reference motions** before training (`N`/`=` next clip, `P`/`-` previous; weighted random when one finishes):
+
+```bash
+python examples/env_kinematic_playback.py \
+    --robot-name dog_v2 --simulator newton --num-envs 1 \
+    --motion-file data/motions/dog_v2/dog_full.pt \
+    --experiment-path examples/experiments/mimic/quadruped_mlp.py
+```
+
 ### 🔬 Sim2Sim Testing
 
 One-click test (`--simulator=isaacgym` → `--simulator=newton` → `--simulator=mujoco`) of robot control policies on **H1_2** or **G1** in different physics engines (NVIDIA Newton, MuJoCo CPU). Policies shown below only use observations you could actually get from real hardware.
