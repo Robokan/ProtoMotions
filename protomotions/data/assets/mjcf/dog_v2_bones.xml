@@ -12,11 +12,15 @@
     <mesh name="bone_LeftShoulder" file="../mesh/dog_v2_bones/bone_LeftShoulder.obj"/>
     <mesh name="bone_LeftArm" file="../mesh/dog_v2_bones/bone_LeftArm.obj"/>
     <mesh name="bone_LeftForeArm" file="../mesh/dog_v2_bones/bone_LeftForeArm.obj"/>
+    <mesh name="bone_LeftFoot" file="../mesh/dog_v2_bones/bone_LeftFoot.obj"/>
+    <mesh name="bone_LeftHand" file="../mesh/dog_v2_bones/bone_LeftHand.obj"/>
     <mesh name="bone_RightUpLeg" file="../mesh/dog_v2_bones/bone_RightUpLeg.obj"/>
     <mesh name="bone_RightLeg" file="../mesh/dog_v2_bones/bone_RightLeg.obj"/>
     <mesh name="bone_RightShoulder" file="../mesh/dog_v2_bones/bone_RightShoulder.obj"/>
     <mesh name="bone_RightArm" file="../mesh/dog_v2_bones/bone_RightArm.obj"/>
     <mesh name="bone_RightForeArm" file="../mesh/dog_v2_bones/bone_RightForeArm.obj"/>
+    <mesh name="bone_RightFoot" file="../mesh/dog_v2_bones/bone_RightFoot.obj"/>
+    <mesh name="bone_RightHand" file="../mesh/dog_v2_bones/bone_RightHand.obj"/>
   </asset>
   <worldbody>
     <body name="trunk" pos="0 0 0">
@@ -48,25 +52,26 @@
             <joint name="LeftShoulder_x" type="hinge" axis="1 0 0" pos="0 0 0" limited="false"/>
             <joint name="LeftShoulder_y" type="hinge" axis="0 1 0" pos="0 0 0" limited="false"/>
             <joint name="LeftShoulder_z" type="hinge" axis="0 0 1" pos="0 0 0" limited="false"/>
-            <geom name="geom_LeftShoulder" type="capsule" fromto="0 0 0 0.08144 0 0" size="0.028" group="0"/>
+            <geom name="geom_LeftShoulder" type="capsule" fromto="0 0 0 0.08144 0 0" size="0.028" group="0" rgba="0.5 0.5 0.5 0"/>
           <geom name="bone_LeftShoulder" type="mesh" mesh="bone_LeftShoulder" contype="0" conaffinity="0" density="0" group="2" rgba="0.93 0.90 0.83 1"/>
             <body name="LeftArm" pos="0.08144 0 0">
               <joint name="LeftArm_x" type="hinge" axis="1 0 0" pos="0 0 0" limited="false"/>
               <joint name="LeftArm_y" type="hinge" axis="0 1 0" pos="0 0 0" limited="false"/>
               <joint name="LeftArm_z" type="hinge" axis="0 0 1" pos="0 0 0" limited="false"/>
-              <geom name="geom_LeftArm" type="capsule" fromto="0 0 0 0.154736 0 0" size="0.028" group="0"/>
+              <geom name="geom_LeftArm" type="capsule" fromto="0 0 0 0.154736 0 0" size="0.028" group="0" rgba="0.5 0.5 0.5 0"/>
           <geom name="bone_LeftArm" type="mesh" mesh="bone_LeftArm" contype="0" conaffinity="0" density="0" group="2" rgba="0.93 0.90 0.83 1"/>
               <body name="LeftForeArm" pos="0.154736 0 0">
                 <joint name="LeftForeArm_x" type="hinge" axis="1 0 0" pos="0 0 0" limited="false"/>
                 <joint name="LeftForeArm_y" type="hinge" axis="0 1 0" pos="0 0 0" limited="false"/>
                 <joint name="LeftForeArm_z" type="hinge" axis="0 0 1" pos="0 0 0" limited="false"/>
-                <geom name="geom_LeftForeArm" type="capsule" fromto="0 0 0 0.181204 0 0" size="0.022" group="0"/>
+                <geom name="geom_LeftForeArm" type="capsule" fromto="0 0 0 0.181204 0 0" size="0.022" group="0" rgba="0.5 0.5 0.5 0"/>
           <geom name="bone_LeftForeArm" type="mesh" mesh="bone_LeftForeArm" contype="0" conaffinity="0" density="0" group="2" rgba="0.93 0.90 0.83 1"/>
                 <body name="LeftHand" pos="0.181204 0 0">
                   <joint name="LeftHand_x" type="hinge" axis="1 0 0" pos="0 0 0" limited="false"/>
                   <joint name="LeftHand_y" type="hinge" axis="0 1 0" pos="0 0 0" limited="false"/>
                   <joint name="LeftHand_z" type="hinge" axis="0 0 1" pos="0 0 0" limited="false"/>
-                  <geom name="geom_LeftHand" type="capsule" fromto="0 0 0 0.073296 0 0" size="0.02" group="0"/>
+                  <geom name="geom_LeftHand" type="capsule" fromto="0 0 0 0.073296 0 0" size="0.02" group="0" rgba="0.5 0.5 0.5 0"/>
+          <geom name="bone_LeftHand" type="mesh" mesh="bone_LeftHand" contype="0" conaffinity="0" density="0" group="2" rgba="0.93 0.90 0.83 1"/>
                 </body>
               </body>
             </body>
@@ -75,25 +80,26 @@
             <joint name="RightShoulder_x" type="hinge" axis="1 0 0" pos="0 0 0" limited="false"/>
             <joint name="RightShoulder_y" type="hinge" axis="0 1 0" pos="0 0 0" limited="false"/>
             <joint name="RightShoulder_z" type="hinge" axis="0 0 1" pos="0 0 0" limited="false"/>
-            <geom name="geom_RightShoulder" type="capsule" fromto="0 0 0 0.08144 0 0.00154384" size="0.028" group="0"/>
+            <geom name="geom_RightShoulder" type="capsule" fromto="0 0 0 0.08144 0 0.00154384" size="0.028" group="0" rgba="0.5 0.5 0.5 0"/>
           <geom name="bone_RightShoulder" type="mesh" mesh="bone_RightShoulder" contype="0" conaffinity="0" density="0" group="2" rgba="0.93 0.90 0.83 1"/>
             <body name="RightArm" pos="0.08144 0 0.00154384">
               <joint name="RightArm_x" type="hinge" axis="1 0 0" pos="0 0 0" limited="false"/>
               <joint name="RightArm_y" type="hinge" axis="0 1 0" pos="0 0 0" limited="false"/>
               <joint name="RightArm_z" type="hinge" axis="0 0 1" pos="0 0 0" limited="false"/>
-              <geom name="geom_RightArm" type="capsule" fromto="0 0 0 0.154736 0 0" size="0.028" group="0"/>
+              <geom name="geom_RightArm" type="capsule" fromto="0 0 0 0.154736 0 0" size="0.028" group="0" rgba="0.5 0.5 0.5 0"/>
           <geom name="bone_RightArm" type="mesh" mesh="bone_RightArm" contype="0" conaffinity="0" density="0" group="2" rgba="0.93 0.90 0.83 1"/>
               <body name="RightForeArm" pos="0.154736 0 0">
                 <joint name="RightForeArm_x" type="hinge" axis="1 0 0" pos="0 0 0" limited="false"/>
                 <joint name="RightForeArm_y" type="hinge" axis="0 1 0" pos="0 0 0" limited="false"/>
                 <joint name="RightForeArm_z" type="hinge" axis="0 0 1" pos="0 0 0" limited="false"/>
-                <geom name="geom_RightForeArm" type="capsule" fromto="0 0 0 0.181204 0 0" size="0.022" group="0"/>
+                <geom name="geom_RightForeArm" type="capsule" fromto="0 0 0 0.181204 0 0" size="0.022" group="0" rgba="0.5 0.5 0.5 0"/>
           <geom name="bone_RightForeArm" type="mesh" mesh="bone_RightForeArm" contype="0" conaffinity="0" density="0" group="2" rgba="0.93 0.90 0.83 1"/>
                 <body name="RightHand" pos="0.181204 0 0">
                   <joint name="RightHand_x" type="hinge" axis="1 0 0" pos="0 0 0" limited="false"/>
                   <joint name="RightHand_y" type="hinge" axis="0 1 0" pos="0 0 0" limited="false"/>
                   <joint name="RightHand_z" type="hinge" axis="0 0 1" pos="0 0 0" limited="false"/>
-                  <geom name="geom_RightHand" type="capsule" fromto="0 0 0 0.073296 0 0" size="0.02" group="0"/>
+                  <geom name="geom_RightHand" type="capsule" fromto="0 0 0 0.073296 0 0" size="0.02" group="0" rgba="0.5 0.5 0.5 0"/>
+          <geom name="bone_RightHand" type="mesh" mesh="bone_RightHand" contype="0" conaffinity="0" density="0" group="2" rgba="0.93 0.90 0.83 1"/>
                 </body>
               </body>
             </body>
@@ -104,19 +110,20 @@
         <joint name="LeftUpLeg_x" type="hinge" axis="1 0 0" pos="0 0 0" limited="false"/>
         <joint name="LeftUpLeg_y" type="hinge" axis="0 1 0" pos="0 0 0" limited="false"/>
         <joint name="LeftUpLeg_z" type="hinge" axis="0 0 1" pos="0 0 0" limited="false"/>
-        <geom name="geom_LeftUpLeg" type="capsule" fromto="0 0 0 0.16288 0 0" size="0.028" group="0"/>
+        <geom name="geom_LeftUpLeg" type="capsule" fromto="0 0 0 0.16288 0 0" size="0.028" group="0" rgba="0.5 0.5 0.5 0"/>
           <geom name="bone_LeftUpLeg" type="mesh" mesh="bone_LeftUpLeg" contype="0" conaffinity="0" density="0" group="2" rgba="0.93 0.90 0.83 1"/>
         <body name="LeftLeg" pos="0.16288 0 0">
           <joint name="LeftLeg_x" type="hinge" axis="1 0 0" pos="0 0 0" limited="false"/>
           <joint name="LeftLeg_y" type="hinge" axis="0 1 0" pos="0 0 0" limited="false"/>
           <joint name="LeftLeg_z" type="hinge" axis="0 0 1" pos="0 0 0" limited="false"/>
-          <geom name="geom_LeftLeg" type="capsule" fromto="0 0 0 0.18324 0 0" size="0.022" group="0"/>
+          <geom name="geom_LeftLeg" type="capsule" fromto="0 0 0 0.18324 0 0" size="0.022" group="0" rgba="0.5 0.5 0.5 0"/>
           <geom name="bone_LeftLeg" type="mesh" mesh="bone_LeftLeg" contype="0" conaffinity="0" density="0" group="2" rgba="0.93 0.90 0.83 1"/>
           <body name="LeftFoot" pos="0.18324 0 0">
             <joint name="LeftFoot_x" type="hinge" axis="1 0 0" pos="0 0 0" limited="false"/>
             <joint name="LeftFoot_y" type="hinge" axis="0 1 0" pos="0 0 0" limited="false"/>
             <joint name="LeftFoot_z" type="hinge" axis="0 0 1" pos="0 0 0" limited="false"/>
-            <geom name="geom_LeftFoot" type="capsule" fromto="0 0 0 0 -0.109944 0" size="0.02" group="0"/>
+            <geom name="geom_LeftFoot" type="capsule" fromto="0 0 0 0 -0.109944 0" size="0.02" group="0" rgba="0.5 0.5 0.5 0"/>
+          <geom name="bone_LeftFoot" type="mesh" mesh="bone_LeftFoot" contype="0" conaffinity="0" density="0" group="2" rgba="0.93 0.90 0.83 1"/>
           </body>
         </body>
       </body>
@@ -124,19 +131,20 @@
         <joint name="RightUpLeg_x" type="hinge" axis="1 0 0" pos="0 0 0" limited="false"/>
         <joint name="RightUpLeg_y" type="hinge" axis="0 1 0" pos="0 0 0" limited="false"/>
         <joint name="RightUpLeg_z" type="hinge" axis="0 0 1" pos="0 0 0" limited="false"/>
-        <geom name="geom_RightUpLeg" type="capsule" fromto="0 0 0 0.16288 0 0" size="0.028" group="0"/>
+        <geom name="geom_RightUpLeg" type="capsule" fromto="0 0 0 0.16288 0 0" size="0.028" group="0" rgba="0.5 0.5 0.5 0"/>
           <geom name="bone_RightUpLeg" type="mesh" mesh="bone_RightUpLeg" contype="0" conaffinity="0" density="0" group="2" rgba="0.93 0.90 0.83 1"/>
         <body name="RightLeg" pos="0.16288 0 0">
           <joint name="RightLeg_x" type="hinge" axis="1 0 0" pos="0 0 0" limited="false"/>
           <joint name="RightLeg_y" type="hinge" axis="0 1 0" pos="0 0 0" limited="false"/>
           <joint name="RightLeg_z" type="hinge" axis="0 0 1" pos="0 0 0" limited="false"/>
-          <geom name="geom_RightLeg" type="capsule" fromto="0 0 0 0.18324 0 0" size="0.022" group="0"/>
+          <geom name="geom_RightLeg" type="capsule" fromto="0 0 0 0.18324 0 0" size="0.022" group="0" rgba="0.5 0.5 0.5 0"/>
           <geom name="bone_RightLeg" type="mesh" mesh="bone_RightLeg" contype="0" conaffinity="0" density="0" group="2" rgba="0.93 0.90 0.83 1"/>
           <body name="RightFoot" pos="0.18324 0 0">
             <joint name="RightFoot_x" type="hinge" axis="1 0 0" pos="0 0 0" limited="false"/>
             <joint name="RightFoot_y" type="hinge" axis="0 1 0" pos="0 0 0" limited="false"/>
             <joint name="RightFoot_z" type="hinge" axis="0 0 1" pos="0 0 0" limited="false"/>
-            <geom name="geom_RightFoot" type="capsule" fromto="0 0 0 0 -0.109944 0" size="0.02" group="0"/>
+            <geom name="geom_RightFoot" type="capsule" fromto="0 0 0 0 -0.109944 0" size="0.02" group="0" rgba="0.5 0.5 0.5 0"/>
+          <geom name="bone_RightFoot" type="mesh" mesh="bone_RightFoot" contype="0" conaffinity="0" density="0" group="2" rgba="0.93 0.90 0.83 1"/>
           </body>
         </body>
       </body>
