@@ -55,6 +55,13 @@ STANCE_DETECT_SPEED = 0.45  # [m/s]
 STANCE_DETECT_MIN_FRAMES = 3  # frames (~0.05s)
 STANCE_DETECT_STD_MAX = 0.05  # [m]
 
+# Free-fall gate: standing on a surface => root vertical accel ~ 0; a jump is in
+# free-fall (~ -9.8 m/s^2) for its whole flight, apex included. A clip needs
+# support only if there is a sustained window where all 4 feet are elevated AND
+# the body is NOT in free-fall (resting on an elevated surface).
+BALLISTIC_ACCEL_THRESHOLD = -4.0  # [m/s^2] below this = airborne (jump)
+MIN_SUPPORT_FRAMES = 6  # sustained supported-elevated frames (~0.1s @ 60fps)
+
 # Load-bearing test: a foot only needs support if the body stands above it
 # (leg extended downward, weight passing through). A sitting robot holding a
 # paw up is slow and height-stable too, but the paw is at/above root height
@@ -155,7 +162,28 @@ def scan_clip(
     ]
     all_feet_elevated = all(len(p) > 0 for p in per_foot)
 
-    if not all_feet_elevated and not force_flag:
+    # FREE-FALL gate: all 4 feet off the ground also happens during a JUMP, which
+    # needs no support. Distinguish by the body's vertical acceleration: standing
+    # on a surface => accel ~ 0; airborne (jump) => accel ~ -9.8 m/s^2 throughout
+    # flight (including the apex). A clip needs support only if there is a
+    # SUSTAINED window where all 4 feet are elevated AND the body is supported
+    # (not in free-fall) — i.e. genuinely standing on an elevated surface.
+    root_z = body_pos[:, 0, 2]
+    win = 5
+    kernel = np.ones(win) / win
+    root_s = np.convolve(root_z, kernel, mode="same")  # smooth before 2nd deriv
+    root_acc = np.gradient(np.gradient(root_s)) * fps * fps
+    all4_elev = ((foot_pos[:, :, 2] - ground_z) > elevation_threshold).all(axis=1)
+    supported = root_acc > BALLISTIC_ACCEL_THRESHOLD
+    support_frame = all4_elev & supported
+    # longest sustained supported-elevated run
+    best = run = 0
+    for v in support_frame:
+        run = run + 1 if v else 0
+        best = max(best, run)
+    standing_on_elevated = best >= MIN_SUPPORT_FRAMES
+
+    if not (all_feet_elevated and standing_on_elevated) and not force_flag:
         return {"classification": "flat", "support_boxes": []}
 
     # Box placement: all elevated stance points across the four feet.
