@@ -60,7 +60,11 @@ STANCE_DETECT_STD_MAX = 0.05  # [m]
 # support only if there is a sustained window where all 4 feet are elevated AND
 # the body is NOT in free-fall (resting on an elevated surface).
 BALLISTIC_ACCEL_THRESHOLD = -4.0  # [m/s^2] below this = airborne (jump)
-MIN_SUPPORT_FRAMES = 6  # sustained supported-elevated frames (~0.1s @ 60fps)
+# A jump that lands back on the floor still shows a brief (~0.1-0.2s) burst of
+# "all 4 elevated + not falling" around its apex/landing. Standing on a real
+# platform lasts far longer (observed >1.3s). Require a sustained run so jumps
+# (which never settle onto an elevated surface) are not mistaken for climbs.
+MIN_SUPPORT_SECONDS = 1.0  # continuous supported-elevated stand to count
 
 # Load-bearing test: a foot only needs support if the body stands above it
 # (leg extended downward, weight passing through). A sitting robot holding a
@@ -181,7 +185,8 @@ def scan_clip(
     for v in support_frame:
         run = run + 1 if v else 0
         best = max(best, run)
-    standing_on_elevated = best >= MIN_SUPPORT_FRAMES
+    min_support_frames = max(1, int(round(MIN_SUPPORT_SECONDS * fps)))
+    standing_on_elevated = best >= min_support_frames
 
     if not (all_feet_elevated and standing_on_elevated) and not force_flag:
         return {"classification": "flat", "support_boxes": []}
