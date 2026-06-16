@@ -64,8 +64,14 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
         )
     }
 
+    # Go2 and ANYmal-D are deployed on real hardware, where root height above
+    # ground is not a directly available sensor (it needs a state estimator), so
+    # train them without it. The dm_control dog is sim-only and keeps it.
+    deployable_robot = args.robot_name in ("go2", "anymal_d")
     observation_components = {
-        "max_coords_obs": max_coords_obs_factory(),
+        "max_coords_obs": max_coords_obs_factory(
+            root_height_obs=not deployable_robot
+        ),
         "previous_actions": previous_actions_factory(history_steps=1),
         "mimic_target_poses": mimic_target_poses_max_coords_factory(with_velocities=True),
     }
