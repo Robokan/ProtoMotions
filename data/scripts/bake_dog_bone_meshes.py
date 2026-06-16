@@ -189,20 +189,26 @@ def bake_segment(seg, side):
 # segment, aligning its long axis to our bone axis. center=0 centers at the body
 # origin (the trunk/pelvis bar); otherwise centered at the segment midpoint.
 AXIAL = {
-    "trunk": dict(stls=["Pelvis", "Sacrum"], our_axis=(0, 0, 1),
-                  our_len=0.0975, center=0.0),
-    "Spine": dict(stls=[f"L_{i}" for i in range(1, 8)], our_axis=(1, 0, 0),
-                  our_len=0.19342),
-    "Spine1": dict(stls=["Ribcage"], our_axis=(1, 0, 0), our_len=0.22905),
-    "Neck": dict(stls=[f"C_{i}" for i in range(1, 8)], our_axis=(1, 0, 0),
-                 our_len=0.14252),
-    "Head": dict(stls=["MergedSkull", "Jaw"], our_axis=(1, 0, 0), our_len=0.17306),
-    "Tail": dict(stls=[f"Ca_{i}" for i in range(1, 11)], our_axis=(1, 0, 0),
-                 our_len=0.12216),
-    "Tail1": dict(stls=[f"Ca_{i}" for i in range(11, 22)], our_axis=(1, 0, 0),
-                  our_len=0.12216),
+    "trunk": dict(stls=["Pelvis", "Sacrum"], our_len=0.0975, center=0.0),
+    "Spine": dict(stls=[f"L_{i}" for i in range(1, 8)], our_len=0.19342),
+    "Spine1": dict(stls=["Ribcage"], our_len=0.22905),
+    "Neck": dict(stls=[f"C_{i}" for i in range(1, 8)], our_len=0.14252),
+    "Head": dict(stls=["MergedSkull", "Jaw"], our_len=0.17306),
+    # our dog's tail is far shorter than the dm dog's 21-vertebra tail, so these
+    # DO need heavy shrink-to-fit; anchored proximally so the two halves chain
+    # without overlapping.
+    "Tail": dict(stls=[f"Ca_{i}" for i in range(1, 11)], our_len=0.12216,
+                 fit=True),
+    "Tail1": dict(stls=[f"Ca_{i}" for i in range(11, 22)], our_len=0.12216,
+                  fit=True),
 }
 AXIAL_SCALE = 0.95  # overall dog scale (matches the limb bones); no stretching
+
+# dm_control is X-forward / Z-up / Y-left; our skeleton is X-forward / Y-up /
+# Z-left. This fixed rotation (dm -> our) maps dm-up(+Z)->our-up(+Y) so the
+# ribcage/pelvis/skull are oriented correctly. (Midline bones are L/R-symmetric,
+# so the implied left/right swap is harmless.)
+R_FRAME = np.array([[1, 0, 0], [0, 0, 1], [0, -1, 0]], float)
 
 
 def bake_axial(seg):
@@ -213,21 +219,15 @@ def bake_axial(seg):
         if p.exists():
             meshes.append(trimesh.load(p, process=False))  # raw = global frame
     mesh = trimesh.util.concatenate(meshes)
-    v = mesh.vertices
-    c = v.mean(0)
-    vc = v - c
-    # PCA long axis of the cluster -> align to our bone axis
-    _, _, Vt = np.linalg.svd(vc, full_matrices=False)
-    dm_axis = Vt[0]
-    our_axis = np.array(spec["our_axis"], float)
-    cross = np.cross(dm_axis, our_axis)
-    R = tf.rotation_matrix(
-        np.arccos(np.clip(dm_axis @ our_axis, -1, 1)),
-        cross if np.linalg.norm(cross) > 1e-9 else [0, 0, 1],
-    )[:3, :3]
-    vc = (AXIAL_SCALE * (R @ vc.T)).T  # centered at origin, scaled, aligned
-    center = spec.get("center", 0.5 * spec["our_len"])
-    mesh.vertices = vc + center * our_axis  # center on the segment
+    vp = (R_FRAME @ (mesh.vertices - mesh.vertices.mean(0)).T).T  # orient dm->our
+    ext = vp[:, 0].max() - vp[:, 0].min()  # extent along our bone axis (+X)
+    s = (spec["our_len"] / ext) if spec.get("fit") else AXIAL_SCALE
+    vp = s * vp
+    if spec.get("fit"):  # tail: proximal end at the joint, extends +X
+        vp = vp - [vp[:, 0].min(), 0, 0]
+    else:  # center the cluster on the segment (trunk: center=0 at the pelvis bar)
+        vp = vp + [spec.get("center", 0.5 * spec["our_len"]), 0, 0]
+    mesh.vertices = vp
     return mesh
 
 
