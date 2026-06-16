@@ -64,11 +64,11 @@ BALLISTIC_ACCEL_THRESHOLD = -4.0  # [m/s^2] below this = airborne (jump)
 # "all 4 elevated + not falling" around its apex/landing. Standing on a real
 # platform lasts far longer (observed >1.3s). Require a sustained run so jumps
 # (which never settle onto an elevated surface) are not mistaken for climbs.
-MIN_SUPPORT_SECONDS = 1.0  # continuous supported-elevated stand to count
+MIN_SUPPORT_SECONDS = 0.6  # continuous all-4-elevated stand to count as support
 # Minimum height of the surface the feet rest on for it to count as a support
-# structure (vs a low artifact / a curb the robot just steps over). Real climbs
-# observed at 0.5-1.0m; lie-down/hop artifacts at 0.14-0.19m.
-MIN_PLATFORM_ELEVATION = 0.30  # [m] above the clip's ground baseline
+# structure (vs a low artifact / a curb the robot just steps over). Low platforms
+# the robot hops onto sit ~0.3-0.4m; lie-down/hop artifacts at 0.14-0.19m.
+MIN_PLATFORM_ELEVATION = 0.20  # [m] above the clip's ground baseline
 
 # Load-bearing test: a foot only needs support if the body stands above it
 # (leg extended downward, weight passing through). A sitting robot holding a
@@ -125,6 +125,67 @@ def foot_elevated_stances(
     return points
 
 
+def build_boxes(elevated, all_foot_pts, ground_z):
+    """Cluster elevated stance points into support boxes.
+
+    `elevated` (M,3): elevated planted-stance points (the surfaces feet rest on).
+    `all_foot_pts` (K,3): every foot sample in the clip — used to carve box faces
+    back so no airborne foot point ends up inside a box volume (clipping through).
+    `ground_z`: the clip's floor baseline; box top_z is reported relative to it.
+
+    Returns a list of box dicts (center_x/y, extent_x/y, top_z).
+    """
+    if len(elevated) == 0:
+        return []
+    boxes = []
+    # One box per 5cm height level, covering its stance cluster's horizontal span.
+    heights = np.round(elevated[:, 2] / 0.05) * 0.05
+    for h in sorted(set(heights.tolist())):
+        pts = elevated[np.isclose(heights, h)]
+        sx_min, sy_min = pts[:, :2].min(axis=0)  # stance bounds (must keep)
+        sx_max, sy_max = pts[:, :2].max(axis=0)
+        x_min, y_min = sx_min - BOX_PADDING, sy_min - BOX_PADDING
+        x_max, y_max = sx_max + BOX_PADDING, sy_max + BOX_PADDING
+
+        # Carve each padded face inward (never past the stance bounds) to
+        # exclude airborne foot points that would be inside the box volume.
+        viol = all_foot_pts[
+            (all_foot_pts[:, 2] > ground_z + 0.05) & (all_foot_pts[:, 2] < h - 0.04)
+        ]
+        if len(viol):
+            for _ in range(8):  # iterate until no violator remains inside
+                inside = viol[
+                    (viol[:, 0] > x_min) & (viol[:, 0] < x_max)
+                    & (viol[:, 1] > y_min) & (viol[:, 1] < y_max)
+                ]
+                if len(inside) == 0:
+                    break
+                p = inside[0]
+                # Push out via the cheapest face that doesn't cut stance support
+                cands = []
+                if p[0] <= sx_min: cands.append(("x_min", p[0] + 0.02))
+                if p[0] >= sx_max: cands.append(("x_max", p[0] - 0.02))
+                if p[1] <= sy_min: cands.append(("y_min", p[1] + 0.02))
+                if p[1] >= sy_max: cands.append(("y_max", p[1] - 0.02))
+                if not cands:
+                    break  # violator inside stance footprint — unavoidable
+                face, val = cands[0]
+                if face == "x_min": x_min = max(x_min, val)
+                elif face == "x_max": x_max = min(x_max, val)
+                elif face == "y_min": y_min = max(y_min, val)
+                elif face == "y_max": y_max = min(y_max, val)
+        boxes.append(
+            {
+                "center_x": round(float((x_min + x_max) / 2), 3),
+                "center_y": round(float((y_min + y_max) / 2), 3),
+                "extent_x": round(max(float(x_max - x_min), MIN_BOX_EXTENT), 3),
+                "extent_y": round(max(float(y_max - y_min), MIN_BOX_EXTENT), 3),
+                "top_z": round(float(h - ground_z), 3),  # height above ground
+            }
+        )
+    return boxes
+
+
 def scan_clip(
     motion_path: Path,
     foot_indices: list,
@@ -170,12 +231,12 @@ def scan_clip(
     ]
     all_feet_elevated = all(len(p) > 0 for p in per_foot)
 
-    # FREE-FALL gate: all 4 feet off the ground also happens during a JUMP, which
-    # needs no support. Distinguish by the body's vertical acceleration: standing
-    # on a surface => accel ~ 0; airborne (jump) => accel ~ -9.8 m/s^2 throughout
-    # flight (including the apex). A clip needs support only if there is a
-    # SUSTAINED window where all 4 feet are elevated AND the body is supported
-    # (not in free-fall) — i.e. genuinely standing on an elevated surface.
+    # A clip needs support during windows where the robot stands on an elevated
+    # surface: ALL 4 feet stay off the original floor (even the lowest foot rests
+    # on the structure, not the ground) for a sustained time, at a height above
+    # the lie-down/hop artifacts. The robot may bounce/hop on the platform, so we
+    # do NOT gate per-frame on free-fall (that fragments the segment); instead we
+    # reject net-ballistic windows (a pure jump arc) at the segment level below.
     root_z = body_pos[:, 0, 2]
     win = 5
     kernel = np.ones(win) / win
@@ -183,19 +244,17 @@ def scan_clip(
     root_acc = np.gradient(np.gradient(root_s)) * fps * fps
     foot_elev = foot_pos[:, :, 2] - ground_z  # (N, F) per-foot height above ground
     all4_elev = (foot_elev > elevation_threshold).all(axis=1)
-    supported = root_acc > BALLISTIC_ACCEL_THRESHOLD
-    # PLATFORM-HEIGHT gate: the surface the feet rest on must be a real block,
-    # not a low artifact. When a robot lies down later in a clip a foot can dip
-    # very low, dragging ground_z down so the normal standing feet look "elevated"
-    # by ~0.15m (anymal 1_clip_2); and a small hop tops out ~0.2m. Genuine climbs
-    # put all feet (and the body) far higher. Require the supporting surface at a
-    # frame (mean foot height above ground) to clear MIN_PLATFORM_ELEVATION.
+    # PLATFORM-HEIGHT gate: the surface the feet rest on must be a real block, not
+    # a low artifact. A lie-down later in a clip can drag ground_z down so normal
+    # standing feet read "elevated" ~0.15m (anymal 1_clip_2). Low platforms the
+    # robot hops onto sit ~0.3-0.4m. Require the surface (mean foot height) to
+    # clear MIN_PLATFORM_ELEVATION.
     high_enough = foot_elev.mean(axis=1) > MIN_PLATFORM_ELEVATION
-    support_frame = all4_elev & supported & high_enough
+    support_frame = all4_elev & high_enough
 
-    # Contiguous supported-elevated segments lasting >= MIN_SUPPORT_SECONDS. Each
-    # is a window where the robot genuinely stands on an elevated surface; a clip
-    # may have several (climb up, stand, climb down) interleaved with flat travel.
+    # Contiguous candidate windows lasting >= MIN_SUPPORT_SECONDS, then reject any
+    # whose body is in net free-fall across the window (a pure jump arc: median
+    # vertical accel ~ -9.8). Standing/bouncing on a platform averages ~0.
     min_support_frames = max(1, int(round(MIN_SUPPORT_SECONDS * fps)))
     support_segments = []
     s = None
@@ -203,7 +262,9 @@ def scan_clip(
         if v and s is None:
             s = i
         elif not v and s is not None:
-            if i - s >= min_support_frames:
+            if i - s >= min_support_frames and (
+                np.median(root_acc[s:i]) > BALLISTIC_ACCEL_THRESHOLD
+            ):
                 support_segments.append([s, i])
             s = None
     standing_on_elevated = len(support_segments) > 0
@@ -220,58 +281,7 @@ def scan_clip(
         # from flat training (terrain builder skips no-box entries).
         return {"classification": "needs_support", "support_boxes": []}
 
-    # Cluster elevated stances by height (simple 5cm binning), one box per
-    # height level covering the horizontal extent of its stance cluster.
-    # Foot samples that must NOT end up inside a box volume: any airborne
-    # trajectory point below a box top would clip through the geometry (e.g.
-    # a jump up alongside the block face). Used to carve back padded faces.
-    all_foot_pts = foot_pos.reshape(-1, 3)
-
-    boxes = []
-    heights = np.round(elevated[:, 2] / 0.05) * 0.05
-    for h in sorted(set(heights.tolist())):
-        pts = elevated[np.isclose(heights, h)]
-        sx_min, sy_min = pts[:, :2].min(axis=0)  # stance bounds (must keep)
-        sx_max, sy_max = pts[:, :2].max(axis=0)
-        x_min, y_min = sx_min - BOX_PADDING, sy_min - BOX_PADDING
-        x_max, y_max = sx_max + BOX_PADDING, sy_max + BOX_PADDING
-
-        # Carve each padded face inward (never past the stance bounds) to
-        # exclude airborne foot points that would be inside the box volume.
-        viol = all_foot_pts[
-            (all_foot_pts[:, 2] > ground_z + 0.05) & (all_foot_pts[:, 2] < h - 0.04)
-        ]
-        if len(viol):
-            for _ in range(8):  # iterate until no violator remains inside
-                inside = viol[
-                    (viol[:, 0] > x_min) & (viol[:, 0] < x_max)
-                    & (viol[:, 1] > y_min) & (viol[:, 1] < y_max)
-                ]
-                if len(inside) == 0:
-                    break
-                p = inside[0]
-                # Push out via the cheapest face that doesn't cut stance support
-                cands = []
-                if p[0] <= sx_min: cands.append(("x_min", p[0] + 0.02))
-                if p[0] >= sx_max: cands.append(("x_max", p[0] - 0.02))
-                if p[1] <= sy_min: cands.append(("y_min", p[1] + 0.02))
-                if p[1] >= sy_max: cands.append(("y_max", p[1] - 0.02))
-                if not cands:
-                    break  # violator inside stance footprint — unavoidable
-                face, val = cands[0]
-                if face == "x_min": x_min = max(x_min, val)
-                elif face == "x_max": x_max = min(x_max, val)
-                elif face == "y_min": y_min = max(y_min, val)
-                elif face == "y_max": y_max = min(y_max, val)
-        boxes.append(
-            {
-                "center_x": round(float((x_min + x_max) / 2), 3),
-                "center_y": round(float((y_min + y_max) / 2), 3),
-                "extent_x": round(max(float(x_max - x_min), MIN_BOX_EXTENT), 3),
-                "extent_y": round(max(float(y_max - y_min), MIN_BOX_EXTENT), 3),
-                "top_z": round(float(h - ground_z), 3),  # height above ground
-            }
-        )
+    boxes = build_boxes(elevated, foot_pos.reshape(-1, 3), ground_z)
 
     # Root xy travel bounds (motion-local coords) — used by the terrain
     # builder to size this clip's support cell.
