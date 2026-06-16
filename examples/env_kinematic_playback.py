@@ -333,6 +333,43 @@ def main():
         print(f"Motion times initialized: {env.motion_manager.motion_times}")
 
     # Run simulation loop
+    # --- N/P clip switching ---------------------------------------------
+    # 'n' / 'p' cycle the played-back motion clip. The key handlers only set a
+    # request flag; the actual motion switch + reset happens between steps in
+    # the main loop (calling env.reset() inside the render callback would be
+    # re-entrant). Works for any simulator exposing _custom_key_handlers.
+    _num_motions = env.motion_lib.num_motions()
+    _clip_req = {"delta": 0}
+
+    def _request_next():
+        _clip_req["delta"] = 1
+
+    def _request_prev():
+        _clip_req["delta"] = -1
+
+    if hasattr(env.simulator, "_custom_key_handlers"):
+        env.simulator._custom_key_handlers.update(
+            {"n": _request_next, "p": _request_prev}
+        )
+
+    def _apply_clip_switch():
+        if env.motion_manager is None or _clip_req["delta"] == 0:
+            return
+        cur = int(env.motion_manager.motion_ids[0].item())
+        new_id = (cur + _clip_req["delta"]) % _num_motions
+        _clip_req["delta"] = 0
+        # Pin every env to the new clip so reset keeps it, then reset to snap
+        # the robot to the new clip's start.
+        fixed = torch.full(
+            (env.num_envs,), new_id, dtype=torch.long, device=device
+        )
+        env.motion_manager._fixed_motion_ids_per_env = fixed
+        env.motion_manager._env_has_fixed_motion[:] = True
+        env.motion_manager.motion_ids[:] = new_id
+        env.motion_manager.motion_times[:] = 0.0
+        env.reset()
+        print(f"[viewer] clip {new_id}/{_num_motions}")
+
     print("\n=== Starting Kinematic Playback ===")
     print("This will play back the reference motion kinematically")
     print("The humanoid will follow the motion capture data exactly")
@@ -342,6 +379,8 @@ def main():
     print("  O - toggle camera target")
     print("  = - watch next robot")
     print("  - - watch previous robot")
+    print("  N - next motion clip")
+    print("  P - previous motion clip")
     print("  Q - close simulator")
 
     actions = torch.zeros(env.num_envs, robot_config.number_of_actions, device=device)
@@ -350,6 +389,7 @@ def main():
         step_count = 0
         while env.is_simulation_running():
             obs, rewards, dones, terminated, infos = env.step(actions)
+            _apply_clip_switch()
 
             step_count += 1
 

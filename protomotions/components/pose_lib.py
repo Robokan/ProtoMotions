@@ -77,6 +77,7 @@ from protomotions.utils.rotations import (
     exp_map_to_quat,
     quat_to_exp_map,
     angle_from_matrix_axis,
+    twist_angle_about_axis,
 )
 
 from protomotions.simulator.base_simulator.simulator_state import (
@@ -487,8 +488,8 @@ def extract_kinematic_info(mjcf_path: str) -> KinematicInfo:
             #     logging.warning(f"Body {body_name} has no joints, skipping.")
             if len(joints) > 0:
                 assert (
-                    len(joints) == 1 or len(joints) == 3
-                ), f"Body {body_name} has {len(joints)} joints, expected 1 or 3"
+                    1 <= len(joints) <= 3
+                ), f"Body {body_name} has {len(joints)} joints, expected 1-3"
                 for joint in joints:
                     # Resolve attributes: direct or inherited from default class
                     # (dm_control doesn't auto-resolve class-inherited attributes)
@@ -876,11 +877,164 @@ def extract_transforms_from_qpos(
 # --- Helper: Extract qpos from Transforms (Inverse) ---
 
 
+def _sequential_hinge_decomposition(
+    rot_mat: torch.Tensor,
+    axes: torch.Tensor,
+    num_iterations: int = 20,
+    warm_start: Optional[torch.Tensor] = None,
+) -> torch.Tensor:
+    """Decompose rotation matrices into sequential hinge angles about given axes.
+
+    Finds angles th_1..th_K such that R ~= R(a_1, th_1) @ ... @ R(a_K, th_K),
+    matching the composition order used by `extract_transforms_from_qpos`
+    (declaration order in the MJCF). Uses iterative coordinate descent with
+    twist extraction, which handles arbitrary (non-orthogonal, non-world-
+    aligned) hinge axes. The decomposition is exact when R is realizable by
+    the hinge chain and a least-squares-style projection otherwise.
+
+    Coordinate descent has multiple equivalent solution branches near
+    gimbal-singular configurations; the branch it converges to depends on the
+    initialization. Passing `warm_start` (e.g. the previous frame's solved
+    angles) makes the solve converge to the branch nearest that seed, which is
+    what gives temporal continuity across a motion clip.
+
+    Args:
+        rot_mat (B, 3, 3): Batch of rotation matrices.
+        axes (K, 3): Hinge axes in declaration order (normalized internally).
+        num_iterations: Coordinate-descent sweeps (K=1 needs a single sweep).
+        warm_start (B, K): Optional initial angles to seed the descent from.
+            Defaults to zeros (rest pose) when None.
+
+    Returns:
+        torch.Tensor (B, K): Hinge angles in radians.
+    """
+    device = rot_mat.device
+    dtype = rot_mat.dtype
+    B = rot_mat.shape[0]
+    K = axes.shape[0]
+    axes = axes / torch.linalg.norm(axes, dim=-1, keepdim=True)
+    if warm_start is not None:
+        angles = warm_start.to(device=device, dtype=dtype).clone()
+    else:
+        angles = torch.zeros(B, K, device=device, dtype=dtype)
+
+    def hinge_mat(angle, axis):
+        quat = quat_from_angle_axis(angle, axis.expand(B, 3), w_last=False)
+        return quaternion_to_matrix(quat, w_last=False)
+
+    eye = torch.eye(3, device=device, dtype=dtype).expand(B, 3, 3)
+    for _ in range(num_iterations if K > 1 else 1):
+        for j in range(K):
+            r_pre = eye
+            for i in range(j):
+                r_pre = torch.matmul(r_pre, hinge_mat(angles[:, i], axes[i]))
+            r_post = eye
+            for i in range(j + 1, K):
+                r_post = torch.matmul(r_post, hinge_mat(angles[:, i], axes[i]))
+            residual = torch.matmul(
+                r_pre.transpose(-1, -2),
+                torch.matmul(rot_mat, r_post.transpose(-1, -2)),
+            )
+            new_angle = angle_from_matrix_axis(residual, axes[j])
+            if warm_start is not None:
+                # Stay on the branch nearest the seed: pick the 2*pi-congruent
+                # angle closest to the current (warm-started) estimate. The
+                # twist returned by angle_from_matrix_axis is in (-pi, pi]; the
+                # equivalent angle nearest the previous one may differ by 2*pi.
+                new_angle = new_angle + _round_to_nearest_2pi(
+                    angles[:, j] - new_angle
+                )
+            angles[:, j] = new_angle
+    return angles
+
+
+def _is_identity_xyz_axes(axes: torch.Tensor) -> bool:
+    """True if `axes` (3, 3) are exactly the world X, Y, Z basis in order."""
+    if axes.shape != (3, 3):
+        return False
+    return bool(
+        torch.allclose(
+            axes, torch.eye(3, device=axes.device, dtype=axes.dtype), atol=1e-6
+        )
+    )
+
+
+def _analytic_xyz_decomposition(rot_mat: torch.Tensor) -> torch.Tensor:
+    """Closed-form, fully-vectorized inverse of R = Rx(x) @ Ry(y) @ Rz(z).
+
+    Returns angles (B, 3) = (x, y, z) such that, using the SAME composition
+    order the FK uses (`extract_transforms_from_qpos`, declaration order x,y,z
+    with world-aligned axes), Rx(x) @ Ry(y) @ Rz(z) == rot_mat. This is the
+    exact analytic match for MuJoCo's three stacked orthogonal hinges declared
+    x, y, z (intrinsic XYZ / extrinsic ZYX Tait-Bryan angles).
+
+    Derivation (R = Rx @ Ry @ Rz):
+        R[0,2] =  sin(y)
+        R[0,0] =  cos(y) cos(z)      R[0,1] = -cos(y) sin(z)
+        R[1,2] = -sin(x) cos(y)      R[2,2] =  cos(x) cos(y)
+    => y = asin(R[0,2]); z = atan2(-R[0,1], R[0,0]); x = atan2(-R[1,2], R[2,2]).
+    At the gimbal lock cos(y)=0 the x/z split is arbitrary; we pin z=0 and put
+    the full rotation on x, which is a valid (round-trip-exact) branch.
+    """
+    sy = torch.clamp(rot_mat[:, 0, 2], -1.0, 1.0)
+    y = torch.asin(sy)
+    cy = torch.cos(y)
+    gimbal = cy.abs() < 1e-6
+    # Non-singular branch.
+    z = torch.atan2(-rot_mat[:, 0, 1], rot_mat[:, 0, 0])
+    x = torch.atan2(-rot_mat[:, 1, 2], rot_mat[:, 2, 2])
+    # Gimbal-lock branch: cos(y)=0 -> R reduces to a single x+/-z rotation; pin
+    # z=0 and absorb everything into x via the (1,1)/(2,1) entries.
+    z_g = torch.zeros_like(z)
+    x_g = torch.atan2(rot_mat[:, 2, 1], rot_mat[:, 1, 1])
+    x = torch.where(gimbal, x_g, x)
+    z = torch.where(gimbal, z_g, z)
+    return torch.stack([x, y, z], dim=-1)
+
+
+def _round_to_nearest_2pi(delta: torch.Tensor) -> torch.Tensor:
+    """Nearest multiple of 2*pi to `delta` (elementwise)."""
+    two_pi = 2.0 * np.pi
+    return torch.round(delta / two_pi) * two_pi
+
+
+def _unwrap_angle_to_reference(
+    angle: torch.Tensor,
+    reference: torch.Tensor,
+    lower: Optional[float] = None,
+    upper: Optional[float] = None,
+) -> torch.Tensor:
+    """Pick the 2*pi-congruent value of `angle` nearest `reference`.
+
+    If joint limits are given and the nearest-to-reference congruent value
+    falls outside [lower, upper], fall back to the congruent value closest to
+    the limit window (preferring to stay in-range over staying near the
+    reference). This keeps the chosen branch both continuous and feasible.
+    """
+    unwrapped = angle + _round_to_nearest_2pi(reference - angle)
+    if lower is not None and upper is not None:
+        two_pi = 2.0 * np.pi
+        # If the continuity choice violates a limit but a congruent value does
+        # fit in-range, snap to the nearest in-range congruent value.
+        below = unwrapped < lower
+        above = unwrapped > upper
+        if bool(below.any()):
+            cand = unwrapped + torch.ceil((lower - unwrapped) / two_pi) * two_pi
+            in_range = cand <= upper
+            unwrapped = torch.where(below & in_range, cand, unwrapped)
+        if bool(above.any()):
+            cand = unwrapped - torch.ceil((unwrapped - upper) / two_pi) * two_pi
+            in_range = cand >= lower
+            unwrapped = torch.where(above & in_range, cand, unwrapped)
+    return unwrapped
+
+
 def extract_qpos_from_transforms(
     kinematic_info: KinematicInfo,
     root_pos: torch.Tensor,
     joint_rot_mats: torch.Tensor,
     multi_dof_decomposition_method: Optional[str] = None,
+    temporal_continuity: bool = False,
 ) -> torch.Tensor:
     """
     Reconstructs the qpos tensor from root position and relative joint rotations.
@@ -898,8 +1052,29 @@ def extract_qpos_from_transforms(
                                       Other indices contain the compounded hinge rotations
                                       relative to the parent frame (or identity if no hinges).
         multi_dof_decomposition_method (str, optional): Method to decompose rotation
-                                      for bodies with 3 DOFs. Options: 'euler_xyz', 'exp_map'.
-                                      Required if any body has 3 DOFs. Defaults to None.
+                                      for bodies with 2-3 DOFs. Options: 'euler_xyz',
+                                      'exp_map', 'sequential'. 'sequential' respects the
+                                      actual hinge axes/order (required for 2-DOF bodies
+                                      and non-XYZ-axis 3-DOF bodies, e.g. dog_v2).
+                                      Required if any body has >1 DOF. Defaults to None.
+        temporal_continuity (bool): If True, treat the batch dimension B as a
+                                      TIME sequence (frame 0..B-1 of one motion
+                                      clip) and produce a continuous solution
+                                      branch over time. For 'sequential' multi-DOF
+                                      bodies the coordinate-descent solve is run
+                                      frame-by-frame, warm-started from the
+                                      previous frame's solved angles (so it
+                                      converges to the branch nearest the previous
+                                      frame instead of flipping between equivalent
+                                      gimbal solutions). Every hinge angle then
+                                      gets a 2*pi unwrap pass (in-range when joint
+                                      limits allow). This is a different-but-
+                                      equivalent branch of the SAME rotation, so the
+                                      round-trip rotation error is unchanged; it only
+                                      removes frame-to-frame discontinuities. The
+                                      first frame seeds from the per-frame (rest-
+                                      seeded) solve. Defaults to False (legacy
+                                      per-frame-independent behavior).
 
     Returns:
         torch.Tensor (B, Nq): Reconstructed qpos tensor.
@@ -936,21 +1111,133 @@ def extract_qpos_from_transforms(
     assert num_hinge_dofs > 0, "No hinge DOFs found"
 
     joint_start = 7
+    dof_lo = kinematic_info.dof_limits_lower
+    dof_hi = kinematic_info.dof_limits_upper
 
     # Process each body's DOFs
+    dof_cursor = 0  # index into the flat hinge-DOF block (for joint limits)
     for body_idx, axes in hinge_axes_map.items():
         num_body_dofs = len(axes)
         qpos_indices = torch.arange(
             joint_start, joint_start + num_body_dofs, device=device, dtype=torch.long
         )
         joint_start += num_body_dofs
+        body_dof_slice = slice(dof_cursor, dof_cursor + num_body_dofs)
+        dof_cursor += num_body_dofs
 
         rot_mat_k = joint_rot_mats[:, body_idx, :, :]  # Compounded rotation
 
         if num_body_dofs == 1:
             axis_k = axes[0]  # Get the single axis
-            angle_k = angle_from_matrix_axis(rot_mat_k, axis_k)
+            # Clean swing/twist projection: extract ONLY the rotation about the
+            # hinge axis and DISCARD any off-axis (swing) component, instead of
+            # the trace-based extractor which leaks off-axis content into the
+            # bend angle (that leak made the dog's 1-DOF elbow/wrist jump when
+            # tracking the noisy BVH forearm/hand twist). For target rotations
+            # that are already purely about the axis (go2 / anymal_d leg joints,
+            # whose axes are world-aligned and whose retarget rotations are
+            # about-axis), this returns the SAME angle to numerical precision,
+            # so it is behavior-preserving for those robots.
+            angle_k = twist_angle_about_axis(rot_mat_k, axis_k)
+            if temporal_continuity and B > 1:
+                # 1-DOF hinges have no gimbal branch ambiguity, but the
+                # atan2-based angle still wraps at +-pi. Unwrap over time so a
+                # joint sweeping through +-pi stays continuous.
+                lo = float(dof_lo[dof_cursor - 1])
+                hi = float(dof_hi[dof_cursor - 1])
+                limited = abs(lo) < 1e9 and abs(hi) < 1e9
+                for t in range(1, B):
+                    angle_k[t] = _unwrap_angle_to_reference(
+                        angle_k[t : t + 1],
+                        angle_k[t - 1 : t],
+                        lower=lo if limited else None,
+                        upper=hi if limited else None,
+                    )[0]
             qpos[:, qpos_indices[0]] = angle_k
+        elif multi_dof_decomposition_method == "analytic_xyz":
+            # Fast, fully-vectorized closed-form inverse of the FK composition
+            # R = Rx(x) @ Ry(y) @ Rz(z) for the three stacked orthogonal hinges
+            # declared x, y, z (dog_v2_nomesh). Round-trip-exact and matches the
+            # `sequential` solve to numerical precision, but runs on all frames
+            # at once (no per-frame Python loop). Requires identity-XYZ axes in
+            # declaration order; otherwise fall back to `sequential`.
+            if num_body_dofs != 3 or not _is_identity_xyz_axes(axes):
+                body_name = kinematic_info.body_names[body_idx]
+                raise ValueError(
+                    f"'analytic_xyz' requires 3 world-aligned X,Y,Z hinges in "
+                    f"declaration order; body '{body_name}' (index {body_idx}) "
+                    f"has axes {axes.tolist()}. Use 'sequential' instead."
+                )
+            angles = _analytic_xyz_decomposition(rot_mat_k)  # (B, 3)
+            if temporal_continuity and B > 1:
+                # Same branch-continuity treatment as `sequential`: unwrap each
+                # angle trajectory to the previous frame (respecting limits when
+                # the hinge is limited). Hinges are unlimited for dog_v2, so this
+                # is a cheap np.unwrap-equivalent that removes +-pi jumps; it is
+                # behavior-preserving (a 2*pi-congruent, identical rotation).
+                lo = dof_lo[body_dof_slice]
+                hi = dof_hi[body_dof_slice]
+                for j in range(num_body_dofs):
+                    lj = float(lo[j])
+                    hj = float(hi[j])
+                    limited = abs(lj) < 1e9 and abs(hj) < 1e9
+                    if not limited:
+                        # Unlimited hinge: vectorized phase-unwrap over time
+                        # (np.unwrap equivalent) — no per-frame Python loop.
+                        diff = angles[1:, j] - angles[:-1, j]
+                        diff = diff - _round_to_nearest_2pi(diff)
+                        angles[1:, j] = angles[0, j] + torch.cumsum(diff, dim=0)
+                    else:
+                        for t in range(1, B):
+                            angles[t, j] = _unwrap_angle_to_reference(
+                                angles[t : t + 1, j],
+                                angles[t - 1 : t, j],
+                                lower=lj,
+                                upper=hj,
+                            )[0]
+            for j in range(num_body_dofs):
+                qpos[:, qpos_indices[j]] = angles[:, j]
+        elif multi_dof_decomposition_method == "sequential":
+            # Decompose R ~= R(a_1, th_1) @ ... @ R(a_k, th_k) (matching the
+            # FK composition order in extract_transforms_from_qpos) for
+            # arbitrary hinge axes via iterative coordinate descent. Works for
+            # 2- and 3-DOF bodies whose axes are not world-aligned XYZ
+            # (e.g. the dm_control dog_v2 spine/hip/shoulder joints).
+            if temporal_continuity and B > 1:
+                # Track ONE continuous solution branch over time: solve frame
+                # 0 cold (rest-seeded), then warm-start each subsequent frame
+                # from the previous frame's solved angles so coordinate descent
+                # converges to the nearest branch (no frame-to-frame flips).
+                angles = torch.zeros(
+                    B, num_body_dofs, device=device, dtype=dtype
+                )
+                prev = _sequential_hinge_decomposition(
+                    rot_mat_k[0:1], axes
+                )  # (1, K)
+                angles[0] = prev[0]
+                for t in range(1, B):
+                    prev = _sequential_hinge_decomposition(
+                        rot_mat_k[t : t + 1], axes, warm_start=prev
+                    )
+                    angles[t] = prev[0]
+                # Explicit unwrap pass on top of the warm-start, with limits.
+                lo = dof_lo[body_dof_slice]
+                hi = dof_hi[body_dof_slice]
+                for j in range(num_body_dofs):
+                    lj = float(lo[j])
+                    hj = float(hi[j])
+                    limited = abs(lj) < 1e9 and abs(hj) < 1e9
+                    for t in range(1, B):
+                        angles[t, j] = _unwrap_angle_to_reference(
+                            angles[t : t + 1, j],
+                            angles[t - 1 : t, j],
+                            lower=lj if limited else None,
+                            upper=hj if limited else None,
+                        )[0]
+            else:
+                angles = _sequential_hinge_decomposition(rot_mat_k, axes)
+            for j in range(num_body_dofs):
+                qpos[:, qpos_indices[j]] = angles[:, j]
         elif num_body_dofs == 3:
             # Convert rotation matrix to WXYZ quaternion for decomposition functions
             quat_k = matrix_to_quaternion(rot_mat_k, w_last=False)

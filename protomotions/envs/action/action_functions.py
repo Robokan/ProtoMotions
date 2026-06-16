@@ -239,7 +239,10 @@ def build_pd_action_offset_scale(
     for body_id in sorted_body_ids:
         dof_size = len(hinge_axes_map[body_id])
 
-        if dof_size == 3:
+        if dof_size in (2, 3):
+            # Multi-axis joint (2-DOF universal or 3-DOF spherical): use a
+            # single symmetric per-axis scale derived from the largest limit
+            # magnitude, clamped to pi.
             curr_low = lim_low[dof_offset : (dof_offset + dof_size)]
             curr_high = lim_high[dof_offset : (dof_offset + dof_size)]
             curr_low = np.max(np.abs(curr_low))

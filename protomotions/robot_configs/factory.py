@@ -65,6 +65,10 @@ def robot_config(robot_name: str, **updates) -> RobotConfig:
         from protomotions.robot_configs.anymal_d import AnymalDRobotConfig
 
         config = AnymalDRobotConfig()
+    elif robot_name == "dog_v2":
+        from protomotions.robot_configs.dog_v2 import DogV2RobotConfig
+
+        config = DogV2RobotConfig()
     else:
         raise ValueError(f"Invalid robot name: {robot_name}")
 
