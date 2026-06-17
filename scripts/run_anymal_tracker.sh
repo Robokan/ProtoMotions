@@ -22,11 +22,11 @@ export OMNI_KIT_ACCEPT_EULA=YES
 export DISPLAY="${DISPLAY:-:1}"
 export XAUTHORITY="${XAUTHORITY:-/run/user/1000/gdm/Xauthority}"
 
-CKPT="${CKPT:-results/anymal_tracker/last.ckpt}"
+CKPT="${CKPT:-results/anymal_flat_v1/last.ckpt}"
 
 python protomotions/inference_agent.py \
     --checkpoint "$CKPT" \
-    --motion-file data/motions/anymal_d/anymal_d_split.pt \
+    --motion-file data/motions/anymal_d/anymal_d_flat.pt \
     --simulator isaaclab \
     --num-envs 1 \
     "$@"

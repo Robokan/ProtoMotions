@@ -117,6 +117,7 @@ SEGMENTS = {
         child=(-0.015043, 0.0081311, -0.11993),
         our_len=0.109944,
         our_axis=(0.0, -1.0, 0.0),
+        roll=[("y", 180)],  # hind paw: flip ankle/toes 180 about Y
     ),
     "Hand": dict(  # front paw: carpals + metacarpals + FINGER phalanges
         stls=["Carpal_III_L", "Carpal_II_L", "Carpal_IV_L", "Carpal_I_L",
@@ -179,6 +180,11 @@ def bake_segment(seg, side):
         # blade then extending back past the body origin.
         shift = (spec["our_len"] - s * np.linalg.norm(child))
         mesh.vertices = mesh.vertices + shift * our_axis
+    # optional roll about a body-local axis (e.g. flip the hind paw's roll)
+    for axis, deg in spec.get("roll", []):
+        ax = {"x": [1, 0, 0], "y": [0, 1, 0], "z": [0, 0, 1]}[axis]
+        Rr = tf.rotation_matrix(np.radians(deg), ax)[:3, :3]
+        mesh.vertices = (Rr @ mesh.vertices.T).T
     return mesh
 
 
@@ -188,27 +194,30 @@ def bake_segment(seg, side):
 # a fixed reasonable scale (~the overall dog scale) and center the cluster on our
 # segment, aligning its long axis to our bone axis. center=0 centers at the body
 # origin (the trunk/pelvis bar); otherwise centered at the segment midpoint.
+# `fix`: hand-tuned per-bone rotation corrections applied AFTER the PCA align
+# (list of (axis, degrees), in our body frame, applied in order) -- the PCA long
+# axis leaves the roll/sign free, so these pin each cluster to the right roll.
+# `fit`: scale the cluster to our_len (extent-fit) and anchor it proximally
+# (used for the short tail, which must shrink hard and chain without overlap).
 AXIAL = {
-    "trunk": dict(stls=["Pelvis", "Sacrum"], our_len=0.0975, center=0.0),
-    "Spine": dict(stls=[f"L_{i}" for i in range(1, 8)], our_len=0.19342),
-    "Spine1": dict(stls=["Ribcage"], our_len=0.22905),
-    "Neck": dict(stls=[f"C_{i}" for i in range(1, 8)], our_len=0.14252),
-    "Head": dict(stls=["MergedSkull", "Jaw"], our_len=0.17306),
-    # our dog's tail is far shorter than the dm dog's 21-vertebra tail, so these
-    # DO need heavy shrink-to-fit; anchored proximally so the two halves chain
-    # without overlapping.
-    "Tail": dict(stls=[f"Ca_{i}" for i in range(1, 11)], our_len=0.12216,
-                 fit=True),
-    "Tail1": dict(stls=[f"Ca_{i}" for i in range(11, 22)], our_len=0.12216,
-                  fit=True),
+    "trunk": dict(stls=["Pelvis", "Sacrum"], our_axis=(0, 0, 1),
+                  our_len=0.0975, center=0.0, fix=[("x", -90), ("z", 45)],
+                  offset=(0, -0.05, 0)),  # pelvis, nudged down along Y
+    "Spine": dict(stls=[f"L_{i}" for i in range(1, 8)], our_axis=(1, 0, 0),
+                  our_len=0.19342),
+    "Spine1": dict(stls=["Ribcage"], our_axis=(1, 0, 0), our_len=0.22905,
+                   fix=[("x", -90), ("y", 180)],  # ribcage: x-90 then y+180
+                   joint_rot=[("z", 20)]),  # tilt at spine joint
+    "Neck": dict(stls=[f"C_{i}" for i in range(1, 8)], our_axis=(1, 0, 0),
+                 our_len=0.14252),
+    "Head": dict(stls=["MergedSkull", "Jaw"], our_axis=(1, 0, 0),
+                 our_len=0.17306, fix=[("y", 180)]),  # skull faces forward
+    "Tail": dict(stls=[f"Ca_{i}" for i in range(1, 11)], our_axis=(1, 0, 0),
+                 our_len=0.12216, fit=True),
+    "Tail1": dict(stls=[f"Ca_{i}" for i in range(11, 22)], our_axis=(1, 0, 0),
+                  our_len=0.12216, fit=True),
 }
 AXIAL_SCALE = 0.95  # overall dog scale (matches the limb bones); no stretching
-
-# dm_control is X-forward / Z-up / Y-left; our skeleton is X-forward / Y-up /
-# Z-left. This fixed rotation (dm -> our) maps dm-up(+Z)->our-up(+Y) so the
-# ribcage/pelvis/skull are oriented correctly. (Midline bones are L/R-symmetric,
-# so the implied left/right swap is harmless.)
-R_FRAME = np.array([[1, 0, 0], [0, 0, 1], [0, -1, 0]], float)
 
 
 def bake_axial(seg):
@@ -219,15 +228,46 @@ def bake_axial(seg):
         if p.exists():
             meshes.append(trimesh.load(p, process=False))  # raw = global frame
     mesh = trimesh.util.concatenate(meshes)
-    vp = (R_FRAME @ (mesh.vertices - mesh.vertices.mean(0)).T).T  # orient dm->our
-    ext = vp[:, 0].max() - vp[:, 0].min()  # extent along our bone axis (+X)
-    s = (spec["our_len"] / ext) if spec.get("fit") else AXIAL_SCALE
-    vp = s * vp
-    if spec.get("fit"):  # tail: proximal end at the joint, extends +X
-        vp = vp - [vp[:, 0].min(), 0, 0]
-    else:  # center the cluster on the segment (trunk: center=0 at the pelvis bar)
-        vp = vp + [spec.get("center", 0.5 * spec["our_len"]), 0, 0]
-    mesh.vertices = vp
+    v = mesh.vertices
+    c = v.mean(0)
+    vc = v - c
+    # PCA long axis of the cluster -> align to our bone axis
+    _, _, Vt = np.linalg.svd(vc, full_matrices=False)
+    dm_axis = Vt[0]
+    our_axis = np.array(spec["our_axis"], float)
+    cross = np.cross(dm_axis, our_axis)
+    R = tf.rotation_matrix(
+        np.arccos(np.clip(dm_axis @ our_axis, -1, 1)),
+        cross if np.linalg.norm(cross) > 1e-9 else [0, 0, 1],
+    )[:3, :3]
+    vc = (R @ vc.T).T  # centered at origin, aligned (not yet scaled)
+
+    # hand-tuned roll/sign corrections (PCA leaves these free) in our body frame
+    for axis, deg in spec.get("fix", []):
+        ax = {"x": [1, 0, 0], "y": [0, 1, 0], "z": [0, 0, 1]}[axis]
+        Rf = tf.rotation_matrix(np.radians(deg), ax)[:3, :3]
+        vc = (Rf @ vc.T).T
+
+    if spec.get("fit"):  # shrink-to-fit along our axis, anchor proximal (tail)
+        proj = vc @ our_axis
+        s = spec["our_len"] / (proj.max() - proj.min())
+        vc = s * vc
+        proj = vc @ our_axis
+        vc = vc - proj.min() * our_axis  # proximal end at the joint, extends +axis
+    else:
+        vc = AXIAL_SCALE * vc
+        center = spec.get("center", 0.5 * spec["our_len"])
+        vc = vc + center * our_axis  # center on the segment
+
+    # rotation about the JOINT (the body's local origin = the connection point to
+    # the parent), applied to the placed bone -- tilts the cluster without moving
+    # that connection point (e.g. the ribcage hinging at the spine joint).
+    for axis, deg in spec.get("joint_rot", []):
+        ax = {"x": [1, 0, 0], "y": [0, 1, 0], "z": [0, 0, 1]}[axis]
+        Rj = tf.rotation_matrix(np.radians(deg), ax)[:3, :3]
+        vc = (Rj @ vc.T).T
+    vc = vc + np.array(spec.get("offset", (0, 0, 0)), float)  # final local shift
+    mesh.vertices = vc
     return mesh
 
 

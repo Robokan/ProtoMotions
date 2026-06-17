@@ -132,7 +132,7 @@ class DogV2RobotConfig(RobotConfig):
 
     asset: RobotAssetConfig = field(
         default_factory=lambda: RobotAssetConfig(
-            asset_file_name="mjcf/dog_v2_nomesh.xml",
+            asset_file_name="mjcf/dog_v2_bones.xml",
             replace_cylinder_with_capsule=True,
             thickness=0.01,
             max_angular_velocity=1000.0,

@@ -339,9 +339,13 @@ def main(
         "flagged needs_support there are force-flagged here too, with boxes "
         "from this robot's relaxed stance pass.",
     ),
+    feet: str = typer.Option(
+        "4,8,12,16",
+        help="Comma-separated foot body indices. Default 4,8,12,16 (Go2/ANYmal). "
+        "dm_control dog: 8,12,15,18 (LeftHand,RightHand,LeftFoot,RightFoot).",
+    ),
 ):
-    # Default quadruped layout: feet at indices 4, 8, 12, 16
-    foot_indices = [4, 8, 12, 16]
+    foot_indices = [int(x) for x in feet.split(",")]
 
     clips = sorted(clips_dir.glob("*.motion"))
     if not clips:
