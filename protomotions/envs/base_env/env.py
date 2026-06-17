@@ -203,6 +203,11 @@ class BaseEnv:
             self.num_envs, num_actions, dtype=torch.float, device=self.device
         )
 
+        # Inference/demo mode: skip reward computation in the step (rewards are
+        # only needed for training). Set True by inference_agent.py to speed up
+        # the viewer; leave False for training/evaluation.
+        self.inference_mode = False
+
         # Global context cache - built once per step in post_physics_step
         # and reused by observations, rewards, and terminations
         self._current_context: Dict[str, Any] = None
@@ -832,7 +837,10 @@ class BaseEnv:
         self._current_context = self._build_global_context()
 
         self.compute_observations(context=self._current_context)
-        self.compute_reward(context=self._current_context)
+        # Rewards are only needed for training; skip them in the viewer/demo to
+        # avoid the per-step reward compute that tanks the inference frame rate.
+        if not self.inference_mode:
+            self.compute_reward(context=self._current_context)
         self.reset_buf[:], self.terminate_buf[:] = self.check_resets_and_terminations(
             context=self._current_context
         )
