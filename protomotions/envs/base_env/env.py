@@ -186,6 +186,14 @@ class BaseEnv:
             self.num_envs, device=self.device, dtype=torch.bool
         )
 
+        # Per-env flag: True while an env is in a random-orientation "get-up"
+        # episode. These envs get an extended grace window (see
+        # check_resets_and_terminations) so they have time to stand up AND
+        # rejoin the reference before tracking-error termination can fire.
+        self.is_getup_env = torch.zeros(
+            self.num_envs, device=self.device, dtype=torch.bool
+        )
+
         self.respawn_root_offset = torch.zeros(
             self.num_envs, 3, dtype=torch.float, device=self.device
         )
@@ -900,16 +908,24 @@ class BaseEnv:
         reset_buf = max_length_reached.clone()
         terminated = torch.zeros_like(self.reset_buf, dtype=torch.bool)
 
+        # Get-up envs are a "recover to the reference pose" skill judged locally
+        # (joint + gravity-relative up-axis match; see compute_reward /
+        # _compute_getup_reward) on quantities a fallen robot can actually sense
+        # (IMU + encoders) and reach. They are therefore NEVER terminated on the
+        # absolute tracking error (which they can neither observe nor recover) --
+        # they run to max-episode-length. Normal tracking envs are unaffected.
+        keep = ~self.is_getup_env
+
         comp_reset, comp_terminate = (
             self.control_manager.check_resets_and_terminations()
         )
-        reset_buf = reset_buf | comp_reset
-        terminated = terminated | comp_terminate
+        reset_buf = reset_buf | (comp_reset & keep)
+        terminated = terminated | (comp_terminate & keep)
 
         # Process terminations
         comp_reset, comp_terminate, term_logging = self._process_terminations(context)
-        reset_buf = reset_buf | comp_reset
-        terminated = terminated | comp_terminate
+        reset_buf = reset_buf | (comp_reset & keep)
+        terminated = terminated | (comp_terminate & keep)
         self.extras.update(term_logging)
 
         return reset_buf, terminated
@@ -1038,9 +1054,44 @@ class BaseEnv:
         # Process rewards
         combined_reward, reward_logging = self._process_rewards(context, grace_mask)
 
+        # Get-up envs: override the (absolute) tracking reward with a local
+        # recover-to-pose reward judged only on what a fallen robot can sense
+        # (IMU + joint encoders) and reach -- joint-position match + the
+        # reference's gravity-relative up-axis. Global position and yaw are
+        # excluded (unobservable post-fall and unrecoverable in place).
+        if bool(self.is_getup_env.any()):
+            getup_r = self._compute_getup_reward(context)
+            combined_reward = torch.where(self.is_getup_env, getup_r, combined_reward)
+
         self.rew_buf[:] = combined_reward
         self.extras.update(reward_logging)
         self.extras["total_env_reward"] = combined_reward
+
+    def _compute_getup_reward(self, context: EnvContext):
+        """Local get-up reward: match the reference joint configuration and the
+        reference's gravity-relative orientation (up-axis), both IMU/encoder
+        observable. Position- and yaw-free, so a fallen robot can actually earn
+        it by standing up into the reference pose in place."""
+        from protomotions.utils.rotations import quat_rotate_inverse
+
+        cur_dof = context.current.dof_pos
+        ref_dof = context.mimic.ref_state.dof_pos
+        cur_rot = context.current.root_rot  # xyzw
+        ai = self.robot_config.anchor_body_index
+        ref_rot = context.mimic.ref_state.rigid_body_rot[:, ai]
+
+        # joint-position match (encoders)
+        dof_err = (cur_dof - ref_dof).abs().mean(dim=-1)
+
+        # gravity-direction (IMU "projected gravity") match -- yaw-invariant
+        gdir = torch.tensor([0.0, 0.0, -1.0], device=self.device).expand(
+            cur_rot.shape[0], 3
+        )
+        cur_g = quat_rotate_inverse(cur_rot, gdir, True)
+        ref_g = quat_rotate_inverse(ref_rot, gdir, True)
+        orient_err = 1.0 - (cur_g * ref_g).sum(dim=-1).clamp(-1.0, 1.0)
+
+        return 0.6 * torch.exp(-5.0 * dof_err) + 0.4 * torch.exp(-3.0 * orient_err)
 
     ###############################################################
     # Handle Resets
@@ -1236,11 +1287,15 @@ class BaseEnv:
         """
         num_resets = env_ids.shape[0]
         prob = self.config.random_getup_prob
+        # Clear the get-up flag for all envs being reset; set it below only for
+        # the subset that actually gets a random-orientation spawn.
+        self.is_getup_env[env_ids] = False
         getup_mask = torch.rand(num_resets, device=self.device) < prob
         if not getup_mask.any():
             return
 
         getup_indices = getup_mask.nonzero(as_tuple=True)[0]
+        self.is_getup_env[env_ids[getup_indices]] = True
 
         # Random quaternion via Gaussian → normalize (uniform on S3)
         rand_quat = torch.randn(len(getup_indices), 4, device=self.device)

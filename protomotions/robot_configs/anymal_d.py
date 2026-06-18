@@ -37,8 +37,8 @@ from dataclasses import dataclass, field
 # ANYdrive 3.0 specs (from IsaacLab ANYDRIVE_3_SIMPLE_ACTUATOR_CFG)
 KP = 40.0
 KD = 5.0
-EFFORT = 80.0
-VELOCITY_LIMIT = 7.5
+EFFORT = 200.0
+VELOCITY_LIMIT = 40.0
 
 # Default X-stance matching IsaacLab ANYMAL_D_CFG init_state
 DEFAULT_JOINT_POS = {
