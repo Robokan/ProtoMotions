@@ -1,11 +1,26 @@
-# G1 Fight Club: GPC + Tournament Self-Play Training Plan
+# SOMA Fight Club: GPC + Tournament Self-Play Training Plan
 
-Goal: train two Unitree G1 humanoids to fight each other with natural, human-like combat
+Goal: train two **SOMA humanoid characters** (`soma23` — the GPC paper's native character:
+human proportions, 23 actuated bodies) to fight each other with natural, human-like combat
 motion. The motor foundation is a **GPC (Generative Pretrained Controller)** trained on a
-**combat + AMASS** dataset using this repo (ProtoMotions), and the fighting behavior is
-trained with **tournament-style self-play** — taking the league design from the IsaacLabASE
-repo's `battle/` + `pfsp_player_pool.py` system, corrected with lessons from AlphaStar and
-from the known flaws in that implementation.
+**combat + BONES-SEED** dataset using this repo (ProtoMotions), and the fighting behavior
+is trained with **tournament-style self-play** — taking the league design from the
+IsaacLabASE repo's `battle/` + `pfsp_player_pool.py` system, corrected with lessons from
+AlphaStar and from the known flaws in that implementation.
+
+**Why SOMA instead of a robot (G1/H1-2):**
+
+- The **released FSQ tracker checkpoint**
+  (`data/pretrained_models/motion_tracker/soma_bones_fsq/`) is a SOMA tracker trained on
+  BONES-SEED — with SOMA as the target we can *use it as-is* instead of spending 1–2 weeks
+  of GPU time training our own (Phase 2 becomes an evaluation, not a training run).
+- **BONES-SEED (~142K clips) is natively SOMA-format** — the breadth dataset needs zero
+  retargeting, versus the lossy AMASS→robot PyRoki pipeline.
+- **Human proportions**: combat mocap retargets to SOMA nearly losslessly (human→human),
+  and the full arm/torso articulation supports real boxing/martial-arts motion — no
+  "kickboxing robot" compromise from short arms and reduced DOFs.
+- Fighting is a sim-only application anyway; nothing here needs to survive a real robot.
+  (A later G1 port is discussed in Risks §6 — the battle env and league carry over.)
 
 Repo locations (siblings on disk):
 
@@ -22,6 +37,8 @@ References:
   multi-agent reinforcement learning* (Nature 2019) — PFSP, main agents + exploiters
 - ProtoMotions upstream: [github.com/NVlabs/ProtoMotions](https://github.com/NVlabs/ProtoMotions)
   (this checkout is a fork behind upstream — see Phase 0)
+- BONES-SEED dataset: [huggingface.co/datasets/bones-studio/seed](https://huggingface.co/datasets/bones-studio/seed)
+  (~142K clips, SOMA skeleton; prep guide: `docs/source/getting_started/seed_bvh_preparation.rst`)
 - IsaacLabASE's existing self-play system (what we're improving on):
   `../IsaacLabASE/source/IsaacLabASE/IsaacLabASE/tasks/direct/ase/battle/` —
   `battle_task.py`, `hrl_sp_agent.py`, `pfsp_player_pool.py`
@@ -33,12 +50,13 @@ References:
 Three subsystems, trained in order:
 
 ```
-1. MOTOR FOUNDATION (ProtoMotions, single G1, no opponent)
-   combat + AMASS mocap ──► FSQ tracker ──► GPC prior ──► combat SFT adapter
-                             (tokenizer +    (GPT over      (biases token
-                              decoder)        tokens)        choice to combat)
+1. MOTOR FOUNDATION (ProtoMotions, single SOMA, no opponent)
+   combat + BONES-SEED mocap ──► FSQ tracker ──► GPC prior ──► combat SFT adapter
+                                  (RELEASED —     (GPT over      (biases token
+                                   tokenizer +     tokens)        choice to combat)
+                                   decoder)
 
-2. BATTLE ENVIRONMENT (greenfield: two G1s per env)
+2. BATTLE ENVIRONMENT (greenfield: two SOMAs per env)
    paired spawning, opponent observations, hit/knockdown scoring, win/loss/draw
 
 3. LEAGUE (tournament self-play, PPO on PEFT adapters)
@@ -54,18 +72,19 @@ Why this decomposition works (validated by the GPC paper and IsaacLabASE's ASE e
   `lora`/`gamma`/`beta`/`m` tensors, <1% of the model). A 32-member league shares one frozen
   prior + decoder in memory. This replaces `pfsp_player_pool.py`'s full-model copies.
 - Get-up/recovery is **in the same vocabulary** as fighting — no separate getup policy or
-  HRL switching, provided the dataset includes fall/recovery clips (it will).
+  HRL switching, provided the dataset includes fall/recovery clips (BONES-SEED does; we
+  add combat knockdowns on top).
 
 ### Status of the pieces (verified July 2026)
 
 | Component | Status |
 |---|---|
-| FSQ tracker training (`examples/experiments/mimic/fsq.py`) | **Released** in upstream ProtoMotions |
-| GPC prior training (`examples/experiments/gpc/prior.py`) | **Released** (code; no pretrained prior ckpt — we train our own) |
+| **SOMA FSQ tracker checkpoint** (`data/pretrained_models/motion_tracker/soma_bones_fsq/`) | **Released — we use it directly** (trained on BONES-SEED) |
+| FSQ tracker training (`examples/experiments/mimic/fsq.py`) | Released (fallback only, if the released tracker's combat coverage is inadequate) |
+| GPC prior training (`examples/experiments/gpc/prior.py`) | **Released** (code; no pretrained prior ckpt yet — we train our own) |
 | SFT + RLFT PEFT configs (`examples/experiments/gpc/*.py`, `protomotions/agents/peft/`) | **Released** (DoRA adapters, FiLM task conditioning, KL anchor, prior-constrained nucleus sampling) |
-| SOMA FSQ tracker checkpoint (`data/pretrained_models/motion_tracker/soma_bones_fsq/`) | Released (not needed — wrong skeleton; we train a G1 tracker) |
-| AMASS → G1 retargeting (PyRoki pipeline) | Released |
-| PHUMA G1 combat-adjacent clips (kungfu, sword) | Available (`data/yaml_files/g1_phuma_train.yaml`) |
+| `soma23` robot config + assets (`protomotions/robot_configs/soma23.py`, `soma23_humanoid.xml`) | Released |
+| BONES-SEED → SOMA pipeline (`data/scripts/convert_soma23_bvh_to_proto.py`) | Released (`docs/source/getting_started/seed_bvh_preparation.rst`) |
 | **Two-humanoid env / self-play** | **Not in ProtoMotions — we build it (Phases 5–6)** |
 
 ---
@@ -80,20 +99,22 @@ git remote add upstream https://github.com/NVlabs/ProtoMotions.git
 git fetch upstream
 git checkout main
 git merge upstream/main        # or rebase local changes; resolve as needed
-git lfs pull                   # pull checkpoint/config LFS objects
+git lfs pull                   # pull checkpoint/config LFS objects — includes soma_bones_fsq
 ```
 
-Sanity check that the GPC stack exists afterward:
+Sanity check that the GPC stack and the SOMA pieces exist afterward:
 
 ```bash
 ls examples/experiments/gpc/           # prior.py, sft_target_prior_peft.py, task_*_prior_peft*.py
 ls protomotions/agents/peft/           # actor.py, adapters.py, prior_agent.py, sft_agent.py, ...
-ls examples/experiments/mimic/fsq.py
+ls data/pretrained_models/motion_tracker/soma_bones_fsq/   # last.ckpt, inference_last.ckpt, ...
+ls protomotions/robot_configs/soma23.py
 ```
 
 Read `docs/source/user_guide/gpc.rst` — it is the canonical reference for the
 tracker → prior → SFT → RLFT flow and the checkpoint contract
 (`last.ckpt` = full training state, `inference_last.ckpt` = slim adapter-only artifact).
+Its examples are written for `soma23`, so the commands below match the doc almost verbatim.
 
 Environment setup: use **uv** (the recommended tool for the IsaacLab backend — see
 `docs/source/getting_started/installation.rst`; conda is only suggested for
@@ -108,123 +129,144 @@ uv pip install -e .
 uv pip install -r requirements_isaaclab.txt
 ```
 
-PyRoki retargeting needs a **separate** environment (its dependencies conflict); a second
-uv venv works — the retarget script just takes both interpreters' paths (see Phase 1a).
-Simulator backend: `isaaclab` — the natural choice given the IsaacLabASE experience, and
-what the GPC doc examples use.
+Simulator backend: `isaaclab` — the natural choice given the IsaacLabASE experience.
+(No PyRoki environment needed — SOMA requires no robot retargeting.)
 
 ---
 
-## Phase 1 — Build the combat + AMASS G1 dataset
+## Phase 1 — Build the combat + BONES-SEED SOMA dataset
 
-Target artifact: one packaged MotionLib file, e.g. `g1_combat_amass.pt`, containing
-retargeted G1 motions with sampling weights biased toward combat.
+Target artifacts:
 
-### 1a. AMASS base (breadth: locomotion, falls, recovery, athletics)
+- `soma_combat_seed.pt` — combined MotionLib (or sharded chunks) with sampling weights
+  biased toward combat. Used for prior training (Phase 3).
+- `soma_combat_only.pt` — combat clips only. Used for tracker coverage eval (Phase 2)
+  and combat SFT (Phase 4).
 
-Follow `docs/source/getting_started/amass_preparation.rst`, then retarget to G1:
+### 1a. BONES-SEED base (breadth: locomotion, falls, recovery, athletics, martial arts)
 
-```bash
-# AMASS (SMPL) → proto .motion files → packaged SMPL motionlib
-python data/scripts/convert_amass_to_motionlib.py /path/to/amass_root /path/to/out \
-    --motion-config data/yaml_files/amass_smpl_train.yaml
-
-# SMPL motionlib → G1 via PyRoki (two separate envs; see retargeting_pyroki.rst)
-# The script takes both interpreters explicitly — point it at your two uv venvs:
-./scripts/retarget_amass_to_robot.sh \
-    ./env_isaaclab/bin/python \
-    ./env_pyroki/bin/python \
-    /path/to/out/amass_smpl_train.pt g1 1
-# → proto-g1.pt
-```
-
-Curation: AMASS is ~40 h. Keep locomotion, falling, getting up, sports, dynamic motion;
-consider dropping long sequences of sitting/hand-detail clips that waste tracker capacity.
-`data/scripts/motion_filter.py` and `scripts/subset_motion_lib.py` help here.
-
-### 1b. PHUMA combat-adjacent clips (already retargeted to G1)
-
-`data/yaml_files/g1_phuma_train.yaml` includes `g1/kungfu/*` and `g1/haa500/sword_*`
-entries — free combat-adjacent data, no retargeting needed:
+BONES-SEED is natively SOMA — no retargeting, just format conversion. Follow
+`docs/source/getting_started/seed_bvh_preparation.rst` (use the **SOMA Uniform** BVH
+variant — it matches the single `soma23_humanoid.xml` model):
 
 ```bash
-python data/scripts/convert_phuma_to_motionlib.py /path/to/PHUMA/data /path/to/out \
-    --humanoid-type g1 --motion-config data/yaml_files/g1_phuma_train.yaml
+# BONES-SEED BVH (77 joints, 120 fps, Y-up) → proto .motion (23 bodies, 30 fps, Z-up)
+python data/scripts/convert_soma23_bvh_to_proto.py \
+    --input-dir /path/to/bones-seed/soma_uniform/bvh \
+    --output-dir /path/to/motions/seed \
+    --input-fps 120 --output-fps 30
 ```
 
-### 1c. Our combat mocap → G1
+Curation: the full set is ~142K clips — more than the prior needs and enough to demand
+sharded MotionLibs (`chunk_slurmrank.pt` pattern; see the prep doc's "Scaling Up"
+section). Two workable strategies:
+
+- **Subset (recommended to start):** select a few thousand clips covering locomotion,
+  falls/get-up, sports/athletics, and any martial-arts/stunt categories, packaged as a
+  single `.pt`. Since the *tracker* was already trained on full BONES-SEED, the prior's
+  dataset controls behavior distribution, not skill existence — a curated subset is fine.
+- **Full set, sharded:** only if prior quality on the subset disappoints.
+
+### 1b. Our combat mocap → SOMA
 
 Source: the Reallusion/Unreal combat clips in IsaacLabASE
 (`../IsaacLabASE/source/IsaacLabASE/ase/poselib/data/animations/amp/combat/`,
-`.../g1/combat/` — already retargeted once to IsaacLabASE's G1 boxer via
-`../IsaacLabASE/scripts/retarget_amp/retarget_combat_to_g1.py`).
+`.../reallusion_combat/`). These are human-skeleton clips, so this is a
+**human→human retarget** — far easier and less lossy than the old →G1 pipeline.
+Two routes, in order of preference:
 
-ProtoMotions has **no FBX ingestion**, so the path of least resistance is through keypoints:
-
-1. Export/convert the combat clips to SMPL-format motions (or extract 3D keypoints from the
-   existing poselib `.npy` skeleton motions — write a small converter from poselib
-   `SkeletonMotion` to the keypoint `.npz` format consumed by
-   `pyroki/batch_retarget_to_g1_from_keypoints.py`; see
-   `data/scripts/extract_retargeting_input_keypoints_from_packaged_motionlib.py` for the
-   expected schema).
-2. Retarget through PyRoki to G1 like the AMASS clips.
-3. Convert to proto: `data/scripts/convert_pyroki_retargeted_robot_motions_to_proto.py`.
+1. **BVH route:** export/convert the combat clips to BVH (Blender imports the FBX
+   sources; IsaacLabASE's poselib `.npy` motions can also be written back out), retarget
+   the skeleton to the 77-joint SOMA BVH convention in a DCC tool (Blender +
+   auto-rig/Rokoko retargeter — standard humanoid bone mapping), then run
+   `convert_soma23_bvh_to_proto.py` exactly as in 1a. The converter's T-pose offsets
+   (`data/soma/standard_t_pose_global_offsets_rots.p`) handle the rest.
+2. **SMPL route:** fit the clips to SMPL (or export via a SMPL-compatible tool) and use
+   the SOMA↔SMPL conversion scripts (`data/scripts/convert_soma23_*`) as reference for
+   the mapping.
 
 Include in this pass: strikes, blocks, dodges, footwork, knockdowns, and **get-up clips**
-(critical — see Phase 4). No sword/shield: the G1 fights unarmed (boxer), which matches
-both the hardware and the dataset.
+(critical — see Phase 3/4 acceptance). Unarmed only for now: `soma23_humanoid.xml` has no
+weapon bodies, so sword/shield clips are out of scope (revisit only if a prop-extended
+SOMA model is built later).
 
-### 1d. Package the combined library
+### 1c. Package the libraries
 
 ```bash
-# Put all .motion files under one root (amass/, phuma/, combat/ subdirs), then:
+# Combined (seed + combat subdirs under one root):
 python protomotions/components/motion_lib.py \
-    --motion-path /path/to/combined_motions/ \
-    --output-file data/g1_combat_amass.pt --device cpu
+    --motion-path /path/to/motions/ \
+    --output-file data/soma_combat_seed.pt --device cpu
+
+# Combat-only:
+python protomotions/components/motion_lib.py \
+    --motion-path /path/to/motions/combat/ \
+    --output-file data/soma_combat_only.pt --device cpu
 ```
 
-Also build a **combat-only** library (`g1_combat_only.pt`) — used for SFT (Phase 4) and for
-the tracker coverage evaluation (Phase 2). Keep IsaacLabASE's curation discipline
-(its `animation info` / `bad motions` logs): maintain a rejection log; garbage clips poison
-the token vocabulary.
+Keep IsaacLabASE's curation discipline (its `animation info` / `bad motions` logs):
+maintain a rejection log; garbage clips poison prior training. The SEED converter's
+built-in quality filter (velocity/underground/airborne checks) helps but won't catch
+retargeting artifacts in the combat clips.
 
 **Milestone check:** visually inspect retargeted combat clips with
-`examples/motion_libs_visualizer.py` and kinematic playback
+`examples/motion_libs_visualizer.py --robot soma23` and kinematic playback
 (`examples/env_kinematic_playback.py`) before spending GPU time on training.
 
 ---
 
-## Phase 2 — Train the G1 FSQ tracker (tokenizer + decoder)
+## Phase 2 — Validate the released FSQ tracker (train only if it fails)
 
-Fork `examples/experiments/mimic/fsq.py`. It is robot-agnostic; the paper/default settings
-(40 FSQ scalars × 9 levels, encoder/decoder MLPs) are a sound starting point. Consider
-merging in the G1-specific robustness pieces from the production G1 tracker config
-(`data/pretrained_models/motion_tracker/g1-bones-deploy/experiment_config.py`):
-BeyondMimic-style reduced-coord observations, L2C2 smoothness, action-rate penalties —
-these matter if any policy is ever to run on real hardware.
+The big win of the SOMA choice: **the tokenizer + decoder already exist.**
+`data/pretrained_models/motion_tracker/soma_bones_fsq/` is an FSQ tracker trained on
+BONES-SEED. Phase 2 is an *evaluation*, not a training run.
+
+### 2a. Coverage test on the combat clips
+
+Run the tracker evaluator against the combat-only library
+(`inference_agent.py --full-eval`, then `scripts/analyze_mimic_most_failed_motions.py`):
+
+```bash
+python protomotions/inference_agent.py \
+    --robot-name soma23 \
+    --simulator isaaclab \
+    --motion-file data/soma_combat_only.pt \
+    --checkpoint data/pretrained_models/motion_tracker/soma_bones_fsq/last.ckpt \
+    --full-eval
+```
+
+**Acceptance criteria:**
+
+- Per-clip tracking success (joint pos error < 0.5 m criterion) on **every**
+  strike/dodge/knockdown/get-up family. A failed clip means those skills will not exist
+  as tokens for anything downstream.
+- Expect this to mostly pass: BONES-SEED is large and diverse (dynamic/stunt motion
+  included), and FSQ vocabularies generalize across motions of the skeleton they were
+  trained on. Isolated failures usually indicate retargeting artifacts — fix the clip
+  first, not the tracker.
+
+### 2b. Fallback: fine-tune the tracker (only if coverage gaps are real)
+
+If genuine combat skills fail to track (not fixable by re-retargeting), fine-tune from
+the released checkpoint via `examples/experiments/mimic/fsq.py` on
+combat + a BONES-SEED replay subset (replay prevents catastrophic forgetting):
 
 ```bash
 python protomotions/train_agent.py \
-    --robot-name g1 \
+    --robot-name soma23 \
     --simulator isaaclab \
-    --motion-file data/g1_combat_amass.pt \
+    --motion-file data/soma_combat_seed.pt \
     --experiment-path examples/experiments/mimic/fsq.py \
-    --num-envs 4096 --batch-size 16384 \
-    --ngpu 3 \
-    --experiment-name g1_fsq_combat_amass
+    --checkpoint data/pretrained_models/motion_tracker/soma_bones_fsq/last.ckpt \
+    --num-envs 4096 --batch-size 16384 --ngpu 3 \
+    --experiment-name soma_fsq_combat_ft
 ```
 
-**Acceptance criteria (the coverage test):**
-
-- Overall tracking success (joint pos error < 0.5 m criterion) ≥ ~95% on the full set.
-- **Per-clip success on the combat subset** — run the evaluator against `g1_combat_only.pt`
-  (`inference_agent.py --full-eval`, plus `scripts/analyze_mimic_most_failed_motions.py`).
-  Every strike/dodge/get-up family must track; a failed clip means those skills will not
-  exist as tokens. Fix by upweighting failed clips (the `MimicEvaluatorConfig`
-  motion-weight rules do this automatically) or re-retargeting them.
-
-This is the longest single training run in the plan (order of 1–2 weeks on a 3-GPU
-workstation for ~40 h of motion; the paper's AMASS-scale runs used a single A100).
+**Caveat — do this only if forced:** fine-tuning the tracker changes token semantics.
+Everything downstream (prior, SFT, league) must then be trained against *our* tracker,
+and if NVIDIA later releases a pretrained SOMA GPC **prior**, it will align with *their*
+frozen tracker, not ours. Keeping the tracker frozen preserves the option to swap in or
+warm-start from that prior when it ships.
 
 ---
 
@@ -233,27 +275,32 @@ workstation for ~40 h of motion; the paper's AMASS-scale runs used a single A100
 Straight from the upstream recipe (`examples/experiments/gpc/prior.py`): a 6-layer,
 d=1024 causal transformer trained with cross-entropy to predict the frozen tracker's FSQ
 tokens (grouped 5 scalars/token → 8 tokens/step) from `max_coords_obs` context. Expert
-rollouts come from the frozen tracker, so this is supervised — stable and much cheaper than
-Phase 2.
+rollouts come from the frozen tracker, so this is supervised — stable and much cheaper
+than tracker training. Train on the combined library with combat upweighted:
 
 ```bash
 python protomotions/train_agent.py \
-    --robot-name g1 \
+    --robot-name soma23 \
     --simulator isaaclab \
-    --motion-file data/g1_combat_amass.pt \
+    --motion-file data/soma_combat_seed.pt \
     --experiment-path examples/experiments/gpc/prior.py \
-    --tracker-checkpoint results/g1_fsq_combat_amass/last.ckpt \
+    --tracker-checkpoint data/pretrained_models/motion_tracker/soma_bones_fsq/last.ckpt \
     --num-envs 1024 --batch-size 1024 \
-    --experiment-name g1_gpc_prior
+    --experiment-name soma_gpc_prior
 ```
 
 **Acceptance criteria:** run the prior unconditionally (inference on the prior checkpoint)
 and confirm (a) stable, natural locomotion and idling, (b) **emergent get-up** — push the
-robot over (`J` key applies forces in `inference_agent.py`) and verify it recovers. If
+character over (`J` key applies forces in `inference_agent.py`) and verify it recovers. If
 recovery is unreliable, the dataset needs more fall/get-up clips → loop back to Phase 1.
 
-Note: the prior checkpoint embeds the tracker decoder (`latent_decoder`), so downstream
-phases only need the prior checkpoint.
+Notes:
+
+- The prior checkpoint embeds the tracker decoder (`latent_decoder`), so downstream
+  phases only need the prior checkpoint.
+- If NVIDIA ships a pretrained SOMA GPC prior later **and** we kept the tracker frozen
+  (Phase 2b avoided), that prior is drop-in compatible: either replace ours outright, or
+  use it as the warm-start and run only a short combat-upweighting pass.
 
 ---
 
@@ -267,7 +314,7 @@ intent; preserve it).
 
 Changes from the stock config:
 
-- `--motion-file data/g1_combat_only.pt` (combat clips, weighted toward strikes).
+- `--motion-file data/soma_combat_only.pt` (combat clips, weighted toward strikes).
 - Replace the target-reaching task obs with a placeholder **opponent observation** derived
   from the reference clips (e.g., a virtual opponent position where the clip's strikes are
   aimed, plus jitter — analogous to how the stock SFT jitters a future root-XY target).
@@ -276,14 +323,14 @@ Changes from the stock config:
 
 ```bash
 python protomotions/train_agent.py \
-    --robot-name g1 \
+    --robot-name soma23 \
     --simulator isaaclab \
-    --motion-file data/g1_combat_only.pt \
+    --motion-file data/soma_combat_only.pt \
     --experiment-path examples/experiments/gpc/sft_combat_prior_peft.py \
-    --prior-checkpoint results/g1_gpc_prior/last.ckpt \
-    --tracker-checkpoint results/g1_fsq_combat_amass/last.ckpt \
+    --prior-checkpoint results/soma_gpc_prior/last.ckpt \
+    --tracker-checkpoint data/pretrained_models/motion_tracker/soma_bones_fsq/last.ckpt \
     --num-envs 1024 --batch-size 1024 \
-    --experiment-name g1_sft_combat
+    --experiment-name soma_sft_combat
 ```
 
 **Acceptance criteria:** sampled rollouts show shadow-boxing-like behavior (strikes,
@@ -292,7 +339,7 @@ every league member in Phase 6.
 
 ---
 
-## Phase 5 — Two-G1 battle environment (greenfield)
+## Phase 5 — Two-SOMA battle environment (greenfield)
 
 ProtoMotions is strictly single-character: `BaseEnv` + all simulator backends spawn **one
 humanoid per parallel env**, with no multi-agent/opponent support anywhere. This phase is
@@ -301,16 +348,16 @@ the main engineering lift. Port the game design from IsaacLabASE's
 
 ### 5a. Paired spawning
 
-Extend the simulator layer (start with `isaaclab` backend) so each logical *match* owns two
-G1 articulations in a shared arena. Two viable layouts:
+Extend the simulator layer (start with `isaaclab` backend) so each logical *match* owns
+two SOMA articulations in a shared arena. Two viable layouts:
 
-1. **Two robots per env instance** — cleanest physics (they naturally collide), requires
-   the simulator config to instantiate two articulation views and the env to expose both.
-   (This is what IsaacLabASE's `battle_task.py` does: a second `Articulation` (`robot_op`)
-   in the same env prim.)
+1. **Two characters per env instance** — cleanest physics (they naturally collide),
+   requires the simulator config to instantiate two articulation views and the env to
+   expose both. (This is what IsaacLabASE's `battle_task.py` does: a second `Articulation`
+   (`robot_op`) in the same env prim.)
 2. **Ego/opponent as env pairs** (IsaacLabASE's agent-side batching approach: env `i` and
    env `i + num_actors` form a match; obs tensor is `[ego_batch; opp_batch]`) — reuses more
-   of the single-robot plumbing; the batching trick in `hrl_sp_agent.env_step` shows how
+   of the single-character plumbing; the batching trick in `hrl_sp_agent.env_step` shows how
    actions for both sides go through one `vec_env.step`.
 
 Recommendation: layout 2 with paired-env collision groups (assign collision groups so env
@@ -362,7 +409,7 @@ Port the mechanics that already work in IsaacLabASE's battles:
   init for a fraction (drives get-up robustness — port the idea from IsaacLabASE's
   `AmpGetupEnv`: `recovery_episode_prob`/`fall_init_prob`)
 
-**Milestone check:** two scripted/random-token G1s in an arena, hits detected and scored
+**Milestone check:** two scripted/random-token SOMAs in an arena, hits detected and scored
 correctly, resets stable at 1000+ parallel matches. Validate hit plausibility visually.
 
 ---
@@ -479,27 +526,31 @@ each adapter; override `agent.pretrained_modules.prior.checkpoint_path` when rel
 | Phase | Work | Wall-clock estimate |
 |---|---|---|
 | 0 | Sync fork, env setup | days |
-| 1 | Dataset build + retarget + curation | 1–2 weeks (mostly human time) |
-| 2 | FSQ tracker (combat+AMASS) | 1–2 weeks GPU |
+| 1 | Dataset build (SEED conversion + combat retarget + curation) | ~1 week (mostly human time; no PyRoki pipeline) |
+| 2 | Tracker **evaluation** (released ckpt) | ~1 day GPU (fallback fine-tune: +3–5 days, only if needed) |
 | 3 | GPC prior | 2–4 days GPU |
 | 4 | Combat SFT | ~1 day GPU |
 | 5 | Battle env | 2–4 weeks engineering |
 | 6 | League training | 2+ weeks GPU (open-ended — leagues improve as long as you run them) |
 | 7 | Eval tournament | ~1 week engineering |
 
-Phases 2–4 are sequential; Phase 5 can proceed in parallel with 2–4 (it only needs the
-tracker/prior at integration time, and can be developed against random-token policies).
+Using SOMA removes the plan's former longest GPU run (1–2 weeks of from-scratch tracker
+training) and the AMASS→robot retargeting pipeline entirely. Phases 2–4 are sequential;
+Phase 5 can proceed in parallel with 2–4 (it only needs the tracker/prior at integration
+time, and can be developed against random-token policies).
 
 ---
 
 ## Risks & open questions
 
-1. **Combat token coverage** (top risk): if the FSQ tracker can't track retargeted strikes
-   on G1's 29-DOF body, those skills don't exist downstream. Mitigation: Phase 2 per-clip
-   acceptance test; retarget quality iteration; PHUMA kungfu clips as a second combat source.
-2. **G1 morphology limits:** the G1 is small and light with limited arm articulation —
-   expect "kickboxing robot" rather than fencing. Unarmed combat only (no sword/shield —
-   the dataset, skeleton, and hardware all say no).
+1. **Combat token coverage** (top risk, but much reduced vs. a robot target): if the
+   released tracker can't track a retargeted strike, that skill doesn't exist downstream.
+   Mitigation: Phase 2a per-clip acceptance test; BONES-SEED's dynamic/stunt coverage and
+   the human skeleton make broad failures unlikely; isolated failures are usually
+   retargeting artifacts — fix the clip before touching the tracker (Phase 2b caveat).
+2. **Tracker freeze vs. fine-tune:** fine-tuning the tracker (Phase 2b) forks our token
+   vocabulary away from NVIDIA's, forfeiting compatibility with any future released SOMA
+   prior. Default to frozen; treat 2b as a last resort.
 3. **Self-play stability:** leagues can still cycle or collapse to stalling. The
    staleness cap, exploiters, points-decision on timeout, and the head-to-head eval matrix
    are the countermeasures; watch draw rate as the leading indicator.
@@ -508,14 +559,18 @@ tracker/prior at integration time, and can be developed against random-token pol
    `--peft-sampling-mode nucleus` (student nucleus + KL) on exploiter seats first.
 5. **Upstream churn:** GPC code landed recently; expect API movement. Pin a known-good
    upstream commit; keep our battle env additions in clearly separated modules
-   (`protomotions/envs/battle/`, `examples/experiments/battle/`) to ease rebasing. If
-   NVIDIA ships a SOMA GPC prior checkpoint later, it does **not** replace our G1 prior
-   (different skeleton) — our pipeline is self-sufficient.
-6. **Sim-to-real (future):** everything above is sim-only. The G1 deployment path exists
-   here (`deployment/export_bm_tracker_onnx.py`, MuJoCo contract, RoboJuDo), and
-   Jetson-Thor-class hardware can run the token loop in real time — but a real-robot fight
-   would additionally need domain randomization in Phase 2/6 and a safety layer. Out of
-   scope for this plan.
+   (`protomotions/envs/battle/`, `examples/experiments/battle/`) to ease rebasing.
+   Upside of the SOMA choice: if NVIDIA ships a SOMA GPC prior checkpoint, it slots
+   directly into our pipeline (see Phase 3 notes) instead of being wasted on us.
+6. **No hardware path (by design):** SOMA is a simulation character; there is no robot to
+   deploy to. If a real-robot fight (e.g., G1) is wanted later, the battle environment,
+   league trainer, and evaluation system all carry over unchanged — only the motor
+   foundation is embodiment-specific: retarget the dataset to G1 (PyRoki pipeline), train
+   a G1 FSQ tracker with the hardware-robustness pieces from
+   `data/pretrained_models/motion_tracker/g1-bones-deploy/experiment_config.py`
+   (BeyondMimic-style observations, L2C2 smoothness, action-rate penalties, domain
+   randomization), then rerun Phases 3–4. The SOMA league also provides trained opponents
+   and a behavior reference for that effort.
 
 ---
 
@@ -551,7 +606,7 @@ documented trap to avoid. Unless otherwise noted, short file names below live un
 | **PFSP statistics done carefully** | `SinglePlayer` (`pfsp_player_pool.py`): EMA-decayed win/loss/draw counters with a half-life, Beta-prior `conservative_score`, minimum-decisive-ratio filter before an opponent is eligible for weighted sampling | Port the statistics layer as-is — it's plain Python/torch with no framework coupling, and it encodes several stalemate-related lessons |
 | **League persistence & resume** | `hrl_sp_agent`: snapshots saved to `policy_dir/`, `restore_opponents_to_resume` rebuilds the pool (most recent `max_length` by ctime) on restart; paired with restart-loop launcher scripts (`../IsaacLabASE/scripts/build/humanoid/train_hrl_battle.sh`) | Long league runs *will* crash; resumability was retrofitted there after pain. Build it into the ProtoMotions league agent from day one |
 | **Symmetry debug switch** | `force_symmetric_inference` flag: both sides run the identical policy through the identical inference path | Port it. It's the fastest way to catch env asymmetries (timing, obs frames, spawn bias): with identical policies, win rate must be ~50% |
-| **Live LLC/prior hot-reload** | `hrl_agent.reload_llc_network_if_needed()` (in `../IsaacLabASE/source/IsaacLabASE/ase/learning/hrl_agent.py`, checked every 5 epochs) | Optional, but useful if the FSQ tracker or prior gets refined while league training runs |
+| **Live LLC/prior hot-reload** | `hrl_agent.reload_llc_network_if_needed()` (in `../IsaacLabASE/source/IsaacLabASE/ase/learning/hrl_agent.py`, checked every 5 epochs) | Optional, but useful if the prior gets refined while league training runs |
 
 ### Evaluation & tooling (saves time in Phase 7)
 
@@ -585,15 +640,16 @@ Paths relative to this repo unless prefixed with `../IsaacLabASE/`.
 
 | Purpose | Path |
 |---|---|
-| FSQ tracker experiment (fork this) | `examples/experiments/mimic/fsq.py` |
+| **Released SOMA FSQ tracker (use as-is)** | `data/pretrained_models/motion_tracker/soma_bones_fsq/` |
+| SOMA robot config + model | `protomotions/robot_configs/soma23.py`, `protomotions/data/assets/mjcf/soma23_humanoid.xml` |
+| BONES-SEED BVH → proto converter | `data/scripts/convert_soma23_bvh_to_proto.py` (guide: `docs/source/getting_started/seed_bvh_preparation.rst`) |
+| SOMA T-pose offsets (used by converter) | `data/soma/standard_t_pose_global_offsets_rots.p` |
+| FSQ tracker experiment (fallback fine-tune only) | `examples/experiments/mimic/fsq.py` |
 | GPC prior training | `examples/experiments/gpc/prior.py` |
 | SFT template (fork → combat SFT) | `examples/experiments/gpc/sft_target_prior_peft.py` |
 | RLFT template (fork → battle RLFT) | `examples/experiments/gpc/task_steering_headvel_prior_peft.py` |
 | PEFT agent internals | `protomotions/agents/peft/` |
-| GPC user guide (canonical workflow) | `docs/source/user_guide/gpc.rst` |
-| AMASS→G1 retarget | `scripts/retarget_amass_to_robot.sh`, `pyroki/` |
-| PHUMA G1 combat clips manifest | `data/yaml_files/g1_phuma_train.yaml` |
-| G1 robot config | `protomotions/robot_configs/g1.py` |
+| GPC user guide (canonical workflow; examples use soma23) | `docs/source/user_guide/gpc.rst` |
 | Battle mechanics to port | `../IsaacLabASE/source/IsaacLabASE/IsaacLabASE/tasks/direct/ase/battle/battle_task.py` |
 | League/PFSP to port (and fix) | `../IsaacLabASE/source/IsaacLabASE/IsaacLabASE/tasks/direct/ase/battle/pfsp_player_pool.py`, `hrl_sp_agent.py` |
 | Combat mocap source | `../IsaacLabASE/source/IsaacLabASE/ase/poselib/data/animations/amp/combat/`, `.../reallusion_combat/` |
