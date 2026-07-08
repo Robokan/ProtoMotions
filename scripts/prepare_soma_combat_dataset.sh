@@ -76,7 +76,12 @@ if [ -d "$MOTIONS_ROOT/seed" ] || [ -d "$MOTIONS_ROOT/combat" ]; then
         python protomotions/components/motion_lib.py \
             --motion-path "$MOTIONS_ROOT/" \
             --output-file data/soma_combat_seed.pt --device cpu
-        echo "     -> data/soma_combat_seed.pt"
+        # Emphasize combat for prior training: combat clips get
+        # COMBAT_FRACTION of the sampling mass (Phase 3 "combat upweighted").
+        python data/scripts/weight_combat_motions.py \
+            --motion-lib data/soma_combat_seed.pt \
+            --combat-fraction "${COMBAT_FRACTION:-0.5}"
+        echo "     -> data/soma_combat_seed.pt (combat-weighted)"
     fi
 fi
 

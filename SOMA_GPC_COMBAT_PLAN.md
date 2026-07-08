@@ -293,7 +293,23 @@ Straight from the upstream recipe (`examples/experiments/gpc/prior.py`): a 6-lay
 d=1024 causal transformer trained with cross-entropy to predict the frozen tracker's FSQ
 tokens (grouped 5 scalars/token → 8 tokens/step) from `max_coords_obs` context. Expert
 rollouts come from the frozen tracker, so this is supervised — stable and much cheaper
-than tracker training. Train on the combined library with combat upweighted:
+than tracker training. Train on the combined library with combat upweighted.
+
+**Combat emphasis:** since the frozen tracker already covers every skill as tokens, the
+prior's clip-sampling distribution is the knob that shapes its behavioral preferences.
+`data/scripts/weight_combat_motions.py` sets the combat clips' share of the sampling
+mass directly (`prepare_soma_combat_dataset.sh` applies it automatically;
+`COMBAT_FRACTION=0.5` by default — a handful of combat clips gets half the samples even
+against 142K SEED clips):
+
+```bash
+python data/scripts/weight_combat_motions.py \
+    --motion-lib data/soma_combat_seed.pt --combat-fraction 0.5
+```
+
+A strongly combat-weighted prior also front-loads Phase 4's job — if unconditional
+rollouts already shadow-box, the SFT pass can be shorter (or skipped in a pinch,
+at the cost of weaker opponent-conditioning alignment).
 
 ```bash
 python protomotions/train_agent.py \
