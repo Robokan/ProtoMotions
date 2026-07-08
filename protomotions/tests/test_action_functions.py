@@ -155,11 +155,13 @@ def test_build_pd_action_offset_scale_handles_mixed_hinge_and_three_dof_bodies()
 
 
 def test_build_pd_action_offset_scale_rejects_invalid_dof_size():
-    with pytest.raises(ValueError, match="Invalid dof size: 2"):
+    # 2-DOF (universal) joints are valid quadruped joints; 4 hinge DOFs on a
+    # single body is not a supported configuration.
+    with pytest.raises(ValueError, match="Invalid dof size: 4"):
         build_pd_action_offset_scale(
-            {1: torch.eye(2)},
-            torch.tensor([-1.0, -1.0]),
-            torch.tensor([1.0, 1.0]),
+            {1: torch.eye(4)},
+            torch.tensor([-1.0, -1.0, -1.0, -1.0]),
+            torch.tensor([1.0, 1.0, 1.0, 1.0]),
             action_scale=1.0,
             device=torch.device("cpu"),
         )
