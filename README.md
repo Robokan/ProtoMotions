@@ -96,6 +96,30 @@ Train quadrupeds to imitate retargeted mocap across all engines (IsaacGym, Isaac
 | **ANYmal-D** | `anymal_d` | `mjcf/anymal_d.xml` | poselib NPY |
 | dm_control **dog** | `dog_v2` | `mjcf/dog_v2_nomesh.xml` (BVH-matched cylinder skeleton) | MANN BVH library |
 
+**Quick launch.** Once the motion libraries exist under `data/motions/` (steps 1–4 below), each robot has a one-command launcher for training (headless) and one for running the trained policy in a windowed viewer:
+
+| Robot | Train | Run trained policy |
+|-------|-------|--------------------|
+| Go2 (IsaacLab) | `scripts/train_go2_tracker.sh` | `scripts/run_go2_tracker.sh` |
+| ANYmal-D (IsaacLab) | `scripts/train_anymal_tracker.sh` | `scripts/run_anymal_tracker.sh` |
+| ANYmal-D MaskedMimic (IsaacLab) | `scripts/train_anymal_masked_mimic.sh` | `scripts/run_anymal_masked_mimic.sh` |
+| dog (Newton) | `scripts/train_dog_tracker.sh` | `scripts/run_dog_tracker.sh` |
+
+All launchers accept env-var overrides and pass extra args through to the underlying script:
+
+```bash
+GPU=1 scripts/train_anymal_tracker.sh                # pin a GPU; auto-resumes results/$EXP/last.ckpt
+GPU=1 NO_RESUME=1 EXP=anymal_v2 scripts/train_anymal_tracker.sh   # force a fresh run under a new name
+NUM_ENVS=4096 BATCH_SIZE=16384 scripts/train_go2_tracker.sh       # shrink for a smaller GPU
+CKPT=results/go2_tracker/last.ckpt scripts/run_go2_tracker.sh     # view a specific checkpoint
+scripts/run_anymal_tracker.sh --full-eval                          # extra args pass through
+```
+
+Notes:
+- The IsaacLab launchers activate `../.venv-isaacsim5`; the dog (Newton) launchers activate `../.venv-protomotions-newton`. Adjust if your envs live elsewhere.
+- `train_anymal_masked_mimic.sh` **distills a trained tracker** — train `scripts/train_anymal_tracker.sh` first, then point `EXPERT=results/anymal_flat_v1/last.ckpt` at it. It is heavier per env (transformer student + frozen expert): 4096 envs fits a 24 GB card.
+- The dog is a sim-only skeletal model (no deployable variant); for a sim2real-deployable Go2/ANYmal tracker see the BeyondMimic config below.
+
 **1. Prepare motions.** Convert retargeted poselib clips to a packed MotionLib `.pt`, or retarget the dm_control dog directly from BVH:
 
 ```bash
