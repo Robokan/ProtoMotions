@@ -1,5 +1,22 @@
 # SOMA Fight Club: GPC + Tournament Self-Play Training Plan
 
+> **Implementation status (July 2026, branch `battle`):**
+>
+> | Phase | Status | Where |
+> |---|---|---|
+> | 0 — upstream sync | **Done** | fork main merged with NVlabs upstream; GPC stack + `soma_bones_fsq` verified present |
+> | 1 — dataset | **Tooling ready, data pending** | `scripts/prepare_soma_combat_dataset.sh` (BONES-SEED download + combat DCC retarget are manual inputs) |
+> | 2 — tracker validation | Pending data | commands below, unchanged |
+> | 3 — GPC prior | Pending data | upstream recipe, unchanged |
+> | 4 — combat SFT | **Implemented** | `examples/experiments/gpc/sft_combat_prior_peft.py` + `protomotions/envs/battle/virtual_opponent.py`; launcher `scripts/train_soma_sft_combat.sh` |
+> | 5 — battle env | **Implemented** | `protomotions/envs/battle/` (paired envs, hit FSM, knockdown grace, win/lose/draw, arena spawning, fall-init) |
+> | 6 — league trainer | **Implemented** | `protomotions/agents/league/` (PFSP + fixes, adapter lanes, staleness cap, informed eviction, Elo, exploiter role); experiment `examples/experiments/battle/battle_league_prior_peft.py`; launcher `scripts/train_soma_battle_league.sh` |
+> | 7 — eval tournament | **Implemented** | `protomotions/battle_tournament.py` + `protomotions/agents/league/tournament.py` (round-robin ladder, H2H matrix, regression gate, exhibition); launcher `scripts/run_soma_battle_tournament.sh` |
+>
+> Unit tests: `protomotions/tests/test_battle_components.py`,
+> `protomotions/tests/test_league_pfsp.py`. End-to-end sim runs still need the
+> Phase 1-3 artifacts (motion libraries + trained prior).
+
 Goal: train two **SOMA humanoid characters** (`soma23` — the GPC paper's native character:
 human proportions, 23 actuated bodies) to fight each other with natural, human-like combat
 motion. The motor foundation is a **GPC (Generative Pretrained Controller)** trained on a

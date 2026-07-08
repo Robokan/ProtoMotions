@@ -1,0 +1,399 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026 The ProtoMotions Developers
+# SPDX-License-Identifier: Apache-2.0
+
+"""Battle control component: fight state for two-character matches.
+
+Owns everything stateful about a fight — health, per-body hit integration,
+knockdown timers, idle/stalling accounting, round timing, and win/lose/draw
+determination — and exposes it to observation/reward/termination kernels via
+``EnvContext.battle``.
+
+Pairing: with ``2N`` envs, env ``i`` fights env ``(i + N) % 2N``. Match
+``m`` (``m < N``) is the pair ``(m, m + N)``.
+
+Match-end rules (per the SOMA GPC combat plan; constants from IsaacLabASE):
+- Knockout: a fighter stays "down" (root below ``knockdown_height``) beyond
+  ``knockdown_grace_seconds`` — the grace window is what makes get-up tokens
+  tactically valuable — or its health reaches zero. The downed fighter loses.
+- Out of bounds: leaving the arena loses immediately.
+- Timeout: a points decision on remaining-health difference; a draw only when
+  healths are within ``points_decision_eps``.
+"""
+
+import math
+from dataclasses import dataclass, field
+from typing import Dict, List, Tuple, TYPE_CHECKING
+
+import torch
+from torch import Tensor
+
+from protomotions.envs.battle.context import BattleContext
+from protomotions.envs.battle.hit_state import (
+    BattleHitState,
+    HitStateConfig,
+    resolve_body_ids,
+)
+from protomotions.envs.control.base import ControlComponent, ControlComponentConfig
+
+if TYPE_CHECKING:
+    from protomotions.envs.base_env.env import BaseEnv
+
+
+@dataclass
+class BattleControlConfig(ControlComponentConfig):
+    """Configuration for the battle control component (defaults: soma23)."""
+
+    _target_: str = "protomotions.envs.battle.control.BattleControl"
+
+    # Body sets
+    strike_body_names: List[str] = field(
+        default_factory=lambda: [
+            "LeftHand",
+            "RightHand",
+            "LeftFoot",
+            "RightFoot",
+            "LeftShin",
+            "RightShin",
+        ]
+    )
+    damage_body_names: List[str] = field(
+        default_factory=lambda: ["Head", "Chest", "Hips"]
+    )
+    # Region multipliers, aligned with damage_body_names (head > torso > pelvis)
+    damage_multipliers: List[float] = field(default_factory=lambda: [2.0, 1.0, 0.5])
+    # Key bodies exposed in opponent observations
+    key_body_names: List[str] = field(
+        default_factory=lambda: ["Head", "LeftHand", "RightHand", "LeftFoot", "RightFoot"]
+    )
+
+    # Arena geometry (IsaacLabASE: borderline_space = 7.0 m square)
+    arena_size: float = 7.0  # side length in meters
+    arena_spacing: float = 16.0  # distance between arena centers (>= 2x arena_size)
+    min_spawn_center_distance: float = 1.5  # rejection-sample away from center
+    min_spawn_partner_distance: float = 1.5  # and away from the opponent
+    spawn_max_fraction: float = 0.8  # spawn within this fraction of the arena
+
+    # Fight rules
+    initial_health: float = 1.0
+    # Health lost per unit of log-normalized hit energy taken (region-weighted).
+    damage_to_health: float = 0.05
+    knockdown_height: float = 0.2  # m, root below this counts as "down"
+    knockdown_grace_seconds: float = 2.0  # get-up window before KO
+    points_decision_eps: float = 0.02  # health diff below this at timeout = draw
+    out_of_bounds_loses: bool = True
+
+    # Anti-stalling (IsaacLabASE: +0.005/step below 1.0 rad/s max joint speed)
+    idle_joint_speed: float = 1.0
+    idle_time_increment: float = 0.005
+
+    # Fall-state initialization curriculum (AmpGetupEnv lineage)
+    fall_init_prob: float = 0.1
+    recovery_seconds: float = 2.0  # termination suppression after a fall init
+
+    # Hit FSM constants
+    hit_state: HitStateConfig = field(default_factory=HitStateConfig)
+
+
+class BattleControl(ControlComponent):
+    """Stateful fight manager for paired-env battles."""
+
+    def __init__(self, config: BattleControlConfig, env: "BaseEnv"):
+        super().__init__(config, env)
+        self.config: BattleControlConfig = config
+
+        num_envs = env.num_envs
+        if num_envs % 2 != 0:
+            raise ValueError(
+                f"Battle environments must come in pairs; got num_envs={num_envs}"
+            )
+        self.num_matches = num_envs // 2
+        device = env.device
+
+        # partner[i] = the env index of i's opponent
+        self.partner = (
+            torch.arange(num_envs, device=device, dtype=torch.long) + self.num_matches
+        ) % num_envs
+
+        # Arena centers: one per match, laid out on a square grid, shared by
+        # both sides of the pair.
+        self.arena_centers = self._build_arena_centers()  # [2N, 2]
+
+        body_names = env.robot_config.body_names
+        self.strike_body_ids = resolve_body_ids(
+            config.strike_body_names, body_names
+        ).to(device)
+        self.damage_body_ids = resolve_body_ids(
+            config.damage_body_names, body_names
+        ).to(device)
+        self.key_body_ids = resolve_body_ids(config.key_body_names, body_names).to(
+            device
+        )
+
+        self.hit_state = BattleHitState(
+            num_envs=num_envs,
+            damage_body_ids=self.damage_body_ids,
+            strike_body_ids=self.strike_body_ids,
+            damage_multipliers=torch.tensor(
+                config.damage_multipliers, dtype=torch.float
+            ),
+            config=config.hit_state,
+            dt=env.dt,
+            device=device,
+        )
+
+        # Fight state
+        self.health = torch.full((num_envs,), config.initial_health, device=device)
+        self.down_timer = torch.zeros(num_envs, device=device)
+        self.idle_time = torch.zeros(num_envs, device=device)
+        self.recovery_steps_left = torch.zeros(
+            num_envs, dtype=torch.long, device=device
+        )
+        self.hit_energy_taken = torch.zeros(num_envs, device=device)
+        self.hit_energy_dealt = torch.zeros(num_envs, device=device)
+
+        # Outcome buffers, stamped on the step the match ends
+        self.win_signal = torch.zeros(num_envs, device=device)
+        self.match_ended = torch.zeros(num_envs, dtype=torch.bool, device=device)
+        self._terminate = torch.zeros(num_envs, dtype=torch.bool, device=device)
+
+        self._knockdown_grace_steps = max(
+            1, int(round(config.knockdown_grace_seconds / env.dt))
+        )
+        self._recovery_steps = max(1, int(round(config.recovery_seconds / env.dt)))
+
+    # ------------------------------------------------------------------
+    # Arena layout
+    # ------------------------------------------------------------------
+    def _build_arena_centers(self) -> Tensor:
+        """Arena centers on a square grid, per env (both partners share one).
+
+        The grid starts past the terrain border (border cells are invalid
+        spawn area) and must fit inside the generated terrain extent.
+        """
+        cfg = self.config
+        grid = math.ceil(math.sqrt(self.num_matches))
+
+        origin = 0.0
+        terrain_cfg = getattr(self.env.terrain, "config", None)
+        if terrain_cfg is not None:
+            origin = float(getattr(terrain_cfg, "border_size", 0.0))
+            extent_x = terrain_cfg.map_length * terrain_cfg.num_levels
+            extent_y = terrain_cfg.map_width * terrain_cfg.num_terrains
+            required = grid * cfg.arena_spacing
+            if required > min(extent_x, extent_y):
+                raise ValueError(
+                    f"Arena grid needs {required:.0f}m but the terrain interior "
+                    f"is only {extent_x:.0f}x{extent_y:.0f}m. Increase "
+                    "terrain map_length/map_width (or num_levels/num_terrains) "
+                    f"to fit {self.num_matches} matches at "
+                    f"arena_spacing={cfg.arena_spacing}."
+                )
+
+        centers = torch.zeros(self.num_matches, 2, device=self.env.device)
+        for m in range(self.num_matches):
+            row, col = divmod(m, grid)
+            centers[m, 0] = origin + (col + 0.5) * cfg.arena_spacing
+            centers[m, 1] = origin + (row + 0.5) * cfg.arena_spacing
+        return centers.repeat(2, 1)  # env i and i+N share centers[i % N]
+
+    def sample_spawn_positions(self, env_ids: Tensor) -> Tensor:
+        """Rejection-sample spawn XY within the arena for the given envs.
+
+        Positions are at least ``min_spawn_center_distance`` from the arena
+        center; partner separation is enforced by
+        :meth:`enforce_partner_separation` once both sides are placed.
+        """
+        cfg = self.config
+        n = len(env_ids)
+        device = self.env.device
+        centers = self.arena_centers[env_ids]
+        max_extent = cfg.arena_size * cfg.spawn_max_fraction
+
+        pos = centers + (torch.rand(n, 2, device=device) - 0.5) * max_extent
+        for _ in range(100):
+            too_close = (
+                torch.norm(pos - centers, dim=-1) < cfg.min_spawn_center_distance
+            )
+            if not too_close.any():
+                break
+            resample = centers[too_close] + (
+                torch.rand(int(too_close.sum()), 2, device=device) - 0.5
+            ) * max_extent
+            pos[too_close] = resample
+        return pos
+
+    def enforce_partner_separation(self, env_ids: Tensor, spawn_xy: Tensor) -> Tensor:
+        """Push apart partners that were sampled closer than the minimum."""
+        cfg = self.config
+        pos_map: Dict[int, int] = {
+            int(e): i for i, e in enumerate(env_ids.tolist())
+        }
+        for i, e in enumerate(env_ids.tolist()):
+            p = int(self.partner[e])
+            j = pos_map.get(p)
+            if j is None or j <= i:
+                continue
+            delta = spawn_xy[j] - spawn_xy[i]
+            dist = torch.norm(delta)
+            if dist < cfg.min_spawn_partner_distance:
+                direction = (
+                    delta / dist
+                    if dist > 1e-6
+                    else torch.tensor([1.0, 0.0], device=spawn_xy.device)
+                )
+                push = (cfg.min_spawn_partner_distance - dist) * 0.5 + 1e-3
+                spawn_xy[i] = spawn_xy[i] - direction * push
+                spawn_xy[j] = spawn_xy[j] + direction * push
+        return spawn_xy
+
+    # ------------------------------------------------------------------
+    # ControlComponent API
+    # ------------------------------------------------------------------
+    def reset(self, env_ids: Tensor):
+        if len(env_ids) == 0:
+            return
+        cfg = self.config
+        self.health[env_ids] = cfg.initial_health
+        self.down_timer[env_ids] = 0.0
+        self.idle_time[env_ids] = 0.0
+        self.hit_energy_taken[env_ids] = 0.0
+        self.hit_energy_dealt[env_ids] = 0.0
+        self.win_signal[env_ids] = 0.0
+        self.match_ended[env_ids] = False
+        self._terminate[env_ids] = False
+        self.hit_state.reset(env_ids)
+
+        # Fall-init curriculum: recently fall-initialized envs get a recovery
+        # window during which knockout cannot fire (the fighter is expected to
+        # be down; it must learn to get up).
+        fall_mask = getattr(self.env, "battle_fall_init_mask", None)
+        if fall_mask is not None:
+            recover = env_ids[fall_mask[env_ids]]
+            self.recovery_steps_left[env_ids] = 0
+            self.recovery_steps_left[recover] = self._recovery_steps
+        else:
+            self.recovery_steps_left[env_ids] = 0
+
+    def step(self):
+        """Advance fight state one control step and stamp match outcomes."""
+        cfg = self.config
+        env = self.env
+        state = env.simulator.get_robot_state()
+        partner = self.partner
+
+        body_pos = state.rigid_body_pos
+        body_vel = state.rigid_body_vel
+        contact_forces = state.rigid_body_contact_forces
+
+        # Hit integration (energy TAKEN per env; dealt = partner's taken)
+        taken = self.hit_state.step(
+            contact_forces=contact_forces,
+            body_pos=body_pos,
+            body_vel=body_vel,
+            opp_body_pos=body_pos[partner],
+            opp_body_vel=body_vel[partner],
+            progress=env.progress_buf,
+        )
+        self.hit_energy_taken = taken
+        self.hit_energy_dealt = taken[partner]
+        self.health = (self.health - cfg.damage_to_health * taken).clamp_min(0.0)
+
+        # Knockdown timer
+        root_height = body_pos[:, 0, 2]
+        down = root_height < cfg.knockdown_height
+        self.down_timer = torch.where(
+            down, self.down_timer + env.dt, torch.zeros_like(self.down_timer)
+        )
+        self.recovery_steps_left = (self.recovery_steps_left - 1).clamp_min(0)
+
+        # Idle/stalling accounting
+        max_joint_speed = state.dof_vel.abs().max(dim=-1).values
+        self.idle_time = torch.where(
+            max_joint_speed >= cfg.idle_joint_speed,
+            torch.zeros_like(self.idle_time),
+            self.idle_time + cfg.idle_time_increment,
+        )
+
+        # ---- Match-end determination -------------------------------------
+        in_recovery = self.recovery_steps_left > 0
+        knocked_out = (
+            (self.down_timer > cfg.knockdown_grace_seconds) | (self.health <= 0.0)
+        ) & ~in_recovery
+
+        root_xy = body_pos[:, 0, :2]
+        half = cfg.arena_size / 2.0
+        oob = (root_xy - self.arena_centers).abs().max(dim=-1).values > half
+        loses_now = knocked_out | (oob if cfg.out_of_bounds_loses else torch.zeros_like(oob))
+
+        timeout = env.progress_buf >= env.max_episode_length - 1
+
+        ends = loses_now | loses_now[partner] | timeout | timeout[partner]
+
+        win = torch.zeros_like(self.win_signal)
+        # Decisive: I win if my opponent loses and I don't (simultaneous = draw)
+        win = torch.where(loses_now[partner] & ~loses_now, torch.ones_like(win), win)
+        win = torch.where(loses_now & ~loses_now[partner], -torch.ones_like(win), win)
+        # Timeout without a decisive loss: points decision on health difference
+        health_diff = self.health - self.health[partner]
+        points = torch.where(
+            health_diff > cfg.points_decision_eps,
+            torch.ones_like(win),
+            torch.where(
+                health_diff < -cfg.points_decision_eps,
+                -torch.ones_like(win),
+                torch.zeros_like(win),
+            ),
+        )
+        timeout_only = ends & ~loses_now & ~loses_now[partner]
+        win = torch.where(timeout_only, points, win)
+
+        self.match_ended = ends
+        self.win_signal = torch.where(ends, win, torch.zeros_like(win))
+        # Decisive ends are true terminations (no value bootstrap); pure
+        # timeouts are resets (bootstrap allowed).
+        self._terminate = ends & (loses_now | loses_now[partner])
+
+    def check_resets_and_terminations(self) -> Tuple[Tensor, Tensor]:
+        reset = self.match_ended.clone()
+        terminate = self._terminate.clone()
+        return reset, terminate
+
+    def populate_context(self, ctx) -> None:
+        env = self.env
+        state = env.simulator.get_robot_state()
+        partner = self.partner
+        cfg = self.config
+
+        body_pos = state.rigid_body_pos
+        body_vel = state.rigid_body_vel
+
+        downed_norm = (
+            self.down_timer / cfg.knockdown_grace_seconds
+        ).clamp(0.0, 1.0)
+        time_left = (
+            1.0 - env.progress_buf.float() / max(env.max_episode_length, 1)
+        ).clamp(0.0, 1.0)
+
+        ctx.battle = BattleContext(
+            opp_root_pos=state.root_pos[partner],
+            opp_root_rot=state.root_rot[partner],
+            opp_root_vel=state.root_vel[partner],
+            opp_root_ang_vel=state.root_ang_vel[partner],
+            opp_key_body_pos=body_pos[partner][:, self.key_body_ids],
+            opp_key_body_vel=body_vel[partner][:, self.key_body_ids],
+            health=self.health,
+            opp_health=self.health[partner],
+            downed=downed_norm,
+            opp_downed=downed_norm[partner],
+            round_time_left=time_left,
+            idle_time=self.idle_time,
+            hit_energy_dealt=self.hit_energy_dealt,
+            hit_energy_taken=self.hit_energy_taken,
+            win_signal=self.win_signal,
+            match_ended=self.match_ended,
+            arena_center=self.arena_centers,
+            arena_half_size=cfg.arena_size / 2.0,
+        )
+
+
+__all__ = ["BattleControlConfig", "BattleControl"]

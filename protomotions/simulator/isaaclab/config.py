@@ -69,3 +69,13 @@ class IsaacLabSimulatorConfig(SimulatorConfig):
         default_factory=IsaacLabSimParams,
         metadata={"help": "IsaacLab-specific simulation parameters."}
     )
+    filter_env_collisions: bool = field(
+        default=True,
+        metadata={
+            "help": (
+                "Filter collisions between cloned envs (IsaacLab default). "
+                "Set False for tasks where envs must collide with each other, "
+                "e.g. paired-env battles where match partners share an arena."
+            )
+        },
+    )

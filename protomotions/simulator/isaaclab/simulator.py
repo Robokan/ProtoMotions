@@ -172,6 +172,7 @@ class IsaacLabSimulator(Simulator):
             projectile_config=self._proj_config,
             replicate_physics=scene_cfgs
             is None,  # When there are objects, disable physics replication
+            filter_collisions=self.config.filter_env_collisions,
         )
         return scene_cfg
 

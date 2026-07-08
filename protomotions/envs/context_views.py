@@ -33,6 +33,7 @@ from typing import Optional, TYPE_CHECKING
 from torch import Tensor
 
 from protomotions.envs.context_paths import FieldPath, NestedField
+from protomotions.envs.battle.context import BattleContext
 from protomotions.envs.obs.humanoid import compute_local_ang_vel
 
 if TYPE_CHECKING:
@@ -589,6 +590,7 @@ class EnvContext:
     steering: Optional[SteeringContext] = NestedField(SteeringContext)
     path: Optional[PathContext] = NestedField(PathContext)
     target: Optional[TargetContext] = NestedField(TargetContext)
+    battle: Optional[BattleContext] = NestedField(BattleContext)
 
     def __init__(
         self,
@@ -617,6 +619,7 @@ class EnvContext:
         steering: Optional[SteeringContext] = None,
         path: Optional[PathContext] = None,
         target: Optional[TargetContext] = None,
+        battle: Optional[BattleContext] = None,
     ):
         """Initialize EnvContext with all state views.
 
@@ -685,6 +688,7 @@ class EnvContext:
         self.steering = steering
         self.path = path
         self.target = target
+        self.battle = battle
 
 
 # =============================================================================
