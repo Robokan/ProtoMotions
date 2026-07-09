@@ -18,6 +18,7 @@ from protomotions.envs.battle.rewards import (
     compute_hit_taken_penalty,
     compute_idle_penalty,
     compute_range_reward,
+    compute_strike_diversity_bonus,
     compute_win_reward,
 )
 
@@ -72,6 +73,17 @@ def battle_hit_taken_penalty_factory(weight: float = -20.0) -> MdpComponent:
     return MdpComponent(
         compute_func=compute_hit_taken_penalty,
         dynamic_vars={"hit_energy_taken": EnvContext.battle.hit_energy_taken},
+        static_params={"weight": weight},
+    )
+
+
+def battle_strike_diversity_factory(weight: float = 30.0) -> MdpComponent:
+    """Kickboxing diversity: pays for damage from the under-used limb group."""
+    return MdpComponent(
+        compute_func=compute_strike_diversity_bonus,
+        dynamic_vars={
+            "strike_diversity_bonus": EnvContext.battle.strike_diversity_bonus
+        },
         static_params={"weight": weight},
     )
 
@@ -133,18 +145,27 @@ def battle_boundary_penalty_factory(
 
 
 def default_battle_reward_components(dense_scale: float = 1.0) -> dict:
-    """The plan's thin reward set. ``dense_scale`` anneals every dense term
-    (set toward 0 as the league matures; the sparse win term stays)."""
+    """The simple kickboxing reward: look at each other and make hits.
+
+    Core: sparse win/lose + gaze facing + hit exchange + limb diversity
+    (punches AND kicks — the diversity stream pays for damage from the
+    under-used limb group). Negative shaping only steers away from things
+    we don't want: stalling and edge-hugging. Ring-outs are handled by
+    rule (points decision), not reward. ``dense_scale`` anneals every
+    dense term toward 0 as the league matures; the win term stays.
+    """
     return {
         "battle_win": battle_win_reward_factory(weight=100.0),
+        "battle_facing": battle_facing_reward_factory(weight=2.0 * dense_scale),
         "battle_hit": battle_hit_reward_factory(weight=30.0 * dense_scale),
         "battle_hit_taken": battle_hit_taken_penalty_factory(
             weight=-20.0 * dense_scale
         ),
-        "battle_facing": battle_facing_reward_factory(weight=2.0 * dense_scale),
-        "battle_range": battle_range_reward_factory(weight=4.0 * dense_scale),
+        "battle_strike_diversity": battle_strike_diversity_factory(
+            weight=30.0 * dense_scale
+        ),
         "battle_idle": battle_idle_penalty_factory(weight=1.0 * dense_scale),
-        "battle_boundary": battle_boundary_penalty_factory(weight=2.0 * dense_scale),
+        "battle_boundary": battle_boundary_penalty_factory(weight=1.0 * dense_scale),
     }
 
 
@@ -153,6 +174,7 @@ __all__ = [
     "battle_win_reward_factory",
     "battle_hit_reward_factory",
     "battle_hit_taken_penalty_factory",
+    "battle_strike_diversity_factory",
     "battle_facing_reward_factory",
     "battle_range_reward_factory",
     "battle_idle_penalty_factory",

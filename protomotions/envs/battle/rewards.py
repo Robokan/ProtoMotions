@@ -36,6 +36,16 @@ def compute_hit_taken_penalty(hit_energy_taken: Tensor) -> Tensor:
     return hit_energy_taken
 
 
+def compute_strike_diversity_bonus(strike_diversity_bonus: Tensor) -> Tensor:
+    """Growth of the lesser strike-group cumulative (hands vs legs).
+
+    Kickboxing shaping: each new unit of damage from the under-used limb
+    group pays extra, so specializing in punching-only or kicking-only
+    leaves reward on the table.
+    """
+    return strike_diversity_bonus
+
+
 def compute_facing_reward(
     head_pos: Tensor,
     head_rot: Tensor,
@@ -113,6 +123,7 @@ __all__ = [
     "compute_win_reward",
     "compute_hit_reward",
     "compute_hit_taken_penalty",
+    "compute_strike_diversity_bonus",
     "compute_facing_reward",
     "compute_range_reward",
     "compute_idle_penalty",

@@ -63,7 +63,7 @@ def _hit_inputs(num_envs=2, num_bodies=4, force=100.0, close=True, closing_speed
 
 def test_hit_state_scores_proximal_gated_contact():
     hs = _make_hit_state()
-    taken = hs.step(*_hit_inputs(close=True))
+    taken, _ = hs.step(*_hit_inputs(close=True))
     assert taken.shape == (2,)
     assert (taken > 0).all(), "forceful, proximal, closing contact must score"
 
@@ -71,14 +71,14 @@ def test_hit_state_scores_proximal_gated_contact():
 def test_hit_state_ignores_contact_without_nearby_striker():
     """Ground contact attribution: force with no opponent nearby scores zero."""
     hs = _make_hit_state()
-    taken = hs.step(*_hit_inputs(close=False))
+    taken, _ = hs.step(*_hit_inputs(close=False))
     assert (taken == 0).all()
 
 
 def test_hit_state_requires_closing_velocity():
     """Pushing (no closing speed) must not accumulate hit energy."""
     hs = _make_hit_state()
-    taken = hs.step(*_hit_inputs(closing_speed=0.0))
+    taken, _ = hs.step(*_hit_inputs(closing_speed=0.0))
     assert (taken == 0).all()
 
 
@@ -87,7 +87,7 @@ def test_hit_state_warmup_gates_early_steps():
     hs.config = HitStateConfig(proximity_radius=0.5, warmup_steps=10)
     inputs = list(_hit_inputs(close=True))
     inputs[5] = torch.full((2,), 3, dtype=torch.long)  # progress < warmup
-    taken = hs.step(*inputs)
+    taken, _ = hs.step(*inputs)
     assert (taken == 0).all()
 
 
@@ -256,3 +256,76 @@ def test_arena_boundary_penalty_ramps():
     assert penalty[0] == 0.0
     assert penalty[1] == pytest.approx(-0.5)
     assert penalty[2] == pytest.approx(-1.0)
+
+
+# ---------- strike groups & kickboxing diversity ---------------------------
+
+
+def _make_grouped_hit_state(num_envs=2):
+    """Strike body 2 = 'hands' (group 0), strike body 3 = 'legs' (group 1)."""
+    return BattleHitState(
+        num_envs=num_envs,
+        damage_body_ids=torch.tensor([0, 1]),
+        strike_body_ids=torch.tensor([2, 3]),
+        damage_multipliers=torch.tensor([2.0, 1.0]),
+        config=HitStateConfig(proximity_radius=0.5, warmup_steps=0),
+        dt=0.02,
+        device=torch.device("cpu"),
+        strike_body_groups=torch.tensor([0, 1]),
+        num_strike_groups=2,
+    )
+
+
+def test_hit_energy_attributed_to_striker_group():
+    hs = _make_grouped_hit_state()
+    # Hand striker (body 2) close to damage body 0; leg striker far away
+    inputs = _hit_inputs(close=True)
+    taken, by_group = hs.step(*inputs)
+    assert by_group.shape == (2, 2)
+    assert (by_group[:, 0] > 0).all(), "hand-group strike must be attributed"
+    assert (by_group[:, 1] == 0).all(), "leg group dealt nothing"
+    assert torch.allclose(by_group.sum(dim=-1), taken, atol=1e-6)
+
+
+def test_hit_energy_attributed_to_leg_group():
+    hs = _make_grouped_hit_state()
+    (cf, bp, bv, opp_pos, opp_vel, prog) = _hit_inputs(close=False)
+    # Move the LEG striker (body 3) close and closing; hand striker far
+    opp_pos[:, 3, :] = 0.0
+    opp_pos[:, 3, 0] = 0.1
+    opp_vel[:, 3, 0] = 2.0
+    taken, by_group = hs.step(cf, bp, bv, opp_pos, opp_vel, prog)
+    assert (by_group[:, 1] > 0).all()
+    assert (by_group[:, 0] == 0).all()
+
+
+def test_diversity_bonus_pays_only_for_lesser_group_growth():
+    """Replicates BattleControl's min-growth accounting: hand-only damage
+    stops earning once hands lead; leg damage then pays."""
+    cum = torch.zeros(1, 2)
+
+    def step(dealt):
+        nonlocal cum
+        prev_min = cum.min(dim=-1).values
+        cum = cum + torch.tensor([dealt])
+        return (cum.min(dim=-1).values - prev_min).clamp_min(0.0)
+
+    assert step([1.0, 0.0])[0] == 0.0  # first punch: hands lead, min unchanged
+    assert step([1.0, 0.0])[0] == 0.0  # more punching earns no diversity
+    assert step([0.0, 1.5])[0] == pytest.approx(1.5)  # kicks catch up: paid
+    assert step([0.0, 1.0])[0] == pytest.approx(0.5)  # paid until legs pass hands
+
+
+def test_default_reward_set_is_simple_kickboxing():
+    from protomotions.envs.battle.factories import default_battle_reward_components
+
+    components = default_battle_reward_components()
+    assert "battle_win" in components
+    assert "battle_facing" in components
+    assert "battle_hit" in components
+    assert "battle_strike_diversity" in components
+    assert "battle_range" not in components, "approach shaping was dropped"
+    # Annealing zeroes every dense term but never the win signal
+    annealed = default_battle_reward_components(dense_scale=0.0)
+    assert annealed["battle_win"].static_params["weight"] > 0
+    assert annealed["battle_hit"].static_params["weight"] == 0

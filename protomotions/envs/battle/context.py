@@ -54,6 +54,9 @@ class BattleContext:
     # Per-step hit accounting (already region/velocity gated, log-normalized)
     hit_energy_dealt: Tensor = FieldPath()  # [2N] this step
     hit_energy_taken: Tensor = FieldPath()  # [2N] this step
+    # Growth of the lesser strike-group cumulative (hands vs legs): pays for
+    # damage from the under-used limb group (kickboxing diversity)
+    strike_diversity_bonus: Tensor = FieldPath()  # [2N] this step
 
     # Match outcome, stamped on the step the match ends (else zero)
     win_signal: Tensor = FieldPath()  # [2N] +1 win / -1 loss / 0 otherwise
@@ -82,6 +85,7 @@ class BattleContext:
         idle_time: Tensor,
         hit_energy_dealt: Tensor,
         hit_energy_taken: Tensor,
+        strike_diversity_bonus: Tensor,
         win_signal: Tensor,
         match_ended: Tensor,
         arena_center: Tensor,
@@ -104,6 +108,7 @@ class BattleContext:
         self.idle_time = idle_time
         self.hit_energy_dealt = hit_energy_dealt
         self.hit_energy_taken = hit_energy_taken
+        self.strike_diversity_bonus = strike_diversity_bonus
         self.win_signal = win_signal
         self.match_ended = match_ended
         self.arena_center = arena_center

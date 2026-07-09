@@ -179,6 +179,14 @@ class BattleEnv(BaseEnv):
         self.extras["battle/draw"] = (ended & (win.abs() <= 0.5)).float()
         self.extras["battle/health"] = control.health
         self.extras["battle/hit_energy_dealt"] = control.hit_energy_dealt
+        # Outcome-cause telemetry: the leading indicator of degenerate metas
+        # (all-ring-out shoving, all-timeout stalling) is HOW matches end.
+        self.extras["battle/end_ko"] = control.end_cause_ko.float()
+        self.extras["battle/end_ringout"] = control.end_cause_oob.float()
+        self.extras["battle/end_points"] = control.end_cause_points.float()
+        self.extras["battle/dealt_hands"] = control.dealt_by_group_cum[:, 0]
+        if control.dealt_by_group_cum.shape[1] > 1:
+            self.extras["battle/dealt_legs"] = control.dealt_by_group_cum[:, 1]
 
         # Mirror resets across partners so a match always resets as a unit
         # (control-side conditions are already symmetric; this also covers

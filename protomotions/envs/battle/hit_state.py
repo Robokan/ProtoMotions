@@ -55,6 +55,8 @@ class BattleHitState:
         config: HitStateConfig,
         dt: float,
         device: torch.device,
+        strike_body_groups: Tensor = None,
+        num_strike_groups: int = 0,
     ):
         """
         Args:
@@ -66,6 +68,9 @@ class BattleHitState:
             config: FSM constants.
             dt: Control step in seconds.
             device: Torch device.
+            strike_body_groups: Group id per strike body [S] (e.g. hands=0,
+                legs=1) for per-group hit attribution; None disables.
+            num_strike_groups: Number of distinct strike groups.
         """
         self.config = config
         self.dt = dt
@@ -73,6 +78,10 @@ class BattleHitState:
         self.damage_body_ids = damage_body_ids
         self.strike_body_ids = strike_body_ids
         self.damage_multipliers = damage_multipliers.to(device)
+        self.strike_body_groups = (
+            strike_body_groups.to(device) if strike_body_groups is not None else None
+        )
+        self.num_strike_groups = num_strike_groups
 
         num_damage = len(damage_body_ids)
         self._active = torch.zeros(num_envs, num_damage, dtype=torch.bool, device=device)
@@ -109,9 +118,13 @@ class BattleHitState:
             progress: Episode progress counters [2N].
 
         Returns:
-            Per-env log-normalized hit energy taken this step [2N]. The
-            energy *dealt* by env i is the energy taken by its partner; the
-            caller permutes.
+            Tuple of (taken, taken_by_group):
+            - taken: per-env log-normalized hit energy taken this step [2N].
+              The energy *dealt* by env i is the energy taken by its partner;
+              the caller permutes.
+            - taken_by_group: the same energy split by the attributed
+              striker's group [2N, num_strike_groups] (zeros-shaped [2N, 0]
+              when groups are disabled).
         """
         cfg = self.config
         d_ids = self.damage_body_ids
@@ -172,11 +185,26 @@ class BattleHitState:
         self._cooldown = (self._cooldown - 1.0).clamp_min(0.0)
 
         # Region multipliers, warm-up gating, reduce over bodies
-        r_taken = (r_per_body * self.damage_multipliers.unsqueeze(0)).sum(dim=-1)
-        r_taken = torch.where(
-            progress < self.config.warmup_steps, torch.zeros_like(r_taken), r_taken
-        )
-        return r_taken
+        warmup = progress < self.config.warmup_steps
+        r_weighted = r_per_body * self.damage_multipliers.unsqueeze(0)  # [2N, D]
+        r_taken = r_weighted.sum(dim=-1)
+        r_taken = torch.where(warmup, torch.zeros_like(r_taken), r_taken)
+
+        # Split by the attributed striker's group (hands vs legs for
+        # kickboxing diversity accounting)
+        if self.strike_body_groups is not None and self.num_strike_groups > 0:
+            groups = self.strike_body_groups[nearest_s]  # [2N, D]
+            taken_by_group = torch.zeros(
+                r_weighted.shape[0], self.num_strike_groups, device=self.device
+            )
+            taken_by_group.scatter_add_(1, groups, r_weighted)
+            taken_by_group = torch.where(
+                warmup.unsqueeze(-1), torch.zeros_like(taken_by_group), taken_by_group
+            )
+        else:
+            taken_by_group = torch.zeros(r_weighted.shape[0], 0, device=self.device)
+
+        return r_taken, taken_by_group
 
 
 def resolve_body_ids(body_names: List[str], all_body_names: List[str]) -> Tensor:

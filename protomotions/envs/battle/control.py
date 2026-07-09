@@ -56,6 +56,15 @@ class BattleControlConfig(ControlComponentConfig):
             "RightShin",
         ]
     )
+    # Strike groups for kickboxing diversity accounting: dealt hit energy is
+    # tracked per group so the reward can pay extra for the under-used group
+    # (a pure puncher or pure kicker leaves reward on the table).
+    strike_body_group_names: Dict[str, List[str]] = field(
+        default_factory=lambda: {
+            "hands": ["LeftHand", "RightHand"],
+            "legs": ["LeftFoot", "RightFoot", "LeftShin", "RightShin"],
+        }
+    )
     damage_body_names: List[str] = field(
         default_factory=lambda: ["Head", "Chest", "Hips"]
     )
@@ -82,7 +91,11 @@ class BattleControlConfig(ControlComponentConfig):
     knockdown_height: float = 0.2  # m, root below this counts as "down"
     knockdown_grace_seconds: float = 2.0  # get-up window before KO
     points_decision_eps: float = 0.02  # health diff below this at timeout = draw
-    out_of_bounds_loses: bool = True
+    # Out of bounds ends the match with a POINTS DECISION (like timeout)
+    # rather than an instant loss: shoving the opponent out only "wins" if
+    # you were already ahead on damage, so ring-outs stop being a strategy.
+    # Set True to restore instant-loss ring-outs.
+    out_of_bounds_loses: bool = False
 
     # Anti-stalling (IsaacLabASE: +0.005/step below 1.0 rad/s max joint speed)
     idle_joint_speed: float = 1.0
@@ -134,6 +147,20 @@ class BattleControl(ControlComponent):
             resolve_body_ids([config.head_body_name], body_names)[0]
         )
 
+        # Map each strike body to its group id (declaration order of
+        # strike_body_group_names). Ungrouped strike bodies go to group 0.
+        self.strike_group_labels = list(config.strike_body_group_names.keys())
+        group_of = {}
+        for group_idx, (_label, names) in enumerate(
+            config.strike_body_group_names.items()
+        ):
+            for name in names:
+                group_of[name] = group_idx
+        strike_groups = torch.tensor(
+            [group_of.get(name, 0) for name in config.strike_body_names],
+            dtype=torch.long,
+        )
+
         self.hit_state = BattleHitState(
             num_envs=num_envs,
             damage_body_ids=self.damage_body_ids,
@@ -144,6 +171,8 @@ class BattleControl(ControlComponent):
             config=config.hit_state,
             dt=env.dt,
             device=device,
+            strike_body_groups=strike_groups,
+            num_strike_groups=len(self.strike_group_labels),
         )
 
         # Fight state
@@ -155,11 +184,19 @@ class BattleControl(ControlComponent):
         )
         self.hit_energy_taken = torch.zeros(num_envs, device=device)
         self.hit_energy_dealt = torch.zeros(num_envs, device=device)
+        # Cumulative dealt energy per strike group this episode + the
+        # per-step diversity bonus (growth of the lesser group's cumulative)
+        num_groups = len(self.strike_group_labels)
+        self.dealt_by_group_cum = torch.zeros(num_envs, num_groups, device=device)
+        self.strike_diversity_bonus = torch.zeros(num_envs, device=device)
 
         # Outcome buffers, stamped on the step the match ends
         self.win_signal = torch.zeros(num_envs, device=device)
         self.match_ended = torch.zeros(num_envs, dtype=torch.bool, device=device)
         self._terminate = torch.zeros(num_envs, dtype=torch.bool, device=device)
+        self.end_cause_ko = torch.zeros(num_envs, dtype=torch.bool, device=device)
+        self.end_cause_oob = torch.zeros(num_envs, dtype=torch.bool, device=device)
+        self.end_cause_points = torch.zeros(num_envs, dtype=torch.bool, device=device)
 
         self._knockdown_grace_steps = max(
             1, int(round(config.knockdown_grace_seconds / env.dt))
@@ -263,6 +300,8 @@ class BattleControl(ControlComponent):
         self.idle_time[env_ids] = 0.0
         self.hit_energy_taken[env_ids] = 0.0
         self.hit_energy_dealt[env_ids] = 0.0
+        self.dealt_by_group_cum[env_ids] = 0.0
+        self.strike_diversity_bonus[env_ids] = 0.0
         self.win_signal[env_ids] = 0.0
         self.match_ended[env_ids] = False
         self._terminate[env_ids] = False
@@ -291,7 +330,7 @@ class BattleControl(ControlComponent):
         contact_forces = state.rigid_body_contact_forces
 
         # Hit integration (energy TAKEN per env; dealt = partner's taken)
-        taken = self.hit_state.step(
+        taken, taken_by_group = self.hit_state.step(
             contact_forces=contact_forces,
             body_pos=body_pos,
             body_vel=body_vel,
@@ -302,6 +341,15 @@ class BattleControl(ControlComponent):
         self.hit_energy_taken = taken
         self.hit_energy_dealt = taken[partner]
         self.health = (self.health - cfg.damage_to_health * taken).clamp_min(0.0)
+
+        # Kickboxing diversity: reward growth of the LESSER cumulative
+        # dealt-energy group (hands vs legs) — specialization in one limb
+        # group stops earning this stream.
+        dealt_by_group = taken_by_group[partner]  # [2N, G]
+        prev_min = self.dealt_by_group_cum.min(dim=-1).values
+        self.dealt_by_group_cum = self.dealt_by_group_cum + dealt_by_group
+        new_min = self.dealt_by_group_cum.min(dim=-1).values
+        self.strike_diversity_bonus = (new_min - prev_min).clamp_min(0.0)
 
         # Knockdown timer
         root_height = body_pos[:, 0, 2]
@@ -331,14 +379,19 @@ class BattleControl(ControlComponent):
         loses_now = knocked_out | (oob if cfg.out_of_bounds_loses else torch.zeros_like(oob))
 
         timeout = env.progress_buf >= env.max_episode_length - 1
+        # Out of bounds (when not an instant loss) ends the match like a
+        # timeout: points decision on health, so ring-outs aren't a strategy.
+        ends_on_points = timeout | timeout[partner]
+        if not cfg.out_of_bounds_loses:
+            ends_on_points = ends_on_points | oob | oob[partner]
 
-        ends = loses_now | loses_now[partner] | timeout | timeout[partner]
+        ends = loses_now | loses_now[partner] | ends_on_points
 
         win = torch.zeros_like(self.win_signal)
         # Decisive: I win if my opponent loses and I don't (simultaneous = draw)
         win = torch.where(loses_now[partner] & ~loses_now, torch.ones_like(win), win)
         win = torch.where(loses_now & ~loses_now[partner], -torch.ones_like(win), win)
-        # Timeout without a decisive loss: points decision on health difference
+        # Points decision on health difference for non-decisive ends
         health_diff = self.health - self.health[partner]
         points = torch.where(
             health_diff > cfg.points_decision_eps,
@@ -349,14 +402,20 @@ class BattleControl(ControlComponent):
                 torch.zeros_like(win),
             ),
         )
-        timeout_only = ends & ~loses_now & ~loses_now[partner]
-        win = torch.where(timeout_only, points, win)
+        points_only = ends & ~loses_now & ~loses_now[partner]
+        win = torch.where(points_only, points, win)
 
         self.match_ended = ends
         self.win_signal = torch.where(ends, win, torch.zeros_like(win))
-        # Decisive ends are true terminations (no value bootstrap); pure
-        # timeouts are resets (bootstrap allowed).
+        # Decisive ends are true terminations (no value bootstrap); points
+        # ends (timeout / ring-out) are resets (bootstrap allowed).
         self._terminate = ends & (loses_now | loses_now[partner])
+
+        # Outcome-cause telemetry: how matches end is the leading indicator
+        # of degenerate metas (all-ring-out, all-timeout stalling, ...)
+        self.end_cause_ko = ends & (knocked_out | knocked_out[partner])
+        self.end_cause_oob = ends & (oob | oob[partner]) & ~self.end_cause_ko
+        self.end_cause_points = points_only & ~self.end_cause_oob
 
     def check_resets_and_terminations(self) -> Tuple[Tensor, Tensor]:
         reset = self.match_ended.clone()
@@ -397,6 +456,7 @@ class BattleControl(ControlComponent):
             idle_time=self.idle_time,
             hit_energy_dealt=self.hit_energy_dealt,
             hit_energy_taken=self.hit_energy_taken,
+            strike_diversity_bonus=self.strike_diversity_bonus,
             win_signal=self.win_signal,
             match_ended=self.match_ended,
             arena_center=self.arena_centers,

@@ -187,6 +187,7 @@ class VirtualOpponentControl(ControlComponent):
             idle_time=self._zeros,
             hit_energy_dealt=self._zeros,
             hit_energy_taken=self._zeros,
+            strike_diversity_bonus=self._zeros,
             win_signal=self._zeros,
             match_ended=torch.zeros(
                 num_envs, dtype=torch.bool, device=self.env.device
