@@ -118,7 +118,7 @@ class BattleControl(ControlComponent):
         # both sides of the pair.
         self.arena_centers = self._build_arena_centers()  # [2N, 2]
 
-        body_names = env.robot_config.body_names
+        body_names = env.robot_config.kinematic_info.body_names
         self.strike_body_ids = resolve_body_ids(
             config.strike_body_names, body_names
         ).to(device)

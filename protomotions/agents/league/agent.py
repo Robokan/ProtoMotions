@@ -331,7 +331,8 @@ class LeagueDiscretePriorPEFTRLFTAgent(DiscretePriorPEFTRLFTAgent):
                 out = self.model(obs_td)
             return out["action"]
 
-        action_dim = self.env.get_action_size()
+        # (env.get_action_size() references a stale simulator attr upstream)
+        action_dim = self.env.robot_config.number_of_actions
         return self._lanes.act(obs_td, self.env_member, action_dim)
 
     # ------------------------------------------------------------------
