@@ -19,3 +19,14 @@ RUN /isaac-sim/python.sh -m pip install --no-cache-dir \
     "wandb==0.23.0" \
     cloudpickle \
     pytest
+
+# The image's torch was upgraded past the Isaac ml_archive prebundle, whose
+# torchvision/torchaudio were compiled against the original torch and now
+# fail on import ("operator torchvision::nms does not exist"), which crashes
+# lightning's optional-dependency probes. Neither is needed; hide them so
+# imports fall through to "not installed".
+RUN cd /isaac-sim/exts/omni.isaac.ml_archive/pip_prebundle && \
+    for pkg in torchvision torchaudio; do \
+        [ -d "$pkg" ] && mv "$pkg" "$pkg.disabled" || true; \
+        for d in "$pkg"-*.dist-info; do [ -d "$d" ] && mv "$d" "$d.disabled" || true; done; \
+    done
