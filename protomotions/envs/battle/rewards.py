@@ -37,23 +37,26 @@ def compute_hit_taken_penalty(hit_energy_taken: Tensor) -> Tensor:
 
 
 def compute_facing_reward(
-    root_pos: Tensor,
-    root_rot: Tensor,
-    opp_root_pos: Tensor,
+    head_pos: Tensor,
+    head_rot: Tensor,
+    opp_head_pos: Tensor,
 ) -> Tensor:
-    """Reward for facing the opponent, in [0, 1].
+    """Reward for looking at the opponent, in [0, 1].
 
-    IsaacLabASE: facing = (dot(facing_dir, to_opponent) + 1) / 2.
+    Head-based, matching IsaacLabASE: the direction is head-to-head and the
+    gaze vector is the head's forward axis —
+    facing = (dot(head_forward, to_opponent_head) + 1) / 2.
+    (Root-based facing rewards a squared pelvis while the fighter looks
+    elsewhere, which produces degenerate stances.)
     """
-    to_opp = opp_root_pos - root_pos
-    to_opp_xy = torch.nn.functional.normalize(to_opp[..., :2], dim=-1)
+    to_opp = torch.nn.functional.normalize(opp_head_pos - head_pos, dim=-1)
 
-    facing_dir3d = torch.zeros_like(root_pos)
-    facing_dir3d[..., 0] = 1.0
-    facing = rotations.quat_rotate(root_rot, facing_dir3d, True)
-    facing_xy = torch.nn.functional.normalize(facing[..., :2], dim=-1)
+    forward = torch.zeros_like(head_pos)
+    forward[..., 0] = 1.0
+    gaze = rotations.quat_rotate(head_rot, forward, True)
+    gaze = torch.nn.functional.normalize(gaze, dim=-1)
 
-    dot = (facing_xy * to_opp_xy).sum(dim=-1)
+    dot = (gaze * to_opp).sum(dim=-1)
     return (dot + 1.0) * 0.5
 
 

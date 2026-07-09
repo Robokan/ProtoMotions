@@ -77,12 +77,13 @@ def battle_hit_taken_penalty_factory(weight: float = -20.0) -> MdpComponent:
 
 
 def battle_facing_reward_factory(weight: float = 2.0) -> MdpComponent:
+    """Gaze reward: ego head looks at the opponent's head (IsaacLabASE)."""
     return MdpComponent(
         compute_func=compute_facing_reward,
         dynamic_vars={
-            "root_pos": EnvContext.current.root_pos,
-            "root_rot": EnvContext.current.root_rot,
-            "opp_root_pos": EnvContext.battle.opp_root_pos,
+            "head_pos": EnvContext.battle.head_pos,
+            "head_rot": EnvContext.battle.head_rot,
+            "opp_head_pos": EnvContext.battle.opp_head_pos,
         },
         static_params={"weight": weight},
     )

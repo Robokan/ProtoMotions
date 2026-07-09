@@ -65,6 +65,8 @@ class BattleControlConfig(ControlComponentConfig):
     key_body_names: List[str] = field(
         default_factory=lambda: ["Head", "LeftHand", "RightHand", "LeftFoot", "RightFoot"]
     )
+    # Head body for the gaze-based facing reward
+    head_body_name: str = "Head"
 
     # Arena geometry (IsaacLabASE: borderline_space = 7.0 m square)
     arena_size: float = 7.0  # side length in meters
@@ -127,6 +129,9 @@ class BattleControl(ControlComponent):
         ).to(device)
         self.key_body_ids = resolve_body_ids(config.key_body_names, body_names).to(
             device
+        )
+        self.head_body_id = int(
+            resolve_body_ids([config.head_body_name], body_names)[0]
         )
 
         self.hit_state = BattleHitState(
@@ -381,6 +386,9 @@ class BattleControl(ControlComponent):
             opp_root_ang_vel=state.root_ang_vel[partner],
             opp_key_body_pos=body_pos[partner][:, self.key_body_ids],
             opp_key_body_vel=body_vel[partner][:, self.key_body_ids],
+            head_pos=body_pos[:, self.head_body_id],
+            head_rot=state.rigid_body_rot[:, self.head_body_id],
+            opp_head_pos=body_pos[partner][:, self.head_body_id],
             health=self.health,
             opp_health=self.health[partner],
             downed=downed_norm,

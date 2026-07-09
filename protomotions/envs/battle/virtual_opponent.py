@@ -51,9 +51,13 @@ class VirtualOpponentControlConfig(ControlComponentConfig):
     # terms match the battle env's statistics.
     arena_size: float = 7.0
 
+    # Head body for the gaze-based facing reward
+    head_body_name: str = "Head"
+
     # Humanoid key-body template around the virtual root, [K, 3] offsets in
     # the opponent's local frame (order must match the battle
-    # key_body_names: Head, LeftHand, RightHand, LeftFoot, RightFoot).
+    # key_body_names: Head, LeftHand, RightHand, LeftFoot, RightFoot —
+    # index 0 doubles as the virtual opponent's head).
     key_body_template: List[List[float]] = field(
         default_factory=lambda: [
             [0.0, 0.0, 0.65],  # Head (relative to root at ~0.95m)
@@ -84,6 +88,14 @@ class VirtualOpponentControl(ControlComponent):
         )
         self._zeros = torch.zeros(num_envs, device=device)
         self._ones = torch.ones(num_envs, device=device)
+
+        from protomotions.envs.battle.hit_state import resolve_body_ids
+
+        self._head_body_id = int(
+            resolve_body_ids(
+                [config.head_body_name], env.robot_config.kinematic_info.body_names
+            )[0]
+        )
 
     def _place_opponent(self, env_ids: Tensor) -> None:
         cfg = self.config
@@ -155,6 +167,8 @@ class VirtualOpponentControl(ControlComponent):
             1.0 - self.env.progress_buf.float() / max(self.env.max_episode_length, 1)
         ).clamp(0.0, 1.0)
 
+        robot_state = self.env.simulator.get_robot_state()
+
         ctx.battle = BattleContext(
             opp_root_pos=self._opp_pos,
             opp_root_rot=opp_rot,
@@ -162,6 +176,9 @@ class VirtualOpponentControl(ControlComponent):
             opp_root_ang_vel=torch.zeros_like(self._opp_pos),
             opp_key_body_pos=key_pos,
             opp_key_body_vel=torch.zeros_like(key_pos),
+            head_pos=robot_state.rigid_body_pos[:, self._head_body_id],
+            head_rot=robot_state.rigid_body_rot[:, self._head_body_id],
+            opp_head_pos=key_pos[:, 0],
             health=self._ones,
             opp_health=self._ones,
             downed=self._zeros,

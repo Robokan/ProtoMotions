@@ -36,6 +36,13 @@ class BattleContext:
     opp_key_body_pos: Tensor = FieldPath()  # [2N, K, 3]
     opp_key_body_vel: Tensor = FieldPath()  # [2N, K, 3]
 
+    # Head poses (world frame) for gaze-based rewards: the facing reward is
+    # head-looks-at-opponent-head, not root orientation (root-facing rewards
+    # a squared pelvis while the fighter stares elsewhere).
+    head_pos: Tensor = FieldPath()  # [2N, 3] ego head
+    head_rot: Tensor = FieldPath()  # [2N, 4] ego head (w-last)
+    opp_head_pos: Tensor = FieldPath()  # [2N, 3] opponent head
+
     # Fight state scalars
     health: Tensor = FieldPath()  # [2N] in [0, 1]
     opp_health: Tensor = FieldPath()  # [2N] in [0, 1]
@@ -64,6 +71,9 @@ class BattleContext:
         opp_root_ang_vel: Tensor,
         opp_key_body_pos: Tensor,
         opp_key_body_vel: Tensor,
+        head_pos: Tensor,
+        head_rot: Tensor,
+        opp_head_pos: Tensor,
         health: Tensor,
         opp_health: Tensor,
         downed: Tensor,
@@ -83,6 +93,9 @@ class BattleContext:
         self.opp_root_ang_vel = opp_root_ang_vel
         self.opp_key_body_pos = opp_key_body_pos
         self.opp_key_body_vel = opp_key_body_vel
+        self.head_pos = head_pos
+        self.head_rot = head_rot
+        self.opp_head_pos = opp_head_pos
         self.health = health
         self.opp_health = opp_health
         self.downed = downed
