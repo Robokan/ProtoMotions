@@ -407,6 +407,11 @@ def main():
         simulator=simulator,
     )
 
+    # Demo/viewer: skip per-step reward computation and raw-state logging
+    # (only needed for training) so the inference frame rate isn't
+    # bottlenecked by training-only work.
+    env.inference_mode = True
+
     # Determine root_dir for agent based on checkpoint path
     agent_kwargs = {}
     checkpoint_path = Path(args.checkpoint)

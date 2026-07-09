@@ -185,6 +185,11 @@ class BaseEnv:
         self.odom_yaw_cos_sin = torch.zeros(
             self.num_envs, 2, dtype=torch.float, device=self.device
         )
+
+        # Viewer/demo fast path: set True by inference_agent.py to skip
+        # training-only per-step work (reward components, raw-state logging).
+        # Leave False for training and evaluation.
+        self.inference_mode = False
         self.odom_yaw_cos_sin[:, 0] = 1.0  # cos(0) = 1
 
         # Contact force tracking for impact penalty rewards
@@ -783,7 +788,10 @@ class BaseEnv:
         self._current_context = self._build_global_context()
 
         self.compute_observations(context=self._current_context)
-        self.compute_reward(context=self._current_context)
+        # Rewards are only needed for training; skip them in the viewer/demo to
+        # avoid the per-step reward compute that tanks the inference frame rate.
+        if not self.inference_mode:
+            self.compute_reward(context=self._current_context)
         self.reset_buf[:], self.terminate_buf[:] = self.check_resets_and_terminations(
             context=self._current_context
         )
@@ -791,8 +799,11 @@ class BaseEnv:
         self.extras["terminate"] = self.terminate_buf
 
         rbs: RobotState = self.simulator.get_robot_state()
-        for k, _ in rbs.get_shape_mapping(flattened=True).items():
-            self.extras[f"raw/{k}"] = rbs.flatten_bodies(k)
+        if not self.inference_mode:
+            # Raw-state extras exist for training-time logging; flattening
+            # every body tensor per step is wasted work in the viewer.
+            for k, _ in rbs.get_shape_mapping(flattened=True).items():
+                self.extras[f"raw/{k}"] = rbs.flatten_bodies(k)
 
         # Update previous contact forces for next step's impact penalty
         self.prev_contact_force_magnitudes[:] = torch.norm(

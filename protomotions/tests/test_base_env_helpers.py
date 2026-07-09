@@ -466,6 +466,7 @@ def _make_env(
     env._current_noisy_obs = None
     env._action_config_device_ready = False
     env.skip_height_correction = False
+    env.inference_mode = False
     env.state_history = _StateHistory(num_envs) if history else None
     env.control_manager = _ControlManager()
     env.motion_manager = _MotionManager() if motions > 0 else None
