@@ -34,6 +34,11 @@ from protomotions.envs.battle.hit_state import (
     resolve_body_ids,
 )
 from protomotions.envs.control.base import ControlComponent, ControlComponentConfig
+from protomotions.simulator.base_simulator.config import (
+    MarkerConfig,
+    MarkerState,
+    VisualizationMarkerConfig,
+)
 
 if TYPE_CHECKING:
     from protomotions.envs.base_env.env import BaseEnv
@@ -104,6 +109,9 @@ class BattleControlConfig(ControlComponentConfig):
     # Fall-state initialization curriculum (AmpGetupEnv lineage)
     fall_init_prob: float = 0.1
     recovery_seconds: float = 2.0  # termination suppression after a fall init
+
+    # Viewer: markers per arena side outlining the ring (0 disables)
+    arena_ring_markers_per_side: int = 8
 
     # Hit FSM constants
     hit_state: HitStateConfig = field(default_factory=HitStateConfig)
@@ -202,6 +210,29 @@ class BattleControl(ControlComponent):
             1, int(round(config.knockdown_grace_seconds / env.dt))
         )
         self._recovery_steps = max(1, int(round(config.recovery_seconds / env.dt)))
+
+        # Ring outline offsets around the arena center [P, 2] (viewer only)
+        self._ring_offsets = self._build_ring_offsets()
+
+    def _build_ring_offsets(self) -> Tensor:
+        """Evenly spaced XY offsets tracing the square arena boundary."""
+        per_side = self.config.arena_ring_markers_per_side
+        if per_side <= 0:
+            return torch.zeros(0, 2, device=self.env.device)
+        half = self.config.arena_size / 2.0
+        t = torch.linspace(-half, half, per_side + 1, device=self.env.device)[:-1]
+        ones = torch.full_like(t, half)
+        # Four sides, corners included once each
+        pts = torch.cat(
+            [
+                torch.stack([t, ones], dim=-1),  # top: left -> right
+                torch.stack([ones, -t], dim=-1),  # right: top -> bottom
+                torch.stack([-t, -ones], dim=-1),  # bottom: right -> left
+                torch.stack([-ones, t], dim=-1),  # left: bottom -> top
+            ],
+            dim=0,
+        )
+        return pts  # [4 * per_side, 2]
 
     # ------------------------------------------------------------------
     # Arena layout
@@ -462,6 +493,36 @@ class BattleControl(ControlComponent):
             arena_center=self.arena_centers,
             arena_half_size=cfg.arena_size / 2.0,
         )
+
+
+    # ------------------------------------------------------------------
+    # Ring visualization (viewer only)
+    # ------------------------------------------------------------------
+    def create_visualization_markers(
+        self, headless: bool
+    ) -> Dict[str, VisualizationMarkerConfig]:
+        num_points = self._ring_offsets.shape[0]
+        if headless or num_points == 0:
+            return {}
+        return {
+            "arena_ring": VisualizationMarkerConfig(
+                type="sphere",
+                color=(0.9, 0.15, 0.1),
+                markers=[MarkerConfig(size="small")] * num_points,
+            )
+        }
+
+    def get_markers_state(self) -> Dict[str, MarkerState]:
+        num_points = self._ring_offsets.shape[0]
+        if self.env.simulator.headless or num_points == 0:
+            return {}
+        num_envs = self.env.num_envs
+        pos = torch.zeros(num_envs, num_points, 3, device=self.env.device)
+        pos[..., :2] = self.arena_centers.unsqueeze(1) + self._ring_offsets.unsqueeze(0)
+        pos[..., 2] = 0.05
+        rot = torch.zeros(num_envs, num_points, 4, device=self.env.device)
+        rot[..., 3] = 1.0  # identity (w-last)
+        return {"arena_ring": MarkerState(translation=pos, orientation=rot)}
 
 
 __all__ = ["BattleControlConfig", "BattleControl"]
