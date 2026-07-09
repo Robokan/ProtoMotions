@@ -56,7 +56,12 @@ docker run -d --name "$NAME" --gpus all --network=host \
     -v "$HOME/sparkpack:/workspace/sparkpack" \
     --workdir /workspace/sparkpack/ProtoMotions \
     --entrypoint bash \
-    "$IMAGE" -c "ln -sf /isaac-sim/python.sh /usr/local/bin/python; rm -rf /workspace/IsaacLab 2>/dev/null || true; tail -f /dev/null" >/dev/null
+    "$IMAGE" -c "rm -rf /workspace/IsaacLab 2>/dev/null || true; tail -f /dev/null" >/dev/null
+
+# `python` wrapper: the image's default user (isaac-sim) can't write
+# /usr/local/bin, and a plain symlink breaks python.sh's self-relative paths.
+docker exec -u root "$NAME" bash -c \
+    'printf "#!/bin/bash\nexec /isaac-sim/python.sh \"\$@\"\n" > /usr/local/bin/python && chmod 755 /usr/local/bin/python'
 
 echo "Container '$NAME' started. Attaching..."
 exec docker exec -it "$NAME" bash
