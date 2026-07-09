@@ -17,3 +17,8 @@ data/amass/*.pkl
 .cursor/
 renders/
 .envrc
+
+# Packaged motion libraries built from the gated BONES-SEED dataset
+# (license-restricted; rebuild with scripts/run_seed_prior_pipeline.sh)
+data/soma_seed_curated.pt
+data/soma_combat_viewer.pt
