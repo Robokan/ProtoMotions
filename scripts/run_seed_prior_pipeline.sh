@@ -66,6 +66,20 @@ if [ -n "${SKIP_TRAIN:-}" ]; then
 fi
 
 echo "=== [4/4] Launching GPC prior training ($EXP) ==="
+# Guard: never start the prior on a GPU that another training run is using.
+# Waits (rather than aborts) so an unattended pipeline still proceeds once
+# the other run finishes; logs every check so the wait is visible.
+while true; do
+    others=$(pgrep -af "train_agent.py" | grep -v $$ || true)
+    if [ -z "$others" ]; then
+        echo "Training-process guard: clear."
+        break
+    fi
+    echo "Training-process guard: waiting, found running training:"
+    echo "$others" | head -3
+    sleep 60
+done
+
 RESUME_ARGS=()
 if [ -f "results/$EXP/last.ckpt" ]; then
     RESUME_ARGS+=(--checkpoint "results/$EXP/last.ckpt")
