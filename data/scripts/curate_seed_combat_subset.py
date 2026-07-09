@@ -83,7 +83,10 @@ def classify(row) -> str:
 
     if category == "Martial Arts":
         return "combat"
-    if not COMBAT_EXCLUDE.search(text):
+    # Dance choreography is never combat, even when described with fight
+    # vocabulary ("kick it", punch-styled moves): letting those through
+    # concentrated ~14% of prior-training samples on hip-hop moves.
+    if row.get("package") != "Dances" and not COMBAT_EXCLUDE.search(text):
         for pattern in COMBAT_PATTERNS:
             if re.search(pattern, text, re.I):
                 return "combat"
