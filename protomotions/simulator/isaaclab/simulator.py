@@ -1124,7 +1124,9 @@ class IsaacLabSimulator(Simulator):
             marker_scale = []
             for i, marker in enumerate(markers_cfg.markers):
                 if markers_cfg.type == "sphere":
-                    if marker.size == "tiny":
+                    if marker.scale is not None:
+                        scale = marker.scale
+                    elif marker.size == "tiny":
                         scale = 0.007
                     elif marker.size == "small":
                         scale = 0.01
@@ -1132,7 +1134,9 @@ class IsaacLabSimulator(Simulator):
                         scale = 0.05
                     marker_scale.append([scale, scale, scale])
                 elif markers_cfg.type == "arrow":
-                    if marker.size == "small":
+                    if marker.scale is not None:
+                        scale = marker.scale
+                    elif marker.size == "small":
                         scale = 0.1
                     else:
                         scale = 0.5

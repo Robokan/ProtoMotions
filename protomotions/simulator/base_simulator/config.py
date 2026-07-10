@@ -59,6 +59,10 @@ class MarkerConfig:
     size: Literal["tiny", "small", "regular"] = field(
         default="regular", metadata={"help": "Marker size for visualization."}
     )
+    scale: Optional[float] = field(
+        default=None,
+        metadata={"help": "Explicit marker scale; overrides the size preset."},
+    )
 
 
 @dataclass

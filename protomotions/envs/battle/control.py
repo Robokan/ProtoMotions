@@ -112,6 +112,10 @@ class BattleControlConfig(ControlComponentConfig):
 
     # Viewer: markers per arena side outlining the ring (0 disables)
     arena_ring_markers_per_side: int = 8
+    arena_ring_marker_scale: float = 0.02
+    # Viewer: flash damaged body parts red for this long after a scoring hit
+    hit_flash_seconds: float = 0.35
+    hit_flash_marker_scale: float = 0.08
 
     # Hit FSM constants
     hit_state: HitStateConfig = field(default_factory=HitStateConfig)
@@ -213,6 +217,13 @@ class BattleControl(ControlComponent):
 
         # Ring outline offsets around the arena center [P, 2] (viewer only)
         self._ring_offsets = self._build_ring_offsets()
+
+        # Hit-flash timers per damage body (viewer only): counts down control
+        # steps during which the struck part is highlighted red
+        self._hit_flash_steps = max(1, int(round(config.hit_flash_seconds / env.dt)))
+        self.hit_flash_timer = torch.zeros(
+            num_envs, len(self.damage_body_ids), device=device
+        )
 
     def _build_ring_offsets(self) -> Tensor:
         """Evenly spaced XY offsets tracing the square arena boundary."""
@@ -361,7 +372,7 @@ class BattleControl(ControlComponent):
         contact_forces = state.rigid_body_contact_forces
 
         # Hit integration (energy TAKEN per env; dealt = partner's taken)
-        taken, taken_by_group = self.hit_state.step(
+        taken, taken_by_group, taken_per_body = self.hit_state.step(
             contact_forces=contact_forces,
             body_pos=body_pos,
             body_vel=body_vel,
@@ -372,6 +383,13 @@ class BattleControl(ControlComponent):
         self.hit_energy_taken = taken
         self.hit_energy_dealt = taken[partner]
         self.health = (self.health - cfg.damage_to_health * taken).clamp_min(0.0)
+
+        # Arm/decay the per-part hit flash (viewer only)
+        self.hit_flash_timer = torch.where(
+            taken_per_body > 1e-6,
+            torch.full_like(self.hit_flash_timer, float(self._hit_flash_steps)),
+            (self.hit_flash_timer - 1.0).clamp_min(0.0),
+        )
 
         # Kickboxing diversity: reward growth of the LESSER cumulative
         # dealt-energy group (hands vs legs) — specialization in one limb
@@ -501,28 +519,55 @@ class BattleControl(ControlComponent):
     def create_visualization_markers(
         self, headless: bool
     ) -> Dict[str, VisualizationMarkerConfig]:
-        num_points = self._ring_offsets.shape[0]
-        if headless or num_points == 0:
+        if headless:
             return {}
-        return {
-            "arena_ring": VisualizationMarkerConfig(
+        cfg = self.config
+        configs: Dict[str, VisualizationMarkerConfig] = {}
+        num_points = self._ring_offsets.shape[0]
+        if num_points > 0:
+            configs["arena_ring"] = VisualizationMarkerConfig(
                 type="sphere",
                 color=(0.9, 0.15, 0.1),
-                markers=[MarkerConfig(size="small")] * num_points,
+                markers=[MarkerConfig(scale=cfg.arena_ring_marker_scale)] * num_points,
             )
-        }
+        num_damage = len(self.damage_body_ids)
+        if cfg.hit_flash_seconds > 0 and num_damage > 0:
+            configs["hit_flash"] = VisualizationMarkerConfig(
+                type="sphere",
+                color=(1.0, 0.0, 0.0),
+                markers=[MarkerConfig(scale=cfg.hit_flash_marker_scale)] * num_damage,
+            )
+        return configs
 
     def get_markers_state(self) -> Dict[str, MarkerState]:
-        num_points = self._ring_offsets.shape[0]
-        if self.env.simulator.headless or num_points == 0:
+        if self.env.simulator.headless:
             return {}
         num_envs = self.env.num_envs
-        pos = torch.zeros(num_envs, num_points, 3, device=self.env.device)
-        pos[..., :2] = self.arena_centers.unsqueeze(1) + self._ring_offsets.unsqueeze(0)
-        pos[..., 2] = 0.05
-        rot = torch.zeros(num_envs, num_points, 4, device=self.env.device)
-        rot[..., 3] = 1.0  # identity (w-last)
-        return {"arena_ring": MarkerState(translation=pos, orientation=rot)}
+        device = self.env.device
+        states: Dict[str, MarkerState] = {}
+
+        num_points = self._ring_offsets.shape[0]
+        if num_points > 0:
+            pos = torch.zeros(num_envs, num_points, 3, device=device)
+            pos[..., :2] = self.arena_centers.unsqueeze(1) + self._ring_offsets.unsqueeze(0)
+            pos[..., 2] = 0.05
+            rot = torch.zeros(num_envs, num_points, 4, device=device)
+            rot[..., 3] = 1.0  # identity (w-last)
+            states["arena_ring"] = MarkerState(translation=pos, orientation=rot)
+
+        num_damage = len(self.damage_body_ids)
+        if self.config.hit_flash_seconds > 0 and num_damage > 0:
+            body_pos = self.env.simulator.get_robot_state().rigid_body_pos
+            flash_pos = body_pos[:, self.damage_body_ids].clone()
+            # Park inactive flashes below the terrain
+            inactive = self.hit_flash_timer <= 0.0
+            flash_pos[..., 2] = torch.where(
+                inactive, torch.full_like(flash_pos[..., 2], -100.0), flash_pos[..., 2]
+            )
+            rot = torch.zeros(num_envs, num_damage, 4, device=device)
+            rot[..., 3] = 1.0
+            states["hit_flash"] = MarkerState(translation=flash_pos, orientation=rot)
+        return states
 
 
 __all__ = ["BattleControlConfig", "BattleControl"]

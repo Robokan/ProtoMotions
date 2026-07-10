@@ -118,13 +118,15 @@ class BattleHitState:
             progress: Episode progress counters [2N].
 
         Returns:
-            Tuple of (taken, taken_by_group):
+            Tuple of (taken, taken_by_group, taken_per_body):
             - taken: per-env log-normalized hit energy taken this step [2N].
               The energy *dealt* by env i is the energy taken by its partner;
               the caller permutes.
             - taken_by_group: the same energy split by the attributed
               striker's group [2N, num_strike_groups] (zeros-shaped [2N, 0]
               when groups are disabled).
+            - taken_per_body: region-weighted energy per damage body [2N, D]
+              (drives the per-part hit-flash visualization).
         """
         cfg = self.config
         d_ids = self.damage_body_ids
@@ -204,7 +206,10 @@ class BattleHitState:
         else:
             taken_by_group = torch.zeros(r_weighted.shape[0], 0, device=self.device)
 
-        return r_taken, taken_by_group
+        taken_per_body = torch.where(
+            warmup.unsqueeze(-1), torch.zeros_like(r_weighted), r_weighted
+        )
+        return r_taken, taken_by_group, taken_per_body
 
 
 def resolve_body_ids(body_names: List[str], all_body_names: List[str]) -> Tensor:

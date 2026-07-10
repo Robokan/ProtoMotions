@@ -63,7 +63,7 @@ def _hit_inputs(num_envs=2, num_bodies=4, force=100.0, close=True, closing_speed
 
 def test_hit_state_scores_proximal_gated_contact():
     hs = _make_hit_state()
-    taken, _ = hs.step(*_hit_inputs(close=True))
+    taken, _, _ = hs.step(*_hit_inputs(close=True))
     assert taken.shape == (2,)
     assert (taken > 0).all(), "forceful, proximal, closing contact must score"
 
@@ -71,14 +71,14 @@ def test_hit_state_scores_proximal_gated_contact():
 def test_hit_state_ignores_contact_without_nearby_striker():
     """Ground contact attribution: force with no opponent nearby scores zero."""
     hs = _make_hit_state()
-    taken, _ = hs.step(*_hit_inputs(close=False))
+    taken, _, _ = hs.step(*_hit_inputs(close=False))
     assert (taken == 0).all()
 
 
 def test_hit_state_requires_closing_velocity():
     """Pushing (no closing speed) must not accumulate hit energy."""
     hs = _make_hit_state()
-    taken, _ = hs.step(*_hit_inputs(closing_speed=0.0))
+    taken, _, _ = hs.step(*_hit_inputs(closing_speed=0.0))
     assert (taken == 0).all()
 
 
@@ -87,7 +87,7 @@ def test_hit_state_warmup_gates_early_steps():
     hs.config = HitStateConfig(proximity_radius=0.5, warmup_steps=10)
     inputs = list(_hit_inputs(close=True))
     inputs[5] = torch.full((2,), 3, dtype=torch.long)  # progress < warmup
-    taken, _ = hs.step(*inputs)
+    taken, _, _ = hs.step(*inputs)
     assert (taken == 0).all()
 
 
@@ -280,7 +280,7 @@ def test_hit_energy_attributed_to_striker_group():
     hs = _make_grouped_hit_state()
     # Hand striker (body 2) close to damage body 0; leg striker far away
     inputs = _hit_inputs(close=True)
-    taken, by_group = hs.step(*inputs)
+    taken, by_group, _ = hs.step(*inputs)
     assert by_group.shape == (2, 2)
     assert (by_group[:, 0] > 0).all(), "hand-group strike must be attributed"
     assert (by_group[:, 1] == 0).all(), "leg group dealt nothing"
@@ -294,7 +294,7 @@ def test_hit_energy_attributed_to_leg_group():
     opp_pos[:, 3, :] = 0.0
     opp_pos[:, 3, 0] = 0.1
     opp_vel[:, 3, 0] = 2.0
-    taken, by_group = hs.step(cf, bp, bv, opp_pos, opp_vel, prog)
+    taken, by_group, _ = hs.step(cf, bp, bv, opp_pos, opp_vel, prog)
     assert (by_group[:, 1] > 0).all()
     assert (by_group[:, 0] == 0).all()
 
