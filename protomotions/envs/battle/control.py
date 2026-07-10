@@ -112,7 +112,7 @@ class BattleControlConfig(ControlComponentConfig):
 
     # Viewer: markers per arena side outlining the ring (0 disables)
     arena_ring_markers_per_side: int = 8
-    arena_ring_marker_scale: float = 0.02
+    arena_ring_marker_scale: float = 0.065  # ~tennis-ball size
     # Viewer: flash damaged body parts red for this long after a scoring hit
     hit_flash_seconds: float = 0.35
     hit_flash_marker_scale: float = 0.08
