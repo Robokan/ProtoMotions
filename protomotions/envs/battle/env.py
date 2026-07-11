@@ -179,6 +179,10 @@ class BattleEnv(BaseEnv):
         self.extras["battle/draw"] = (ended & (win.abs() <= 0.5)).float()
         self.extras["battle/health"] = control.health
         self.extras["battle/hit_energy_dealt"] = control.hit_energy_dealt
+        # Gaze quality: the primary "are they squaring up" telemetry. Healthy
+        # fights = high facing AND rising hit energy; high facing with zero
+        # hits = wrong axis; low facing = reward too weak.
+        self.extras["battle/facing"] = control.facing
         # Outcome-cause telemetry: the leading indicator of degenerate metas
         # (all-ring-out shoving, all-timeout stalling) is HOW matches end.
         self.extras["battle/end_ko"] = control.end_cause_ko.float()
