@@ -28,6 +28,7 @@ import torch
 from torch import Tensor
 
 from protomotions.envs.battle.context import BattleContext
+from protomotions.utils import rotations
 from protomotions.envs.battle.hit_state import (
     BattleHitState,
     HitStateConfig,
@@ -81,6 +82,9 @@ class BattleControlConfig(ControlComponentConfig):
     )
     # Head body for the gaze-based facing reward
     head_body_name: str = "Head"
+    # Gaze direction in the head's local frame. SOMA (SMPL-family) faces
+    # body-frame -y; +x (the calc_heading convention) points out the ear.
+    gaze_forward_axis: Tuple[float, float, float] = (0.0, -1.0, 0.0)
 
     # Arena geometry (IsaacLabASE: borderline_space = 7.0 m square)
     arena_size: float = 7.0  # side length in meters
@@ -96,6 +100,10 @@ class BattleControlConfig(ControlComponentConfig):
     knockdown_height: float = 0.2  # m, root below this counts as "down"
     knockdown_grace_seconds: float = 2.0  # get-up window before KO
     points_decision_eps: float = 0.02  # health diff below this at timeout = draw
+    # Outcome signal for drawn matches (both fighters). Slightly negative so
+    # running out the clock is never the safe harbor — engaging (points win
+    # +1 / loss -1, symmetric zero EV) strictly dominates mutual passivity.
+    draw_signal: float = -0.25
     # Out of bounds ends the match with a POINTS DECISION (like timeout)
     # rather than an instant loss: shoving the opponent out only "wins" if
     # you were already ahead on damage, so ring-outs stop being a strategy.
@@ -225,6 +233,15 @@ class BattleControl(ControlComponent):
             num_envs, len(self.damage_body_ids), device=device
         )
 
+        # Gaze/facing state for the potential-based facing reward.
+        # prev < 0 marks "just reset": the first post-reset delta is zero.
+        self.facing = torch.zeros(num_envs, device=device)
+        self.facing_delta = torch.zeros(num_envs, device=device)
+        self._prev_facing = torch.full((num_envs,), -1.0, device=device)
+        self._gaze_axis = torch.tensor(
+            config.gaze_forward_axis, dtype=torch.float, device=device
+        )
+
     def _build_ring_offsets(self) -> Tensor:
         """Evenly spaced XY offsets tracing the square arena boundary."""
         per_side = self.config.arena_ring_markers_per_side
@@ -344,6 +361,9 @@ class BattleControl(ControlComponent):
         self.hit_energy_dealt[env_ids] = 0.0
         self.dealt_by_group_cum[env_ids] = 0.0
         self.strike_diversity_bonus[env_ids] = 0.0
+        self.facing[env_ids] = 0.0
+        self.facing_delta[env_ids] = 0.0
+        self._prev_facing[env_ids] = -1.0
         self.win_signal[env_ids] = 0.0
         self.match_ended[env_ids] = False
         self._terminate[env_ids] = False
@@ -416,6 +436,28 @@ class BattleControl(ControlComponent):
             self.idle_time + cfg.idle_time_increment,
         )
 
+        # Gaze quality + potential-based delta (SOMA faces body-frame -y)
+        head_pos = body_pos[:, self.head_body_id]
+        head_rot = state.rigid_body_rot[:, self.head_body_id]
+        to_opp = torch.nn.functional.normalize(
+            head_pos[partner] - head_pos, dim=-1
+        )
+        gaze = torch.nn.functional.normalize(
+            rotations.quat_rotate(
+                head_rot, self._gaze_axis.expand_as(head_pos), True
+            ),
+            dim=-1,
+        )
+        facing_now = ((gaze * to_opp).sum(dim=-1) + 1.0) * 0.5
+        just_reset = self._prev_facing < 0.0
+        self.facing_delta = torch.where(
+            just_reset,
+            torch.zeros_like(facing_now),
+            facing_now - self._prev_facing,
+        )
+        self.facing = facing_now
+        self._prev_facing = facing_now
+
         # ---- Match-end determination -------------------------------------
         in_recovery = self.recovery_steps_left > 0
         knocked_out = (
@@ -453,6 +495,14 @@ class BattleControl(ControlComponent):
         )
         points_only = ends & ~loses_now & ~loses_now[partner]
         win = torch.where(points_only, points, win)
+
+        # Drawn matches (no decisive result, healths within eps — including
+        # simultaneous losses) pay draw_signal to BOTH sides so running out
+        # the clock is never the safe play.
+        drawn = ends & (win.abs() <= 0.5)
+        win = torch.where(
+            drawn, torch.full_like(win, cfg.draw_signal), win
+        )
 
         self.match_ended = ends
         self.win_signal = torch.where(ends, win, torch.zeros_like(win))
@@ -506,6 +556,8 @@ class BattleControl(ControlComponent):
             hit_energy_dealt=self.hit_energy_dealt,
             hit_energy_taken=self.hit_energy_taken,
             strike_diversity_bonus=self.strike_diversity_bonus,
+            facing=self.facing,
+            facing_delta=self.facing_delta,
             win_signal=self.win_signal,
             match_ended=self.match_ended,
             arena_center=self.arena_centers,

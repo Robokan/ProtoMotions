@@ -170,6 +170,49 @@ class BattleTournament:
         )
         return result
 
+    @torch.no_grad()
+    def probe(self, adapter_a: str, adapter_b: str, steps: int = 120) -> None:
+        """Diagnostic rollout: print opponent-obs and engagement stats.
+
+        Verifies the evaluation path end-to-end: adapters loaded, battle
+        context populated, task observations flowing, policies reacting.
+        """
+        self._load_ego(adapter_a)
+        self._load_opponent(adapter_b)
+        obs, _ = self.env.reset()
+        model = self.agent.model
+        model.eval()
+
+        inner = getattr(self.env, "inner", self.env)
+        for step in range(steps):
+            obs = self.agent.add_agent_info_to_obs(obs)
+            obs_td = self.agent.obs_dict_to_tensordict(obs)
+            out = model(obs_td)
+            obs, _, dones, _, _ = self.env.step(out["action"])
+            done_ids = dones.nonzero(as_tuple=False).flatten()
+            if len(done_ids) > 0:
+                obs, _ = self.env.reset(done_ids)
+            if step % 30 == 0:
+                ctx = inner.context
+                b = ctx.battle
+                root = inner.simulator.get_root_state().root_pos
+                dist = float(torch.norm(root[0, :2] - b.opp_root_pos[0, :2]))
+                task = obs.get("task_obs")
+                log.info("probe step %d:", step)
+                log.info(
+                    "  dist=%.2fm | task_obs[0][:6]=%s | task_obs std=%.4f",
+                    dist,
+                    [round(float(v), 3) for v in task[0][:6]] if task is not None else "MISSING",
+                    float(task.std()) if task is not None else -1.0,
+                )
+                log.info(
+                    "  health=%s hit_dealt=%s downed=%s action_std=%.4f",
+                    [round(float(v), 3) for v in b.health[:2]],
+                    [round(float(v), 4) for v in b.hit_energy_dealt[:2]],
+                    [round(float(v), 3) for v in b.downed[:2]],
+                    float(out["action"].std()),
+                )
+
     def run_round_robin(
         self,
         adapters: List[str],

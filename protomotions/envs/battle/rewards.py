@@ -50,24 +50,41 @@ def compute_facing_reward(
     head_pos: Tensor,
     head_rot: Tensor,
     opp_head_pos: Tensor,
+    forward_axis: tuple = (0.0, -1.0, 0.0),
 ) -> Tensor:
-    """Reward for looking at the opponent, in [0, 1].
+    """Gaze quality: is the head looking at the opponent's head? In [0, 1].
 
     Head-based, matching IsaacLabASE: the direction is head-to-head and the
     gaze vector is the head's forward axis —
     facing = (dot(head_forward, to_opponent_head) + 1) / 2.
-    (Root-based facing rewards a squared pelvis while the fighter looks
-    elsewhere, which produces degenerate stances.)
+
+    ``forward_axis`` is the gaze direction in the head's LOCAL frame. For the
+    SOMA (SMPL-family) skeleton the face points along body-frame -y — NOT +x
+    as `calc_heading` assumes. Using +x here trained fighters to point their
+    ear at the opponent.
     """
     to_opp = torch.nn.functional.normalize(opp_head_pos - head_pos, dim=-1)
 
     forward = torch.zeros_like(head_pos)
-    forward[..., 0] = 1.0
+    forward[..., 0] = forward_axis[0]
+    forward[..., 1] = forward_axis[1]
+    forward[..., 2] = forward_axis[2]
     gaze = rotations.quat_rotate(head_rot, forward, True)
     gaze = torch.nn.functional.normalize(gaze, dim=-1)
 
     dot = (gaze * to_opp).sum(dim=-1)
     return (dot + 1.0) * 0.5
+
+
+def compute_facing_delta_reward(facing_delta: Tensor) -> Tensor:
+    """Potential-based facing: reward the CHANGE in gaze quality.
+
+    Turning toward the opponent pays; holding a stare pays ~zero, so the
+    stare-farming equilibrium (passive circling for dense facing reward)
+    cannot exist. The accumulated reward over any trajectory telescopes to
+    facing_end - facing_start, bounded by 1.
+    """
+    return facing_delta
 
 
 def compute_range_reward(
@@ -125,6 +142,7 @@ __all__ = [
     "compute_hit_taken_penalty",
     "compute_strike_diversity_bonus",
     "compute_facing_reward",
+    "compute_facing_delta_reward",
     "compute_range_reward",
     "compute_idle_penalty",
     "compute_arena_boundary_penalty",

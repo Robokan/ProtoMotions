@@ -13,6 +13,7 @@ from protomotions.envs.mdp_component import MdpComponent
 from protomotions.envs.battle.obs import compute_battle_task_obs
 from protomotions.envs.battle.rewards import (
     compute_arena_boundary_penalty,
+    compute_facing_delta_reward,
     compute_facing_reward,
     compute_hit_reward,
     compute_hit_taken_penalty,
@@ -89,14 +90,16 @@ def battle_strike_diversity_factory(weight: float = 30.0) -> MdpComponent:
 
 
 def battle_facing_reward_factory(weight: float = 2.0) -> MdpComponent:
-    """Gaze reward: ego head looks at the opponent's head (IsaacLabASE)."""
+    """Potential-based gaze reward: pays for IMPROVING facing, not holding it.
+
+    The absolute-facing variant (compute_facing_reward) is farmable: two
+    fighters can circle forever collecting ~2/step for staring. The delta
+    telescopes to at most 1 per acquisition, so turning toward the opponent
+    is still taught but the stare equilibrium pays nothing.
+    """
     return MdpComponent(
-        compute_func=compute_facing_reward,
-        dynamic_vars={
-            "head_pos": EnvContext.battle.head_pos,
-            "head_rot": EnvContext.battle.head_rot,
-            "opp_head_pos": EnvContext.battle.opp_head_pos,
-        },
+        compute_func=compute_facing_delta_reward,
+        dynamic_vars={"facing_delta": EnvContext.battle.facing_delta},
         static_params={"weight": weight},
     )
 

@@ -75,6 +75,13 @@ def create_parser():
         help="Use mean/greedy actions instead of sampling",
     )
     parser.add_argument("--output", default=None, help="JSON report path")
+    parser.add_argument(
+        "--probe-steps",
+        type=int,
+        default=0,
+        help="Diagnostic: step the first pairing N steps, printing opponent-"
+        "observation and engagement stats instead of running matches",
+    )
     return parser
 
 
@@ -194,6 +201,12 @@ def main():
     from protomotions.agents.league.tournament import BattleTournament
 
     tournament = BattleTournament(agent, deterministic=args.deterministic)
+
+    if args.probe_steps > 0:
+        assert args.exhibition is not None, "--probe-steps requires --exhibition"
+        ckpt_a, ckpt_b = args.exhibition
+        tournament.probe(ckpt_a, ckpt_b, steps=args.probe_steps)
+        return
 
     if args.exhibition is not None:
         ckpt_a, ckpt_b = args.exhibition

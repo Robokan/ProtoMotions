@@ -123,17 +123,17 @@ def test_facing_reward_is_gaze_based():
     opp_head = torch.zeros(n, 3)
     opp_head[:, 0] = 2.0  # opponent head along +x
 
-    looking_at = compute_facing_reward(head_pos, _identity_quat(n), opp_head)
+    looking_at = compute_facing_reward(head_pos, _identity_quat(n), opp_head, forward_axis=(1.0, 0.0, 0.0))
     assert looking_at[0] == pytest.approx(1.0, abs=1e-5)
 
     # Head yawed 180 degrees: looking directly away
     turned = torch.tensor([[0.0, 0.0, 1.0, 0.0]])
-    looking_away = compute_facing_reward(head_pos, turned, opp_head)
+    looking_away = compute_facing_reward(head_pos, turned, opp_head, forward_axis=(1.0, 0.0, 0.0))
     assert looking_away[0] == pytest.approx(0.0, abs=1e-5)
 
     # 90 degrees off: neutral 0.5
     half = torch.tensor([[0.0, 0.0, math.sin(math.pi / 4), math.cos(math.pi / 4)]])
-    sideways = compute_facing_reward(head_pos, half, opp_head)
+    sideways = compute_facing_reward(head_pos, half, opp_head, forward_axis=(1.0, 0.0, 0.0))
     assert sideways[0] == pytest.approx(0.5, abs=1e-5)
 
 
@@ -209,12 +209,12 @@ def test_facing_reward_bounds():
     head_pos = torch.zeros(n, 3)
     opp_head = torch.zeros(n, 3)
     opp_head[:, 0] = 2.0  # opponent head along +x
-    facing = compute_facing_reward(head_pos, _identity_quat(n), opp_head)
+    facing = compute_facing_reward(head_pos, _identity_quat(n), opp_head, forward_axis=(1.0, 0.0, 0.0))
     assert torch.allclose(facing, torch.ones(n), atol=1e-5)
 
     # Looking away: yaw pi
     head_rot = torch.tensor([[0.0, 0.0, 1.0, 0.0]]).repeat(n, 1)
-    facing_away = compute_facing_reward(head_pos, head_rot, opp_head)
+    facing_away = compute_facing_reward(head_pos, head_rot, opp_head, forward_axis=(1.0, 0.0, 0.0))
     assert torch.allclose(facing_away, torch.zeros(n), atol=1e-5)
 
 
@@ -329,3 +329,20 @@ def test_default_reward_set_is_simple_kickboxing():
     annealed = default_battle_reward_components(dense_scale=0.0)
     assert annealed["battle_win"].static_params["weight"] > 0
     assert annealed["battle_hit"].static_params["weight"] == 0
+
+
+def test_facing_default_axis_is_soma_minus_y():
+    """SOMA faces body-frame -y: identity head rotation with the opponent
+    along -y must read as looking straight at them under the default axis."""
+    n = 1
+    head_pos = torch.zeros(n, 3)
+    opp_head = torch.zeros(n, 3)
+    opp_head[:, 1] = -2.0  # opponent along -y = in front of a SOMA T-pose
+    facing = compute_facing_reward(head_pos, _identity_quat(n), opp_head)
+    assert facing[0] == pytest.approx(1.0, abs=1e-5)
+
+    # +x (the calc_heading convention) is exactly sideways: neutral 0.5
+    opp_side = torch.zeros(n, 3)
+    opp_side[:, 0] = 2.0
+    sideways = compute_facing_reward(head_pos, _identity_quat(n), opp_side)
+    assert sideways[0] == pytest.approx(0.5, abs=1e-5)

@@ -44,6 +44,8 @@ class VirtualOpponentControlConfig(ControlComponentConfig):
     range_max: float = 1.6
     # Bearing jitter around the character's heading (radians)
     bearing_jitter: float = 0.6
+    # Gaze direction in the body frame (SOMA faces -y; see BattleControlConfig)
+    gaze_forward_axis: tuple = (0.0, -1.0, 0.0)
     # Re-sample the virtual opponent placement every [min, max] steps
     rejitter_steps_min: int = 30
     rejitter_steps_max: int = 90
@@ -105,7 +107,14 @@ class VirtualOpponentControl(ControlComponent):
         root_pos = state.root_pos[env_ids]
         root_rot = state.root_rot[env_ids]
 
-        heading = rotations.calc_heading(root_rot, True)
+        # Bearing of the character's FACE (not calc_heading's +x convention:
+        # SOMA faces body-frame -y; +x points out the ear). Compute the yaw of
+        # the rotated gaze axis directly.
+        gaze_axis = torch.tensor(
+            cfg.gaze_forward_axis, dtype=torch.float, device=device
+        ).expand(n, 3)
+        face_dir = rotations.quat_rotate(root_rot, gaze_axis, True)
+        heading = torch.atan2(face_dir[:, 1], face_dir[:, 0])
         bearing = heading + (torch.rand(n, device=device) * 2.0 - 1.0) * cfg.bearing_jitter
         rng = cfg.range_min + torch.rand(n, device=device) * (
             cfg.range_max - cfg.range_min
@@ -188,6 +197,8 @@ class VirtualOpponentControl(ControlComponent):
             hit_energy_dealt=self._zeros,
             hit_energy_taken=self._zeros,
             strike_diversity_bonus=self._zeros,
+            facing=self._zeros,
+            facing_delta=self._zeros,
             win_signal=self._zeros,
             match_ended=torch.zeros(
                 num_envs, dtype=torch.bool, device=self.env.device

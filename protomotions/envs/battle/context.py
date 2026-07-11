@@ -58,6 +58,10 @@ class BattleContext:
     # damage from the under-used limb group (kickboxing diversity)
     strike_diversity_bonus: Tensor = FieldPath()  # [2N] this step
 
+    # Gaze quality in [0, 1] and its per-step change (potential-based facing)
+    facing: Tensor = FieldPath()  # [2N]
+    facing_delta: Tensor = FieldPath()  # [2N]
+
     # Match outcome, stamped on the step the match ends (else zero)
     win_signal: Tensor = FieldPath()  # [2N] +1 win / -1 loss / 0 otherwise
     match_ended: Tensor = FieldPath()  # [2N] bool
@@ -86,6 +90,8 @@ class BattleContext:
         hit_energy_dealt: Tensor,
         hit_energy_taken: Tensor,
         strike_diversity_bonus: Tensor,
+        facing: Tensor,
+        facing_delta: Tensor,
         win_signal: Tensor,
         match_ended: Tensor,
         arena_center: Tensor,
@@ -109,6 +115,8 @@ class BattleContext:
         self.hit_energy_dealt = hit_energy_dealt
         self.hit_energy_taken = hit_energy_taken
         self.strike_diversity_bonus = strike_diversity_bonus
+        self.facing = facing
+        self.facing_delta = facing_delta
         self.win_signal = win_signal
         self.match_ended = match_ended
         self.arena_center = arena_center
