@@ -232,6 +232,9 @@ class BattleControl(ControlComponent):
         self.hit_flash_timer = torch.zeros(
             num_envs, len(self.damage_body_ids), device=device
         )
+        # Body-recolor highlighter (viewer only, built lazily) + one-shot ring
+        self._highlighter = None
+        self._ring_sent = False
 
         # Gaze/facing state for the potential-based facing reward.
         # prev < 0 marks "just reset": the first post-reset delta is zero.
@@ -571,55 +574,53 @@ class BattleControl(ControlComponent):
     def create_visualization_markers(
         self, headless: bool
     ) -> Dict[str, VisualizationMarkerConfig]:
+        # Ring only. Hit flashes recolor the body prims (see BodyHighlighter),
+        # adding no per-frame geometry — spawning flash markers halved the
+        # viewer frame rate.
         if headless:
             return {}
         cfg = self.config
-        configs: Dict[str, VisualizationMarkerConfig] = {}
         num_points = self._ring_offsets.shape[0]
-        if num_points > 0:
-            configs["arena_ring"] = VisualizationMarkerConfig(
+        if num_points == 0:
+            return {}
+        return {
+            "arena_ring": VisualizationMarkerConfig(
                 type="sphere",
                 color=(0.9, 0.15, 0.1),
                 markers=[MarkerConfig(scale=cfg.arena_ring_marker_scale)] * num_points,
             )
-        num_damage = len(self.damage_body_ids)
-        if cfg.hit_flash_seconds > 0 and num_damage > 0:
-            configs["hit_flash"] = VisualizationMarkerConfig(
-                type="sphere",
-                color=(1.0, 0.0, 0.0),
-                markers=[MarkerConfig(scale=cfg.hit_flash_marker_scale)] * num_damage,
-            )
-        return configs
+        }
 
     def get_markers_state(self) -> Dict[str, MarkerState]:
         if self.env.simulator.headless:
             return {}
-        num_envs = self.env.num_envs
-        device = self.env.device
-        states: Dict[str, MarkerState] = {}
 
+        # Recolor struck body prims red (transition-only USD writes; no
+        # per-frame geometry). Lazily construct the highlighter on first call.
+        if self.config.hit_flash_seconds > 0 and len(self.damage_body_ids) > 0:
+            if self._highlighter is None:
+                from protomotions.envs.battle.highlight import BodyHighlighter
+
+                self._highlighter = BodyHighlighter(
+                    num_envs=self.env.num_envs,
+                    body_names=self.env.robot_config.kinematic_info.body_names,
+                    damage_body_ids=self.damage_body_ids,
+                )
+            self._highlighter.update(self.hit_flash_timer)
+
+        # Ring markers persist once set — only send them the first frame so the
+        # viewer isn't re-writing 32 transforms every step.
+        if self._ring_sent or self._ring_offsets.shape[0] == 0:
+            return {}
+        self._ring_sent = True
         num_points = self._ring_offsets.shape[0]
-        if num_points > 0:
-            pos = torch.zeros(num_envs, num_points, 3, device=device)
-            pos[..., :2] = self.arena_centers.unsqueeze(1) + self._ring_offsets.unsqueeze(0)
-            pos[..., 2] = 0.05
-            rot = torch.zeros(num_envs, num_points, 4, device=device)
-            rot[..., 3] = 1.0  # identity (w-last)
-            states["arena_ring"] = MarkerState(translation=pos, orientation=rot)
-
-        num_damage = len(self.damage_body_ids)
-        if self.config.hit_flash_seconds > 0 and num_damage > 0:
-            body_pos = self.env.simulator.get_robot_state().rigid_body_pos
-            flash_pos = body_pos[:, self.damage_body_ids].clone()
-            # Park inactive flashes below the terrain
-            inactive = self.hit_flash_timer <= 0.0
-            flash_pos[..., 2] = torch.where(
-                inactive, torch.full_like(flash_pos[..., 2], -100.0), flash_pos[..., 2]
-            )
-            rot = torch.zeros(num_envs, num_damage, 4, device=device)
-            rot[..., 3] = 1.0
-            states["hit_flash"] = MarkerState(translation=flash_pos, orientation=rot)
-        return states
+        device = self.env.device
+        pos = torch.zeros(self.env.num_envs, num_points, 3, device=device)
+        pos[..., :2] = self.arena_centers.unsqueeze(1) + self._ring_offsets.unsqueeze(0)
+        pos[..., 2] = 0.05
+        rot = torch.zeros(self.env.num_envs, num_points, 4, device=device)
+        rot[..., 3] = 1.0
+        return {"arena_ring": MarkerState(translation=pos, orientation=rot)}
 
 
 __all__ = ["BattleControlConfig", "BattleControl"]
