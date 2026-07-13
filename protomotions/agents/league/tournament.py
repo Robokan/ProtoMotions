@@ -77,11 +77,38 @@ class BattleTournament:
     its SelfPlayEnvAdapter for match accounting.
     """
 
-    def __init__(self, agent, deterministic: bool = False, action_hold: int = 1):
+    def __init__(
+        self,
+        agent,
+        deterministic: bool = False,
+        action_hold: int = 1,
+        autocast_dtype: Optional[str] = None,
+        sampling_mode: Optional[str] = None,
+    ):
         self.agent = agent
         self.env = agent.env  # SelfPlayEnvAdapter
         self.device = agent.device
         self.deterministic = deterministic
+        # Override the prior's decode sampling (None = keep trained mode).
+        # "nucleus" skips the per-token reference (prior-constraint) forward,
+        # halving the sequential decodes — the main launch-bound cost at the
+        # low batch of the viewer. Trained under prior_constraint, so behavior
+        # may shift slightly; inference/viewing only.
+        self.sampling_mode = sampling_mode
+
+        # Optional bf16/fp16 autocast around the prior forwards. The prior runs
+        # in fp32; on Blackwell tensor cores bf16 matmuls are 2-4x faster, so
+        # this can help even at batch 2 (where the fp32 path barely uses the
+        # tensor cores). Weights stay fp32; only the matmuls run reduced-
+        # precision, and the action output auto-casts back. Inference only.
+        import contextlib
+
+        if autocast_dtype in ("bf16", "bfloat16"):
+            self._autocast = lambda: torch.autocast("cuda", dtype=torch.bfloat16)
+        elif autocast_dtype in ("fp16", "float16", "half"):
+            self._autocast = lambda: torch.autocast("cuda", dtype=torch.float16)
+        else:
+            self._autocast = contextlib.nullcontext
 
         # Viewer smoothness: re-decode each fighter's policy only every
         # `action_hold` control steps, reusing the action between. Each decode
@@ -118,14 +145,26 @@ class BattleTournament:
         ):
             return self._held_opp
         obs_td = self.agent._opponent_obs_td(opp_obs)
-        with torch.no_grad():
+        with torch.no_grad(), self._autocast():
             out = self._opponent_model(obs_td)
         key = "mean_action" if self.deterministic and "mean_action" in out else "action"
-        self._held_opp = out[key]
+        self._held_opp = out[key].float()
         return self._held_opp
+
+    @staticmethod
+    def _set_sampling_mode(model, mode: Optional[str]) -> None:
+        """Override the prior's sampling mode (e.g. 'nucleus' at inference to
+        skip the per-token reference forward — halves the sequential decodes)."""
+        if mode is None:
+            return
+        actor = getattr(model, "_actor", model)
+        pwp = getattr(actor, "prior_with_peft", None)
+        if pwp is not None:
+            pwp.sampling_mode = mode
 
     def _load_ego(self, adapter_path: str) -> None:
         self.agent.load_adapter_checkpoint(adapter_path)
+        self._set_sampling_mode(self.agent._unwrapped_model(), self.sampling_mode)
 
     def _load_opponent(self, adapter_path: str) -> None:
         if self.agent._lanes is None:
@@ -137,6 +176,7 @@ class BattleTournament:
         lanes.lane_member = [None] * lanes.num_lanes
         lanes.assign(0, adapter_state)
         self._opponent_model = lanes.lanes[lanes._lane_of(0)]
+        self._set_sampling_mode(self._opponent_model, self.sampling_mode)
 
     # ------------------------------------------------------------------
     @torch.no_grad()
@@ -160,13 +200,14 @@ class BattleTournament:
             # _opponent_policy, keyed off the same self._frame).
             if held_ego is None or self._frame % self.action_hold == 0:
                 obs_td = self.agent.obs_dict_to_tensordict(obs)
-                out = model(obs_td)
+                with self._autocast():
+                    out = model(obs_td)
                 key = (
                     "mean_action"
                     if self.deterministic and "mean_action" in out
                     else "action"
                 )
-                held_ego = out[key]
+                held_ego = out[key].float()
             obs, _, dones, _, _ = self.env.step(held_ego)
             self._frame += 1
             done_ids = dones.nonzero(as_tuple=False).flatten()
@@ -225,8 +266,9 @@ class BattleTournament:
             # (both fighters held between decode frames).
             if held_ego is None or self._frame % self.action_hold == 0:
                 obs_td = self.agent.obs_dict_to_tensordict(obs)
-                out = model(obs_td)
-                held_ego = out["action"]
+                with self._autocast():
+                    out = model(obs_td)
+                held_ego = out["action"].float()
             _sync()
             if step >= timed_from:
                 t_model += time.perf_counter() - _t

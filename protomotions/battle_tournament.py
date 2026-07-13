@@ -83,6 +83,19 @@ def create_parser():
         "observation and engagement stats instead of running matches",
     )
     parser.add_argument(
+        "--autocast",
+        choices=["off", "bf16", "fp16"],
+        default="off",
+        help="Run prior forwards under bf16/fp16 autocast (Blackwell tensor "
+        "cores; fp32 weights kept). Speeds inference; viewer/eval only.",
+    )
+    parser.add_argument(
+        "--fast-sampling",
+        action="store_true",
+        help="Use nucleus sampling at inference (skip the per-token reference "
+        "forward). Halves the prior decodes; behavior may shift slightly.",
+    )
+    parser.add_argument(
         "--action-hold",
         type=int,
         default=1,
@@ -209,7 +222,11 @@ def main():
     from protomotions.agents.league.tournament import BattleTournament
 
     tournament = BattleTournament(
-        agent, deterministic=args.deterministic, action_hold=args.action_hold
+        agent,
+        deterministic=args.deterministic,
+        action_hold=args.action_hold,
+        autocast_dtype=None if args.autocast == "off" else args.autocast,
+        sampling_mode="nucleus" if args.fast_sampling else None,
     )
 
     if args.probe_steps > 0:
