@@ -82,6 +82,14 @@ def create_parser():
         help="Diagnostic: step the first pairing N steps, printing opponent-"
         "observation and engagement stats instead of running matches",
     )
+    parser.add_argument(
+        "--action-hold",
+        type=int,
+        default=1,
+        help="Viewer smoothness: re-decode each fighter's policy only every N "
+        "control steps (physics still steps every frame). 2-3 ~2-3x's fps at "
+        "the cost of slightly coarser control. 1 = decode every step.",
+    )
     return parser
 
 
@@ -200,7 +208,9 @@ def main():
 
     from protomotions.agents.league.tournament import BattleTournament
 
-    tournament = BattleTournament(agent, deterministic=args.deterministic)
+    tournament = BattleTournament(
+        agent, deterministic=args.deterministic, action_hold=args.action_hold
+    )
 
     if args.probe_steps > 0:
         assert args.exhibition is not None, "--probe-steps requires --exhibition"

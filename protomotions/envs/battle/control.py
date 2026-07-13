@@ -232,9 +232,17 @@ class BattleControl(ControlComponent):
         self.hit_flash_timer = torch.zeros(
             num_envs, len(self.damage_body_ids), device=device
         )
-        # Body-recolor highlighter (viewer only, built lazily) + one-shot ring
+        # Body-recolor highlighter (viewer only, built lazily) + one-shot ring.
+        # PROTO_NO_RING=1 disables the arena ring markers entirely (A/B test
+        # for whether the border geometry is the viewer bottleneck).
+        import os
+
         self._highlighter = None
         self._ring_sent = False
+        self._draw_ring = (
+            self._ring_offsets.shape[0] > 0
+            and os.environ.get("PROTO_NO_RING") != "1"
+        )
 
         # Gaze/facing state for the potential-based facing reward.
         # prev < 0 marks "just reset": the first post-reset delta is zero.
@@ -577,12 +585,10 @@ class BattleControl(ControlComponent):
         # Ring only. Hit flashes recolor the body prims (see BodyHighlighter),
         # adding no per-frame geometry — spawning flash markers halved the
         # viewer frame rate.
-        if headless:
+        if headless or not self._draw_ring:
             return {}
         cfg = self.config
         num_points = self._ring_offsets.shape[0]
-        if num_points == 0:
-            return {}
         return {
             "arena_ring": VisualizationMarkerConfig(
                 type="sphere",
@@ -610,7 +616,7 @@ class BattleControl(ControlComponent):
 
         # Ring markers persist once set — only send them the first frame so the
         # viewer isn't re-writing 32 transforms every step.
-        if self._ring_sent or self._ring_offsets.shape[0] == 0:
+        if self._ring_sent or not self._draw_ring:
             return {}
         self._ring_sent = True
         num_points = self._ring_offsets.shape[0]

@@ -77,11 +77,20 @@ class BattleTournament:
     its SelfPlayEnvAdapter for match accounting.
     """
 
-    def __init__(self, agent, deterministic: bool = False):
+    def __init__(self, agent, deterministic: bool = False, action_hold: int = 1):
         self.agent = agent
         self.env = agent.env  # SelfPlayEnvAdapter
         self.device = agent.device
         self.deterministic = deterministic
+
+        # Viewer smoothness: re-decode each fighter's policy only every
+        # `action_hold` control steps, reusing the action between. Each decode
+        # is 8 sequential autoregressive prior forwards (~100ms at batch 2),
+        # so holding for 2-3 steps ~2-3x's the frame rate. Physics still steps
+        # every frame, so motion stays smooth. Eval/scoring only; 1 = off.
+        self.action_hold = max(1, int(action_hold))
+        self._frame = 0
+        self._held_opp = None
 
         # Take over the adapter's callbacks for evaluation
         self._outcomes: List[int] = []  # +1 A wins, -1 B wins, 0 draw
@@ -103,11 +112,17 @@ class BattleTournament:
                 self._outcomes.append(0)
 
     def _opponent_policy(self, opp_obs):
+        # Reuse the held opponent action between decode frames (see action_hold)
+        if self.action_hold > 1 and self._held_opp is not None and (
+            self._frame % self.action_hold != 0
+        ):
+            return self._held_opp
         obs_td = self.agent._opponent_obs_td(opp_obs)
         with torch.no_grad():
             out = self._opponent_model(obs_td)
         key = "mean_action" if self.deterministic and "mean_action" in out else "action"
-        return out[key]
+        self._held_opp = out[key]
+        return self._held_opp
 
     def _load_ego(self, adapter_path: str) -> None:
         self.agent.load_adapter_checkpoint(adapter_path)
@@ -138,16 +153,22 @@ class BattleTournament:
         model.eval()
 
         steps = 0
+        held_ego = None
         while len(self._outcomes) < matches and steps < max_steps:
             obs = self.agent.add_agent_info_to_obs(obs)
-            obs_td = self.agent.obs_dict_to_tensordict(obs)
-            out = model(obs_td)
-            key = (
-                "mean_action"
-                if self.deterministic and "mean_action" in out
-                else "action"
-            )
-            obs, _, dones, _, _ = self.env.step(out[key])
+            # Re-decode ego only every action_hold frames (opponent held in
+            # _opponent_policy, keyed off the same self._frame).
+            if held_ego is None or self._frame % self.action_hold == 0:
+                obs_td = self.agent.obs_dict_to_tensordict(obs)
+                out = model(obs_td)
+                key = (
+                    "mean_action"
+                    if self.deterministic and "mean_action" in out
+                    else "action"
+                )
+                held_ego = out[key]
+            obs, _, dones, _, _ = self.env.step(held_ego)
+            self._frame += 1
             done_ids = dones.nonzero(as_tuple=False).flatten()
             if len(done_ids) > 0:
                 obs, _ = self.env.reset(done_ids)
@@ -177,6 +198,8 @@ class BattleTournament:
         Verifies the evaluation path end-to-end: adapters loaded, battle
         context populated, task observations flowing, policies reacting.
         """
+        import time
+
         self._load_ego(adapter_a)
         self._load_opponent(adapter_b)
         obs, _ = self.env.reset()
@@ -184,14 +207,52 @@ class BattleTournament:
         model.eval()
 
         inner = getattr(self.env, "inner", self.env)
+        # Per-phase wall-clock accumulators (CUDA-synced so timings are real,
+        # not just kernel-launch latency). Skip the first few steps (warm-up).
+        t_model = t_step = t_markers = 0.0
+        timed_from = 5
+
+        def _sync():
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+
+        held_ego = None
         for step in range(steps):
             obs = self.agent.add_agent_info_to_obs(obs)
-            obs_td = self.agent.obs_dict_to_tensordict(obs)
-            out = model(obs_td)
-            obs, _, dones, _, _ = self.env.step(out["action"])
+
+            _sync(); _t = time.perf_counter()
+            # Honor action_hold so the probe measures the real exhibition path
+            # (both fighters held between decode frames).
+            if held_ego is None or self._frame % self.action_hold == 0:
+                obs_td = self.agent.obs_dict_to_tensordict(obs)
+                out = model(obs_td)
+                held_ego = out["action"]
+            _sync()
+            if step >= timed_from:
+                t_model += time.perf_counter() - _t
+
+            _t = time.perf_counter()
+            obs, _, dones, _, _ = self.env.step(held_ego)
+            self._frame += 1
+            _sync()
+            if step >= timed_from:
+                t_step += time.perf_counter() - _t
+
             done_ids = dones.nonzero(as_tuple=False).flatten()
             if len(done_ids) > 0:
                 obs, _ = self.env.reset(done_ids)
+
+            if step == steps - 1:
+                n = max(1, steps - timed_from)
+                log.info(
+                    "PROBE TIMING (avg ms/step over %d steps): "
+                    "model=%.1f  env.step[sim+render]=%.1f  total=%.1f  (=%.1f fps)",
+                    n,
+                    1000 * t_model / n,
+                    1000 * t_step / n,
+                    1000 * (t_model + t_step) / n,
+                    n / max(t_model + t_step, 1e-6),
+                )
             if step % 30 == 0:
                 ctx = inner.context
                 b = ctx.battle
@@ -210,7 +271,7 @@ class BattleTournament:
                     [round(float(v), 3) for v in b.health[:2]],
                     [round(float(v), 4) for v in b.hit_energy_dealt[:2]],
                     [round(float(v), 3) for v in b.downed[:2]],
-                    float(out["action"].std()),
+                    float(held_ego.std()),
                 )
 
     def run_round_robin(
