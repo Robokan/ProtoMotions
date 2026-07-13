@@ -156,6 +156,97 @@ Train a generative policy (e.g., [**MaskedMimic**](https://research.nvidia.com/l
 </tr>
 </table>
 
+### 🥊 Two-Character Combat — SOMA Fight Club
+
+Train two characters to **fight each other** with natural, human-like combat
+motion, using tournament-style self-play on top of a GPC motor foundation.
+This is a fork addition (branch `battle`); the design lives in
+[`SOMA_GPC_COMBAT_PLAN.md`](SOMA_GPC_COMBAT_PLAN.md).
+
+**How it works — three stages, each building on the last:**
+
+1. **GPC prior** (motor foundation): a generative prior over the frozen FSQ
+   tracker's motion tokens, trained on a combat-weighted
+   [BONES-SEED](https://huggingface.co/datasets/bones-studio/seed) library.
+   The fight policy acts in *token space*, so every action decodes to a
+   physically-executable, human-looking movement — no AMP discriminator, no
+   GAN instability.
+2. **Combat SFT**: a DoRA/PEFT adapter that biases the prior toward fighting,
+   conditioned on an *opponent observation*, so the policy engages an
+   opponent instead of just idling.
+3. **Battle league**: PPO self-play across many paired arenas (env `i` fights
+   env `i+N`), with a PFSP opponent pool, snapshots, and Elo. Naturalness is
+   enforced structurally by prior-constrained sampling, so the reward only has
+   to define *winning*.
+
+**The battle environment** (`protomotions/envs/battle/`): two characters per
+match in a shared arena, contact-based hit scoring (per-region damage
+multipliers, closing-velocity gating), knockdown/get-up with a grace window,
+and a deliberately thin reward — sparse win/loss + an IsaacLabASE-style
+approach term (velocity toward the opponent, attenuating inside fighting
+range) + gaze facing + a kickboxing diversity bonus (rewards the under-used
+limb group so fighters punch *and* kick). Ring-outs resolve as a points
+decision, not an instant loss.
+
+```bash
+# 1. Train the GPC prior on the combat-weighted SEED library
+#    (see scripts/run_seed_prior_pipeline.sh for the full data pipeline)
+python protomotions/train_agent.py \
+    --robot-name soma23 --simulator isaaclab --headless \
+    --motion-file data/soma_seed_curated.pt \
+    --experiment-path examples/experiments/gpc/prior.py \
+    --tracker-checkpoint data/pretrained_models/motion_tracker/soma_bones_fsq/last.ckpt \
+    --experiment-name soma_gpc_prior
+
+# 2. Combat SFT: bias the prior toward fighting (warm-starts the league)
+python protomotions/train_agent.py \
+    --robot-name soma23 --simulator isaaclab --headless \
+    --motion-file data/soma_combat_viewer.pt \
+    --experiment-path examples/experiments/gpc/sft_combat_prior_peft.py \
+    --prior-checkpoint results/soma_gpc_prior/last.ckpt \
+    --experiment-name soma_sft_combat
+
+# 3. Battle league (tournament self-play)
+python protomotions/train_agent.py \
+    --robot-name soma23 --simulator isaaclab --headless \
+    --motion-file data/soma_combat_viewer.pt \
+    --experiment-path examples/experiments/battle/battle_league_prior_peft.py \
+    --prior-checkpoint results/soma_gpc_prior/last.ckpt \
+    --checkpoint results/soma_sft_combat/last.ckpt \
+    --num-envs 256 --batch-size 512 \
+    --experiment-name soma_battle_league
+```
+
+**Watch and evaluate** with `protomotions/battle_tournament.py`:
+
+```bash
+# Exhibition: two checkpoints fight in a windowed viewer (arena ring drawn;
+# struck body parts flash red). Press O to follow the camera, R to restart.
+python protomotions/battle_tournament.py \
+    --resolved-configs results/soma_battle_league/resolved_configs_inference.pt \
+    --exhibition results/soma_battle_league/inference_last.ckpt \
+                 results/soma_battle_league/lightning_logs/version_0/league/policy_0.ckpt \
+    --num-envs 2 --matches-per-pairing 4
+
+# Round-robin tournament over league snapshots -> Elo ladder + head-to-head JSON
+python protomotions/battle_tournament.py \
+    --resolved-configs results/soma_battle_league/resolved_configs_inference.pt \
+    --adapters "results/soma_battle_league/lightning_logs/version_0/league/policy_0.ckpt,..." \
+    --matches-per-pairing 16 --num-envs 32 --headless \
+    --output results/soma_battle_league/tournament.json
+
+# Diagnostic: print opponent-observation and engagement stats (no matches)
+python protomotions/battle_tournament.py \
+    --resolved-configs results/soma_battle_league/resolved_configs_inference.pt \
+    --exhibition <ckpt_a> <ckpt_b> --headless --probe-steps 120
+```
+
+> **Note:** the combat data is derived from the gated BONES-SEED dataset and
+> is not shipped. Build the motion libraries with
+> `scripts/run_seed_prior_pipeline.sh` after accepting the dataset license.
+> On a unified-memory box (e.g. DGX Spark), run `scripts/memory_watchdog.sh`
+> alongside training and don't open a viewer while a league trains.
+
 ### ⛰️ Terrain Navigation
 
 Train your robot to hike challenging terrains!
