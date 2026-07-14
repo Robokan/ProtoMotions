@@ -605,12 +605,15 @@ class BattleControl(ControlComponent):
         # per-frame geometry). Lazily construct the highlighter on first call.
         if self.config.hit_flash_seconds > 0 and len(self.damage_body_ids) > 0:
             if self._highlighter is None:
+                import os
                 from protomotions.envs.battle.highlight import BodyHighlighter
 
                 self._highlighter = BodyHighlighter(
                     num_envs=self.env.num_envs,
+                    num_matches=self.num_matches,
                     body_names=self.env.robot_config.kinematic_info.body_names,
                     damage_body_ids=self.damage_body_ids,
+                    champion_tint=os.environ.get("PROTO_NO_CHAMPION_TINT") != "1",
                 )
             self._highlighter.update(self.hit_flash_timer)
 
