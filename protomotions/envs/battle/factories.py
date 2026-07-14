@@ -79,7 +79,7 @@ def battle_hit_taken_penalty_factory(weight: float = -20.0) -> MdpComponent:
     )
 
 
-def battle_strike_diversity_factory(weight: float = 30.0) -> MdpComponent:
+def battle_strike_diversity_factory(weight: float = 90.0) -> MdpComponent:
     """Kickboxing diversity: pays for damage from the under-used limb group."""
     return MdpComponent(
         compute_func=compute_strike_diversity_bonus,
@@ -173,8 +173,11 @@ def default_battle_reward_components(dense_scale: float = 1.0) -> dict:
         "battle_hit_taken": battle_hit_taken_penalty_factory(
             weight=-20.0 * dense_scale
         ),
+        # Bumped 30 -> 90: hands:legs damage ratio was widening (~34:1 by
+        # epoch 860 of v3), not converging — the old weight wasn't enough to
+        # make leg strikes competitive with the hand-strike preference.
         "battle_strike_diversity": battle_strike_diversity_factory(
-            weight=30.0 * dense_scale
+            weight=90.0 * dense_scale
         ),
         "battle_idle": battle_idle_penalty_factory(weight=1.0 * dense_scale),
         "battle_boundary": battle_boundary_penalty_factory(weight=1.0 * dense_scale),

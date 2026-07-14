@@ -1064,6 +1064,39 @@ class IsaacLabSimulator(Simulator):
         vp_api = get_active_viewport()
         capture_viewport_to_file(vp_api, file_name)
 
+    def grab_rgb_frame(self, resolution=(960, 540)):
+        """Synchronously return the perspective camera's current RGB as an
+        HxWx3 uint8 numpy array (or None if not ready).
+
+        Uses a Replicator ``rgb`` annotator on a render product bound to the
+        viewer camera — the same mechanism IsaacLab's Camera sensors use — so
+        it works with offscreen rendering (``enable_cameras``) and needs no
+        display or viewport window (unlike ``capture_viewport_to_file``, which
+        does not write under the headless.rendering Kit experience). Lazily
+        created on first call; the perspective camera must already exist (it is
+        created by ``render()`` once the sim is non-headless).
+        """
+        import numpy as np
+
+        if getattr(self, "_rec_annotator", None) is None:
+            import omni.replicator.core as rep
+
+            self._rec_render_product = rep.create.render_product(
+                "/OmniverseKit_Persp", resolution
+            )
+            self._rec_annotator = rep.AnnotatorRegistry.get_annotator("rgb")
+            self._rec_annotator.attach(self._rec_render_product)
+            # Prime: the annotator only populates after a render.
+            self._sim.render()
+
+        data = self._rec_annotator.get_data()
+        arr = np.asarray(data)
+        if arr.size == 0 or arr.ndim < 2:
+            return None
+        if arr.ndim == 3 and arr.shape[-1] == 4:
+            arr = arr[..., :3]
+        return np.ascontiguousarray(arr, dtype=np.uint8)
+
     def close(self) -> None:
         """
         Close the simulation application and perform cleanup.

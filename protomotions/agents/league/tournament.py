@@ -316,6 +316,237 @@ class BattleTournament:
                     float(held_ego.std()),
                 )
 
+    @torch.no_grad()
+    def record_pairing(
+        self,
+        adapter_a: str,
+        adapter_b: str,
+        out_path: str,
+        max_frames: int = 1500,
+        match_index: int = 0,
+        title: Optional[str] = None,
+        tail_frames: int = 20,
+        bouts: int = 1,
+    ) -> str:
+        """Play A vs B and record arena ``match_index`` to an mp4 using the
+        real IsaacSim viewport (the repo's RecordingMixin, record.py).
+
+        Records ``bouts`` WHOLE bouts strung into one clip: each runs from its
+        reset until that arena's match ends (knockout / ring-out / timeout),
+        plus a short ``tail_frames`` so the finish stays on screen, then a
+        brief black separator before the next bout. ``max_frames`` caps each
+        individual bout (safety bound for a bout that never resolves). The
+        camera follows the ego fighter's arena (the opponent shares it), the
+        RGB annotator grabs each rendered frame, and frames are encoded to mp4.
+        Requires a rendering sim — the CLI launches it headless with offscreen
+        rendering (``enable_cameras``) and flips the sim to non-headless, so
+        this works with no display. Returns a one-line outcome summary.
+        """
+        import numpy as np
+        import os
+        import signal
+        import subprocess
+
+        self._load_ego(adapter_a)
+        self._load_opponent(adapter_b)
+
+        inner = self.env.inner_env if hasattr(self.env, "inner_env") else self.env
+        n = self.env.num_matches
+        if not 0 <= match_index < n:
+            raise ValueError(f"match_index {match_index} out of range [0,{n})")
+        sim = inner.simulator
+        if getattr(sim, "headless", True):
+            raise RuntimeError(
+                "record_pairing needs a rendering simulator; launch the CLI "
+                "with --record (offscreen rendering) rather than --headless."
+            )
+        if not hasattr(sim, "grab_rgb_frame"):
+            raise RuntimeError(
+                f"{type(sim).__name__} has no grab_rgb_frame(); real-render "
+                "recording is implemented for the IsaacLab simulator."
+            )
+
+        # Follow the ego fighter's arena; the opponent shares that arena.
+        sim._camera_target = {"env": match_index, "element": 0}
+
+        obs, _ = self.env.reset()
+        model = self.agent.model
+        model.eval()
+
+        fps = int(max(10, min(30, round(1.0 / float(inner.dt)))))
+        Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+
+        # Pipe raw RGB straight to an ffmpeg subprocess we control, rather than
+        # via imageio. Under a running Kit app (this box's IsaacSim build) the
+        # imageio-spawned ffmpeg dies mid-stream with a broken pipe — Kit's
+        # signal/process-group handling kills the child. Starting ffmpeg in its
+        # own session (setpgrp) with default SIGPIPE detaches it from Kit and
+        # fixes that. Lazily opened on the first frame (needs the frame size).
+        try:
+            import imageio_ffmpeg
+
+            ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        except Exception:
+            ffmpeg_exe = "ffmpeg"
+
+        _writer = {"proc": None}
+
+        def _child_preexec():
+            os.setpgrp()  # detach from Kit's process group
+            try:
+                signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+            except Exception:
+                pass
+
+        def _append(fr):
+            proc = _writer["proc"]
+            if proc is None:
+                h, w = fr.shape[:2]
+                cmd = [
+                    ffmpeg_exe, "-y", "-loglevel", "error",
+                    "-f", "rawvideo", "-vcodec", "rawvideo",
+                    "-s", f"{w}x{h}", "-pix_fmt", "rgb24", "-r", str(fps),
+                    "-i", "-", "-an",
+                    "-vcodec", "libx264", "-pix_fmt", "yuv420p", "-crf", "18",
+                    "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2", out_path,
+                ]
+                proc = subprocess.Popen(
+                    cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE, preexec_fn=_child_preexec,
+                )
+                _writer["proc"] = proc
+            proc.stdin.write(np.ascontiguousarray(fr, dtype=np.uint8).tobytes())
+
+        def _close_writer():
+            proc = _writer["proc"]
+            if proc is None:
+                return
+            proc.stdin.close()
+            err = proc.stderr.read().decode("utf-8", "ignore")
+            proc.wait()
+            if proc.returncode not in (0, None):
+                raise RuntimeError(
+                    f"ffmpeg exited {proc.returncode}: {err.strip()[:500]}"
+                )
+
+        name_a, name_b = Path(adapter_a).stem, Path(adapter_b).stem
+        bc = inner.battle_control
+
+        def _outcome(idx: int) -> str:
+            """Winner + cause for the recorded arena, read at match end."""
+            w = float(bc.win_signal[idx])
+            if w > 0.5:
+                who = f"{name_a} wins"
+            elif w < -0.5:
+                who = f"{name_b} wins"
+            else:
+                who = "draw"
+            if bool(bc.end_cause_ko[idx]):
+                cause = "KO"
+            elif bool(bc.end_cause_oob[idx]):
+                cause = "ring-out (points)"
+            elif bool(bc.end_cause_points[idx]):
+                cause = "points"
+            else:
+                cause = "decision"
+            return f"{who} by {cause}"
+
+        # The raw stream fed to ffmpeg has a FIXED frame size (set by the first
+        # frame). Isaac can occasionally hand back a differently-sized frame
+        # (e.g. a resolution ramp during a reset), and one off-size frame
+        # desyncs the pipe and kills ffmpeg (broken pipe). Force every frame to
+        # the first frame's H×W.
+        target_hw = None
+
+        def _fit(fr):
+            nonlocal target_hw
+            if target_hw is None:
+                target_hw = fr.shape[:2]
+                return fr
+            if fr.shape[:2] == target_hw:
+                return fr
+            th, tw = target_hw
+            h, w = fr.shape[:2]
+            log.info("record: resizing off-size frame %sx%s -> %sx%s", h, w, th, tw)
+            try:  # good resample if PIL is present
+                from PIL import Image
+
+                return np.asarray(
+                    Image.fromarray(fr).resize((tw, th), Image.BILINEAR)
+                )
+            except Exception:  # dependency-free crop/pad fallback
+                out = np.zeros((th, tw, fr.shape[2]), dtype=fr.dtype)
+                out[: min(th, h), : min(tw, w)] = fr[: min(th, h), : min(tw, w)]
+                return out
+
+        held_ego = None
+        written = 0
+        results = []
+        black = None  # black separator frame, sized from the first real frame
+        try:
+            for bout in range(bouts):
+                obs, _ = self.env.reset()
+                held_ego = None
+                ended_at = None
+                for step in range(max_frames):
+                    obs = self.agent.add_agent_info_to_obs(obs)
+                    if held_ego is None or self._frame % self.action_hold == 0:
+                        obs_td = self.agent.obs_dict_to_tensordict(obs)
+                        with self._autocast():
+                            out = model(obs_td)
+                        key = (
+                            "mean_action"
+                            if self.deterministic and "mean_action" in out
+                            else "action"
+                        )
+                        held_ego = out[key].float()
+                    obs, _, dones, _, _ = self.env.step(held_ego)
+                    self._frame += 1
+
+                    frame = sim.grab_rgb_frame()
+                    if frame is not None:
+                        frame = _fit(frame)
+                        if black is None:
+                            black = np.zeros_like(frame)
+                        _append(frame)
+                        written += 1
+
+                    # Record the outcome the moment this arena's bout ends, then
+                    # keep filming a short tail so the finish stays on screen.
+                    if ended_at is None and bool(dones[match_index]):
+                        ended_at = step
+                        results.append(_outcome(match_index))
+                    if ended_at is not None and step - ended_at >= tail_frames:
+                        break
+
+                if ended_at is None:
+                    results.append(f"no decision (hit {max_frames}-frame cap)")
+                # Short black separator between bouts (not after the last).
+                if black is not None and bout < bouts - 1:
+                    for _ in range(max(1, fps // 3)):
+                        _append(black)
+                        written += 1
+        finally:
+            _close_writer()
+
+        if written == 0:
+            raise RuntimeError(
+                "recorded 0 frames — the RGB annotator returned no data "
+                "(offscreen rendering not active?)"
+            )
+        summary = "; ".join(f"bout {i + 1}: {r}" for i, r in enumerate(results))
+        log.info(
+            "Recorded %s vs %s -> %s (%d bouts, %d frames @ %d fps) | %s",
+            name_a,
+            name_b,
+            out_path,
+            len(results),
+            written,
+            fps,
+            summary,
+        )
+        return {"path": out_path, "results": results, "summary": summary}
+
     def run_round_robin(
         self,
         adapters: List[str],

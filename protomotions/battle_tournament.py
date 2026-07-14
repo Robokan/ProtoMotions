@@ -76,6 +76,34 @@ def create_parser():
     )
     parser.add_argument("--output", default=None, help="JSON report path")
     parser.add_argument(
+        "--record",
+        default=None,
+        metavar="MP4_PATH",
+        help="With --exhibition: render one arena of the A-vs-B fight to this "
+        "mp4 (headless skeleton video, no display needed) instead of tallying "
+        "matches. Use --record-frames to set clip length.",
+    )
+    parser.add_argument(
+        "--record-frames",
+        type=int,
+        default=1500,
+        help="Safety cap on frames for --record. The recording stops when the "
+        "bout actually ends (KO/ring-out/timeout); this only bounds a bout "
+        "that never resolves (default 1500 ~ one full episode).",
+    )
+    parser.add_argument(
+        "--record-title",
+        default=None,
+        help="Optional title drawn on the --record video (e.g. a snapshot tag).",
+    )
+    parser.add_argument(
+        "--bouts",
+        type=int,
+        default=3,
+        help="Number of consecutive bouts to string into one --record video "
+        "(each recorded whole, separated by a brief black gap). Default 3.",
+    )
+    parser.add_argument(
         "--probe-steps",
         type=int,
         default=0,
@@ -148,11 +176,21 @@ def main():
     agent_config = resolved["agent"]
 
     headless = args.headless
-    if args.exhibition is not None and headless is None:
+    if args.exhibition is not None and headless is None and args.record is None:
         headless = False
     if headless is None:
         headless = True
-    simulator_config.headless = headless
+
+    # --record captures the *real* IsaacSim viewport via the recording mixin
+    # (protomotions/simulator/base_simulator/record.py). That path runs inside
+    # the sim's render() only when the sim is NOT headless — but this box has
+    # no display, so we launch the Kit app headless with OFFSCREEN rendering
+    # (enable_cameras -> isaaclab.python.headless.rendering.kit) and flip the
+    # protomotions simulator to non-headless so render()/capture fire against
+    # the offscreen viewport. No window, real render.
+    recording = args.record is not None
+    app_headless = True if recording else headless
+    simulator_config.headless = False if recording else headless
 
     if args.num_envs is not None:
         if args.num_envs % 2 != 0:
@@ -176,9 +214,11 @@ def main():
 
     simulator_extra_params = {}
     if args.simulator == "isaaclab":
-        app_launcher = AppLauncher(
-            {"headless": headless, "device": str(fabric.device)}
-        )
+        launch_flags = {"headless": app_headless, "device": str(fabric.device)}
+        if recording:
+            # Offscreen rendering pipeline (no X display required).
+            launch_flags["enable_cameras"] = True
+        app_launcher = AppLauncher(launch_flags)
         simulator_extra_params["simulation_app"] = app_launcher.app
 
     from protomotions.simulator.base_simulator.utils import (
@@ -232,47 +272,72 @@ def main():
         sampling_mode="nucleus" if args.fast_sampling else None,
     )
 
-    if args.probe_steps > 0:
-        assert args.exhibition is not None, "--probe-steps requires --exhibition"
-        ckpt_a, ckpt_b = args.exhibition
-        tournament.probe(ckpt_a, ckpt_b, steps=args.probe_steps)
-        return
+    exit_code = 0
+    try:
+        if args.probe_steps > 0:
+            assert args.exhibition is not None, "--probe-steps requires --exhibition"
+            ckpt_a, ckpt_b = args.exhibition
+            tournament.probe(ckpt_a, ckpt_b, steps=args.probe_steps)
+        elif args.record is not None:
+            if args.exhibition is None:
+                raise ValueError("--record requires --exhibition CKPT_A CKPT_B")
+            ckpt_a, ckpt_b = args.exhibition
+            Path(args.record).parent.mkdir(parents=True, exist_ok=True)
+            log.info(
+                "Recording fight video: %s vs %s -> %s", ckpt_a, ckpt_b, args.record
+            )
+            tournament.record_pairing(
+                ckpt_a,
+                ckpt_b,
+                args.record,
+                max_frames=args.record_frames,
+                title=args.record_title,
+                bouts=args.bouts,
+            )
+        elif args.exhibition is not None:
+            ckpt_a, ckpt_b = args.exhibition
+            log.info("Exhibition: %s vs %s", ckpt_a, ckpt_b)
+            result = tournament.run_pairing(
+                ckpt_a, ckpt_b, matches=args.matches_per_pairing
+            )
+            log.info(
+                "Exhibition result: %d-%d-%d (A wins - B wins - draws)",
+                result.wins_a,
+                result.wins_b,
+                result.draws,
+            )
+        elif args.gate is not None:
+            if args.gate_against is None:
+                raise ValueError("--gate requires --gate-against")
+            passed = tournament.regression_gate(
+                args.gate,
+                args.gate_against,
+                matches=args.matches_per_pairing,
+                threshold=args.gate_threshold,
+            )
+            exit_code = 0 if passed else 1
+        elif args.adapters is not None:
+            adapters = resolve_adapter_list(args.adapters)
+            log.info("Round-robin over %d adapters", len(adapters))
+            report = tournament.run_round_robin(
+                adapters, matches_per_pairing=args.matches_per_pairing
+            )
+            if args.output:
+                report.to_json(args.output)
+        else:
+            raise ValueError("Provide --adapters, --gate, --exhibition, or --record")
+    except BaseException:
+        log.exception("tournament failed")
+        exit_code = 1
+    finally:
+        # IsaacSim/Kit hangs at interpreter teardown, leaving a zombie that
+        # keeps holding GPU memory — stacking several of these is exactly what
+        # deadlocks the unified-memory driver. Even sim.close() hangs, so don't
+        # call it: hard-exit immediately. The OS/driver reclaim the process's
+        # GPU allocations on death (same as kill -9), so memory is freed.
+        import os
 
-    if args.exhibition is not None:
-        ckpt_a, ckpt_b = args.exhibition
-        log.info("Exhibition: %s vs %s", ckpt_a, ckpt_b)
-        result = tournament.run_pairing(
-            ckpt_a, ckpt_b, matches=args.matches_per_pairing
-        )
-        log.info(
-            "Exhibition result: %d-%d-%d (A wins - B wins - draws)",
-            result.wins_a,
-            result.wins_b,
-            result.draws,
-        )
-        return
-
-    if args.gate is not None:
-        if args.gate_against is None:
-            raise ValueError("--gate requires --gate-against")
-        passed = tournament.regression_gate(
-            args.gate,
-            args.gate_against,
-            matches=args.matches_per_pairing,
-            threshold=args.gate_threshold,
-        )
-        sys.exit(0 if passed else 1)
-
-    if args.adapters is None:
-        raise ValueError("Provide --adapters, --gate, or --exhibition")
-
-    adapters = resolve_adapter_list(args.adapters)
-    log.info("Round-robin over %d adapters", len(adapters))
-    report = tournament.run_round_robin(
-        adapters, matches_per_pairing=args.matches_per_pairing
-    )
-    if args.output:
-        report.to_json(args.output)
+        os._exit(exit_code)
 
 
 if __name__ == "__main__":

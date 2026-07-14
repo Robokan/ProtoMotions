@@ -220,13 +220,23 @@ python protomotions/train_agent.py \
 **Watch and evaluate** with `protomotions/battle_tournament.py`:
 
 ```bash
-# Exhibition: two checkpoints fight in a windowed viewer (arena ring drawn;
-# struck body parts flash red). Press O to follow the camera, R to restart.
+# Exhibition: two checkpoints fight in a windowed viewer (arena ring drawn).
+# Press O to follow the camera, R to restart.
 python protomotions/battle_tournament.py \
     --resolved-configs results/soma_battle_league/resolved_configs_inference.pt \
     --exhibition results/soma_battle_league/inference_last.ckpt \
                  results/soma_battle_league/lightning_logs/version_0/league/policy_0.ckpt \
     --num-envs 2 --matches-per-pairing 4
+
+# Record fights to mp4 — real IsaacSim render, offscreen (NO display needed).
+# Records whole bouts (KO / ring-out / timeout); --bouts strings several into
+# one clip. Simplest: the wrapper (latest vs a random pool member by default):
+scripts/record_fight.sh 3
+# Or the underlying CLI, to pick the two fighters explicitly:
+python protomotions/battle_tournament.py \
+    --resolved-configs results/soma_battle_league/resolved_configs_inference.pt \
+    --exhibition <ckpt_a> <ckpt_b> \
+    --record output/fight_videos/a_vs_b.mp4 --bouts 3 --num-envs 2 --deterministic
 
 # Round-robin tournament over league snapshots -> Elo ladder + head-to-head JSON
 python protomotions/battle_tournament.py \
@@ -240,6 +250,24 @@ python protomotions/battle_tournament.py \
     --resolved-configs results/soma_battle_league/resolved_configs_inference.pt \
     --exhibition <ckpt_a> <ckpt_b> --headless --probe-steps 120
 ```
+
+**Auto-gallery over time (optional).** `scripts/battle_video_daemon.sh` polls a
+league run for new `policy_*.ckpt` snapshots and records each new one against a
+fixed baseline (the earliest snapshot by default), building a chronological
+gallery in `output/fight_videos/`. It runs headless and self-throttles on host
+memory (recording is a second Isaac process; on a unified-memory box it skips a
+tick if free RAM is below `MIN_GB`, default 25):
+
+```bash
+# run_name  interval_sec  container
+scripts/battle_video_daemon.sh soma_battle_league_v3 3600 battle
+```
+
+> **NumPy pin:** offscreen recording needs NumPy 1.x — the canonical Spark
+> image ships NumPy 2, which breaks Isaac's render extensions (the annotator
+> recurses in `np.all`). `Dockerfile.spark` pins `numpy==1.26.4`; rebuild the
+> image (`docker build -f Dockerfile.spark -t protomotions:spark .`) so
+> `--record` works in the `battle` container.
 
 > **Note:** the combat data is derived from the gated BONES-SEED dataset and
 > is not shipped. Build the motion libraries with

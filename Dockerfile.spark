@@ -12,9 +12,17 @@
 #   ../run_protomotions.sh
 FROM protomotions:spark
 
-# wandb is pinned: unpinned resolution picks 0.15.x on aarch64, which is
-# incompatible with the image's NumPy 2 (matches requirements_isaaclab.txt).
+# NumPy is pinned to <2: the base image ships NumPy 2.4.1 in site-packages,
+# which collides with Isaac Sim's bundled 1.x (pip_prebundle). Headless
+# training tolerates it, but the RENDER path does not — omni.kit.numpy.common
+# fails to import ("empty_like already has a different docstring") and the
+# replicator RGB annotator recurses in np.all across the two NumPys
+# (RecursionError), so offscreen video recording (battle_tournament.py
+# --record) is impossible. 1.26.4 matches Isaac's bundled version and is what
+# the working isaac-lab:2.3.0 image uses. wandb 0.23.0 is fine on 1.x too
+# (unpinned picks 0.15.x on aarch64, which is not).
 RUN /isaac-sim/python.sh -m pip install --no-cache-dir \
+    "numpy==1.26.4" \
     tensordict \
     "wandb==0.23.0" \
     cloudpickle \
