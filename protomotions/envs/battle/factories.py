@@ -14,6 +14,7 @@ from protomotions.envs.battle.obs import compute_battle_task_obs
 from protomotions.envs.battle.rewards import (
     compute_arena_boundary_penalty,
     compute_facing_delta_reward,
+    compute_facing_passthrough,
     compute_facing_reward,
     compute_hit_reward,
     compute_hit_taken_penalty,
@@ -90,16 +91,19 @@ def battle_strike_diversity_factory(weight: float = 30.0) -> MdpComponent:
 
 
 def battle_facing_reward_factory(weight: float = 2.0) -> MdpComponent:
-    """Potential-based gaze reward: pays for IMPROVING facing, not holding it.
+    """Absolute gaze reward (IsaacLabASE reward_face_w=2.0): pays for looking
+    at the opponent, using the pre-computed control-side facing (gaze axis
+    already corrected to SOMA's body-frame -y).
 
-    The absolute-facing variant (compute_facing_reward) is farmable: two
-    fighters can circle forever collecting ~2/step for staring. The delta
-    telescopes to at most 1 per acquisition, so turning toward the opponent
-    is still taught but the stare equilibrium pays nothing.
+    Not farmable in practice: the approach reward (weight 4.0, velocity toward
+    the opponent) dominates and the idle penalty punishes standing, so
+    circling-while-staring loses to closing-and-hitting. The potential-based
+    variant (compute_facing_delta_reward) removed engagement pressure entirely
+    and produced fighters that never oriented — reverted.
     """
     return MdpComponent(
-        compute_func=compute_facing_delta_reward,
-        dynamic_vars={"facing_delta": EnvContext.battle.facing_delta},
+        compute_func=compute_facing_passthrough,
+        dynamic_vars={"facing": EnvContext.battle.facing},
         static_params={"weight": weight},
     )
 
@@ -159,6 +163,11 @@ def default_battle_reward_components(dense_scale: float = 1.0) -> dict:
     """
     return {
         "battle_win": battle_win_reward_factory(weight=100.0),
+        # Approach (velocity toward opponent, gated by range) is the
+        # engagement gradient — weight 4.0 per IsaacLabASE, double facing so
+        # closing dominates circling. Its absence in the weekend run left
+        # fighters with no reason to move together (facing stuck at 0.5).
+        "battle_approach": battle_range_reward_factory(weight=4.0 * dense_scale),
         "battle_facing": battle_facing_reward_factory(weight=2.0 * dense_scale),
         "battle_hit": battle_hit_reward_factory(weight=30.0 * dense_scale),
         "battle_hit_taken": battle_hit_taken_penalty_factory(

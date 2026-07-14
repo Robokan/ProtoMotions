@@ -35,11 +35,6 @@ from protomotions.envs.battle.hit_state import (
     resolve_body_ids,
 )
 from protomotions.envs.control.base import ControlComponent, ControlComponentConfig
-from protomotions.simulator.base_simulator.config import (
-    MarkerConfig,
-    MarkerState,
-    VisualizationMarkerConfig,
-)
 
 if TYPE_CHECKING:
     from protomotions.envs.base_env.env import BaseEnv
@@ -118,12 +113,6 @@ class BattleControlConfig(ControlComponentConfig):
     fall_init_prob: float = 0.1
     recovery_seconds: float = 2.0  # termination suppression after a fall init
 
-    # Viewer: markers per arena side outlining the ring (0 disables)
-    arena_ring_markers_per_side: int = 8
-    arena_ring_marker_scale: float = 0.02
-    # Viewer: flash damaged body parts red for this long after a scoring hit
-    hit_flash_seconds: float = 0.35
-    hit_flash_marker_scale: float = 0.08
 
     # Hit FSM constants
     hit_state: HitStateConfig = field(default_factory=HitStateConfig)
@@ -223,27 +212,6 @@ class BattleControl(ControlComponent):
         )
         self._recovery_steps = max(1, int(round(config.recovery_seconds / env.dt)))
 
-        # Ring outline offsets around the arena center [P, 2] (viewer only)
-        self._ring_offsets = self._build_ring_offsets()
-
-        # Hit-flash timers per damage body (viewer only): counts down control
-        # steps during which the struck part is highlighted red
-        self._hit_flash_steps = max(1, int(round(config.hit_flash_seconds / env.dt)))
-        self.hit_flash_timer = torch.zeros(
-            num_envs, len(self.damage_body_ids), device=device
-        )
-        # Body-recolor highlighter (viewer only, built lazily) + one-shot ring.
-        # PROTO_NO_RING=1 disables the arena ring markers entirely (A/B test
-        # for whether the border geometry is the viewer bottleneck).
-        import os
-
-        self._highlighter = None
-        self._ring_sent = False
-        self._draw_ring = (
-            self._ring_offsets.shape[0] > 0
-            and os.environ.get("PROTO_NO_RING") != "1"
-        )
-
         # Gaze/facing state for the potential-based facing reward.
         # prev < 0 marks "just reset": the first post-reset delta is zero.
         self.facing = torch.zeros(num_envs, device=device)
@@ -252,26 +220,6 @@ class BattleControl(ControlComponent):
         self._gaze_axis = torch.tensor(
             config.gaze_forward_axis, dtype=torch.float, device=device
         )
-
-    def _build_ring_offsets(self) -> Tensor:
-        """Evenly spaced XY offsets tracing the square arena boundary."""
-        per_side = self.config.arena_ring_markers_per_side
-        if per_side <= 0:
-            return torch.zeros(0, 2, device=self.env.device)
-        half = self.config.arena_size / 2.0
-        t = torch.linspace(-half, half, per_side + 1, device=self.env.device)[:-1]
-        ones = torch.full_like(t, half)
-        # Four sides, corners included once each
-        pts = torch.cat(
-            [
-                torch.stack([t, ones], dim=-1),  # top: left -> right
-                torch.stack([ones, -t], dim=-1),  # right: top -> bottom
-                torch.stack([-t, -ones], dim=-1),  # bottom: right -> left
-                torch.stack([-ones, t], dim=-1),  # left: bottom -> top
-            ],
-            dim=0,
-        )
-        return pts  # [4 * per_side, 2]
 
     # ------------------------------------------------------------------
     # Arena layout
@@ -403,7 +351,7 @@ class BattleControl(ControlComponent):
         contact_forces = state.rigid_body_contact_forces
 
         # Hit integration (energy TAKEN per env; dealt = partner's taken)
-        taken, taken_by_group, taken_per_body = self.hit_state.step(
+        taken, taken_by_group, _ = self.hit_state.step(
             contact_forces=contact_forces,
             body_pos=body_pos,
             body_vel=body_vel,
@@ -414,13 +362,6 @@ class BattleControl(ControlComponent):
         self.hit_energy_taken = taken
         self.hit_energy_dealt = taken[partner]
         self.health = (self.health - cfg.damage_to_health * taken).clamp_min(0.0)
-
-        # Arm/decay the per-part hit flash (viewer only)
-        self.hit_flash_timer = torch.where(
-            taken_per_body > 1e-6,
-            torch.full_like(self.hit_flash_timer, float(self._hit_flash_steps)),
-            (self.hit_flash_timer - 1.0).clamp_min(0.0),
-        )
 
         # Kickboxing diversity: reward growth of the LESSER cumulative
         # dealt-energy group (hands vs legs) — specialization in one limb
@@ -574,62 +515,6 @@ class BattleControl(ControlComponent):
             arena_center=self.arena_centers,
             arena_half_size=cfg.arena_size / 2.0,
         )
-
-
-    # ------------------------------------------------------------------
-    # Ring visualization (viewer only)
-    # ------------------------------------------------------------------
-    def create_visualization_markers(
-        self, headless: bool
-    ) -> Dict[str, VisualizationMarkerConfig]:
-        # Ring only. Hit flashes recolor the body prims (see BodyHighlighter),
-        # adding no per-frame geometry — spawning flash markers halved the
-        # viewer frame rate.
-        if headless or not self._draw_ring:
-            return {}
-        cfg = self.config
-        num_points = self._ring_offsets.shape[0]
-        return {
-            "arena_ring": VisualizationMarkerConfig(
-                type="sphere",
-                color=(0.9, 0.15, 0.1),
-                markers=[MarkerConfig(scale=cfg.arena_ring_marker_scale)] * num_points,
-            )
-        }
-
-    def get_markers_state(self) -> Dict[str, MarkerState]:
-        if self.env.simulator.headless:
-            return {}
-
-        # Recolor struck body prims red (transition-only USD writes; no
-        # per-frame geometry). Lazily construct the highlighter on first call.
-        if self.config.hit_flash_seconds > 0 and len(self.damage_body_ids) > 0:
-            if self._highlighter is None:
-                import os
-                from protomotions.envs.battle.highlight import BodyHighlighter
-
-                self._highlighter = BodyHighlighter(
-                    num_envs=self.env.num_envs,
-                    num_matches=self.num_matches,
-                    body_names=self.env.robot_config.kinematic_info.body_names,
-                    damage_body_ids=self.damage_body_ids,
-                    champion_tint=os.environ.get("PROTO_NO_CHAMPION_TINT") != "1",
-                )
-            self._highlighter.update(self.hit_flash_timer)
-
-        # Ring markers persist once set — only send them the first frame so the
-        # viewer isn't re-writing 32 transforms every step.
-        if self._ring_sent or not self._draw_ring:
-            return {}
-        self._ring_sent = True
-        num_points = self._ring_offsets.shape[0]
-        device = self.env.device
-        pos = torch.zeros(self.env.num_envs, num_points, 3, device=device)
-        pos[..., :2] = self.arena_centers.unsqueeze(1) + self._ring_offsets.unsqueeze(0)
-        pos[..., 2] = 0.05
-        rot = torch.zeros(self.env.num_envs, num_points, 4, device=device)
-        rot[..., 3] = 1.0
-        return {"arena_ring": MarkerState(translation=pos, orientation=rot)}
 
 
 __all__ = ["BattleControlConfig", "BattleControl"]

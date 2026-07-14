@@ -76,6 +76,13 @@ def compute_facing_reward(
     return (dot + 1.0) * 0.5
 
 
+def compute_facing_passthrough(facing: Tensor) -> Tensor:
+    """Absolute gaze quality in [0, 1], computed control-side with the
+    corrected SOMA gaze axis. Passthrough so the reward and the telemetry
+    read the identical value."""
+    return facing
+
+
 def compute_facing_delta_reward(facing_delta: Tensor) -> Tensor:
     """Potential-based facing: reward the CHANGE in gaze quality.
 
@@ -142,6 +149,7 @@ __all__ = [
     "compute_hit_taken_penalty",
     "compute_strike_diversity_bonus",
     "compute_facing_reward",
+    "compute_facing_passthrough",
     "compute_facing_delta_reward",
     "compute_range_reward",
     "compute_idle_penalty",
