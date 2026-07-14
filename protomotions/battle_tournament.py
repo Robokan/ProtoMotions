@@ -90,11 +90,14 @@ def create_parser():
         "cores; fp32 weights kept). Speeds inference; viewer/eval only.",
     )
     parser.add_argument(
-        "--fast-sampling",
-        action="store_true",
-        help="Use nucleus sampling at inference (skip the per-token reference "
-        "forward). Halves the prior decodes; behavior may shift slightly.",
+        "--no-fast-sampling",
+        dest="fast_sampling",
+        action="store_false",
+        help="Disable the default nucleus fast-sampling and use the trained "
+        "prior-constraint decode (slower: adds the per-token reference "
+        "forward). Use when you want inference to exactly match training.",
     )
+    parser.set_defaults(fast_sampling=True)
     parser.add_argument(
         "--action-hold",
         type=int,
