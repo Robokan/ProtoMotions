@@ -119,6 +119,22 @@ class BattleControlConfig(ControlComponentConfig):
     knockdown_height: float = 0.2  # m, root below this counts as "down"
     knockdown_grace_seconds: float = 2.0  # get-up window before KO
     points_decision_eps: float = 0.02  # health diff below this at timeout = draw
+
+    # Stun / concussion model. A hit deposits stun scaled by its (region-
+    # weighted) energy; stun decays at a FIXED rate, so both the peak and the
+    # duration grow with hit hardness from one accumulator. A down fighter is a
+    # KO only while still stunned (stun > stun_ko_threshold): a trip or self-
+    # fall deposits no stun and can never be a knockout, and a hard enough hit
+    # keeps stun above threshold past the get-up window, guaranteeing a KO.
+    # stun_region_weights is aligned to damage_body_names — head dominates
+    # (a head shot scrambles you; body shots barely stun). (Stage 2 will also
+    # drive IMU/proprioception disorientation noise from this same stun value.)
+    stun_gain: float = 3.0
+    stun_decay_per_sec: float = 0.5
+    stun_ko_threshold: float = 0.4
+    stun_region_weights: List[float] = field(
+        default_factory=lambda: [1.0, 0.1, 0.15, 0.1, 0.05]
+    )
     # Outcome signal for drawn matches (both fighters). Slightly negative so
     # running out the clock is never the safe harbor — engaging (points win
     # +1 / loss -1, symmetric zero EV) strictly dominates mutual passivity.
@@ -222,9 +238,15 @@ class BattleControl(ControlComponent):
             strike_multipliers=strike_multipliers,
         )
 
+        # Stun region weights aligned to damage_body_names (head dominates).
+        self._stun_region_weights = torch.tensor(
+            config.stun_region_weights, dtype=torch.float, device=device
+        )
+
         # Fight state
         self.health = torch.full((num_envs,), config.initial_health, device=device)
         self.down_timer = torch.zeros(num_envs, device=device)
+        self.stun = torch.zeros(num_envs, device=device)
         self.idle_time = torch.zeros(num_envs, device=device)
         self.recovery_steps_left = torch.zeros(
             num_envs, dtype=torch.long, device=device
@@ -380,6 +402,7 @@ class BattleControl(ControlComponent):
         cfg = self.config
         self.health[env_ids] = cfg.initial_health
         self.down_timer[env_ids] = 0.0
+        self.stun[env_ids] = 0.0
         self.idle_time[env_ids] = 0.0
         self.hit_energy_taken[env_ids] = 0.0
         self.hit_energy_dealt[env_ids] = 0.0
@@ -416,7 +439,7 @@ class BattleControl(ControlComponent):
         contact_forces = state.rigid_body_contact_forces
 
         # Hit integration (energy TAKEN per env; dealt = partner's taken)
-        taken, taken_by_group, _ = self.hit_state.step(
+        taken, taken_by_group, taken_per_body = self.hit_state.step(
             contact_forces=contact_forces,
             body_pos=body_pos,
             body_vel=body_vel,
@@ -427,6 +450,13 @@ class BattleControl(ControlComponent):
         self.hit_energy_taken = taken
         self.hit_energy_dealt = taken[partner]
         self.health = (self.health - cfg.damage_to_health * taken).clamp_min(0.0)
+
+        # Stun accumulator: deposit region-weighted (head-heavy) hit energy,
+        # decay at a fixed rate. Both peak and duration scale with hit hardness.
+        stun_input = (taken_per_body * self._stun_region_weights).sum(dim=-1)
+        self.stun = (
+            self.stun + cfg.stun_gain * stun_input - cfg.stun_decay_per_sec * env.dt
+        ).clamp_min(0.0)
 
         # Kickboxing diversity: reward growth of the LESSER cumulative
         # dealt-energy group (hands vs legs) — specialization in one limb
@@ -477,9 +507,13 @@ class BattleControl(ControlComponent):
 
         # ---- Match-end determination -------------------------------------
         in_recovery = self.recovery_steps_left > 0
-        knocked_out = (
-            (self.down_timer > cfg.knockdown_grace_seconds) | (self.health <= 0.0)
-        ) & ~in_recovery
+        # A knockout requires being DOWN past the get-up window AND still
+        # stunned from a hard hit — so a trip / self-fall (no stun) is never a
+        # KO. Accumulated-damage depletion (health<=0) is a separate TKO path.
+        ko_from_strike = (self.down_timer > cfg.knockdown_grace_seconds) & (
+            self.stun > cfg.stun_ko_threshold
+        )
+        knocked_out = (ko_from_strike | (self.health <= 0.0)) & ~in_recovery
 
         root_xy = body_pos[:, 0, :2]
         half = cfg.arena_size / 2.0

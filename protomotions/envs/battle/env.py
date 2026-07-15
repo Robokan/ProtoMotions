@@ -188,6 +188,7 @@ class BattleEnv(BaseEnv):
         self.extras["battle/end_ko"] = control.end_cause_ko.float()
         self.extras["battle/end_ringout"] = control.end_cause_oob.float()
         self.extras["battle/end_points"] = control.end_cause_points.float()
+        self.extras["battle/stun"] = control.stun
         self.extras["battle/dealt_hands"] = control.dealt_by_group_cum[:, 0]
         if control.dealt_by_group_cum.shape[1] > 1:
             self.extras["battle/dealt_legs"] = control.dealt_by_group_cum[:, 1]
