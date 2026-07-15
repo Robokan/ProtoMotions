@@ -173,11 +173,14 @@ def default_battle_reward_components(dense_scale: float = 1.0) -> dict:
         "battle_hit_taken": battle_hit_taken_penalty_factory(
             weight=-20.0 * dense_scale
         ),
-        # Bumped 30 -> 90: hands:legs damage ratio was widening (~34:1 by
-        # epoch 860 of v3), not converging — the old weight wasn't enough to
-        # make leg strikes competitive with the hand-strike preference.
+        # Diversity bonus back to 30: bumping it to 90 (v3, epochs 860-1479)
+        # gave only a transient ~30-epoch improvement that decayed back past
+        # the ~34:1 baseline — cranking the bonus can't beat the structural
+        # incentive to punch. The real fix is per-limb raw-energy weighting
+        # (BattleControlConfig.strike_group_multipliers, legs 2.0 vs hands 1.0),
+        # which makes kicks genuinely out-score punches at the source.
         "battle_strike_diversity": battle_strike_diversity_factory(
-            weight=90.0 * dense_scale
+            weight=30.0 * dense_scale
         ),
         "battle_idle": battle_idle_penalty_factory(weight=1.0 * dense_scale),
         "battle_boundary": battle_boundary_penalty_factory(weight=1.0 * dense_scale),

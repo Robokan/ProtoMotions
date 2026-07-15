@@ -71,6 +71,15 @@ class BattleControlConfig(ControlComponentConfig):
             "legs": ["LeftFoot", "RightFoot", "LeftShin", "RightShin"],
         }
     )
+    # Per-limb damage weighting, applied to RAW strike energy BEFORE the hit
+    # integrator's log-normalization. Legs already hit harder physically (more
+    # mass -> more contact force), but the log-normalization compresses that
+    # advantage, so the policy collapses to punching (easier to land). Weighting
+    # legs above hands on the raw energy restores a real payoff for kicking
+    # without falsifying the physics. Ungrouped/unlisted bodies default to 1.0.
+    strike_group_multipliers: Dict[str, float] = field(
+        default_factory=lambda: {"hands": 1.0, "legs": 2.0}
+    )
     damage_body_names: List[str] = field(
         default_factory=lambda: ["Head", "Chest", "Hips"]
     )
@@ -177,6 +186,16 @@ class BattleControl(ControlComponent):
             [group_of.get(name, 0) for name in config.strike_body_names],
             dtype=torch.long,
         )
+        # Per-strike-body raw-energy multiplier from the group weights.
+        strike_multipliers = torch.tensor(
+            [
+                config.strike_group_multipliers.get(
+                    self.strike_group_labels[group_of.get(name, 0)], 1.0
+                )
+                for name in config.strike_body_names
+            ],
+            dtype=torch.float,
+        )
 
         self.hit_state = BattleHitState(
             num_envs=num_envs,
@@ -190,6 +209,7 @@ class BattleControl(ControlComponent):
             device=device,
             strike_body_groups=strike_groups,
             num_strike_groups=len(self.strike_group_labels),
+            strike_multipliers=strike_multipliers,
         )
 
         # Fight state

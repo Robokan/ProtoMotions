@@ -57,6 +57,7 @@ class BattleHitState:
         device: torch.device,
         strike_body_groups: Tensor = None,
         num_strike_groups: int = 0,
+        strike_multipliers: Tensor = None,
     ):
         """
         Args:
@@ -71,6 +72,9 @@ class BattleHitState:
             strike_body_groups: Group id per strike body [S] (e.g. hands=0,
                 legs=1) for per-group hit attribution; None disables.
             num_strike_groups: Number of distinct strike groups.
+            strike_multipliers: Per-strike-body multiplier [S] applied to RAW
+                strike energy before log-normalization (e.g. legs 2.0, hands
+                1.0). None = uniform 1.0.
         """
         self.config = config
         self.dt = dt
@@ -82,6 +86,9 @@ class BattleHitState:
             strike_body_groups.to(device) if strike_body_groups is not None else None
         )
         self.num_strike_groups = num_strike_groups
+        self.strike_multipliers = (
+            strike_multipliers.to(device) if strike_multipliers is not None else None
+        )
 
         num_damage = len(damage_body_ids)
         self._active = torch.zeros(num_envs, num_damage, dtype=torch.bool, device=device)
@@ -156,6 +163,14 @@ class BattleHitState:
         v_ok = v_rel >= cfg.v_gate
 
         d_energy = f_mag * v_rel * self.dt * cfg.energy_gain * (include & v_ok)
+
+        # Per-limb raw-energy weighting (e.g. legs > hands), attributed via the
+        # nearest striker. Applied HERE — before accumulation and the log-
+        # normalization below — so a kick's boosted energy isn't compressed
+        # away by the global log scale (see BattleControlConfig
+        # .strike_group_multipliers).
+        if self.strike_multipliers is not None:
+            d_energy = d_energy * self.strike_multipliers[nearest_s]
 
         # Bout FSM with hysteresis (force_on/force_off) + cooldown
         can_start = self._cooldown <= 0.5
