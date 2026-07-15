@@ -135,6 +135,11 @@ class BattleControlConfig(ControlComponentConfig):
     stun_region_weights: List[float] = field(
         default_factory=lambda: [1.0, 0.1, 0.15, 0.1, 0.05]
     )
+    # When True a knockout requires being down AND still stunned (the new
+    # concussion model); when False the KO reverts to the original "down past
+    # the grace window" rule regardless of stun. Off by default so the striking
+    # changes can be validated in isolation before the KO mechanic is enabled.
+    stun_gates_ko: bool = False
     # Outcome signal for drawn matches (both fighters). Slightly negative so
     # running out the clock is never the safe harbor — engaging (points win
     # +1 / loss -1, symmetric zero EV) strictly dominates mutual passivity.
@@ -507,13 +512,15 @@ class BattleControl(ControlComponent):
 
         # ---- Match-end determination -------------------------------------
         in_recovery = self.recovery_steps_left > 0
-        # A knockout requires being DOWN past the get-up window AND still
-        # stunned from a hard hit — so a trip / self-fall (no stun) is never a
-        # KO. Accumulated-damage depletion (health<=0) is a separate TKO path.
-        ko_from_strike = (self.down_timer > cfg.knockdown_grace_seconds) & (
-            self.stun > cfg.stun_ko_threshold
-        )
-        knocked_out = (ko_from_strike | (self.health <= 0.0)) & ~in_recovery
+        # A down fighter is knocked out if it's past the get-up window. With
+        # stun_gates_ko, that ALSO requires still being stunned from a hard hit
+        # (so a trip / self-fall can't KO — the concussion model); otherwise it
+        # reverts to the original down-past-grace rule. health<=0 is a separate
+        # accumulated-damage TKO either way.
+        down_ko = self.down_timer > cfg.knockdown_grace_seconds
+        if cfg.stun_gates_ko:
+            down_ko = down_ko & (self.stun > cfg.stun_ko_threshold)
+        knocked_out = (down_ko | (self.health <= 0.0)) & ~in_recovery
 
         root_xy = body_pos[:, 0, :2]
         half = cfg.arena_size / 2.0
