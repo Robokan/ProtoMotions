@@ -479,6 +479,71 @@ class BattleTournament:
                 out[: min(th, h), : min(tw, w)] = fr[: min(th, h), : min(tw, w)]
                 return out
 
+        # --- scoreboard overlay (champion on the left, opponent on the right,
+        # each with an HP bar). Drawn onto every frame before it's encoded. ---
+        ego_id, opp_id = match_index, match_index + n
+        init_hp = max(float(getattr(cfg, "initial_health", 1.0)), 1e-6)
+        try:
+            from PIL import Image, ImageDraw, ImageFont
+
+            try:
+                import matplotlib.font_manager as _fm
+
+                _bold = _fm.findfont(_fm.FontProperties(family="DejaVu Sans", weight="bold"))
+                _reg = _fm.findfont(_fm.FontProperties(family="DejaVu Sans"))
+                _font = ImageFont.truetype(_bold, 18)
+                _font_sm = ImageFont.truetype(_reg, 13)
+            except Exception:
+                _font = ImageFont.load_default()
+                _font_sm = _font
+            _pil_ok = True
+        except Exception:
+            _pil_ok = False
+
+        def _hp_color(frac):
+            if frac > 0.5:
+                return (80, 200, 90)      # green
+            if frac > 0.25:
+                return (230, 200, 60)     # yellow
+            return (220, 70, 60)          # red
+
+        def _scoreboard(fr, hp_a, hp_b, bout_i):
+            if not _pil_ok:
+                return fr
+            try:
+                img = Image.fromarray(fr)
+                d = ImageDraw.Draw(img)
+                W = img.width
+                strip_h = 46
+                d.rectangle([0, 0, W, strip_h], fill=(15, 18, 24))
+                barw, barh, pad, top = int(W * 0.30), 12, 12, 26
+                fa = max(0.0, min(1.0, hp_a / init_hp))
+                fb = max(0.0, min(1.0, hp_b / init_hp))
+                # Left = champion (A)
+                d.text((pad, 4), f"CHAMPION  {name_a}", font=_font_sm,
+                       fill=(150, 190, 235))
+                d.rectangle([pad, top, pad + barw, top + barh], outline=(90, 90, 90))
+                d.rectangle([pad, top, pad + int(barw * fa), top + barh],
+                            fill=_hp_color(fa))
+                d.text((pad + barw + 8, top - 2), f"{fa*100:3.0f}%", font=_font_sm,
+                       fill=(230, 230, 230))
+                # Right = opponent (B)
+                rx = W - pad - barw
+                d.text((rx, 4), f"{name_b}  OPPONENT", font=_font_sm,
+                       fill=(235, 175, 130))
+                d.rectangle([rx, top, rx + barw, top + barh], outline=(90, 90, 90))
+                d.rectangle([rx + barw - int(barw * fb), top, rx + barw, top + barh],
+                            fill=_hp_color(fb))
+                d.text((rx - 42, top - 2), f"{fb*100:3.0f}%", font=_font_sm,
+                       fill=(230, 230, 230))
+                # Center = bout counter
+                label = f"BOUT {bout_i + 1}/{bouts}"
+                tw = d.textlength(label, font=_font) if hasattr(d, "textlength") else 70
+                d.text(((W - tw) / 2, 6), label, font=_font, fill=(235, 235, 235))
+                return np.asarray(img)
+            except Exception:
+                return fr
+
         held_ego = None
         written = 0
         results = []
@@ -508,6 +573,12 @@ class BattleTournament:
                         frame = _fit(frame)
                         if black is None:
                             black = np.zeros_like(frame)
+                        frame = _scoreboard(
+                            frame,
+                            float(bc.health[ego_id]),
+                            float(bc.health[opp_id]),
+                            bout,
+                        )
                         _append(frame)
                         written += 1
 
