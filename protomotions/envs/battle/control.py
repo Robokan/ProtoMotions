@@ -52,39 +52,49 @@ class BattleControlConfig(ControlComponentConfig):
     _target_: str = "protomotions.envs.battle.control.BattleControl"
 
     # Body sets
+    # Strike surfaces span the WHOLE limb (minus the shoulder girdle and toes):
+    # arms = upper arm + forearm/elbow + hand; legs = thigh/knee + shin + foot.
+    # This lets elbow, forearm, knee, thigh and shin strikes register, not just
+    # hands and feet. The hit integrator's closing-velocity gate means a limb
+    # resting against the opponent (clinch/block) scores ~nothing; only a limb
+    # driven into them counts.
     strike_body_names: List[str] = field(
         default_factory=lambda: [
-            "LeftHand",
-            "RightHand",
-            "LeftFoot",
-            "RightFoot",
-            "LeftShin",
-            "RightShin",
+            "LeftArm", "LeftForeArm", "LeftHand",
+            "RightArm", "RightForeArm", "RightHand",
+            "LeftLeg", "LeftShin", "LeftFoot",
+            "RightLeg", "RightShin", "RightFoot",
         ]
     )
-    # Strike groups for kickboxing diversity accounting: dealt hit energy is
-    # tracked per group so the reward can pay extra for the under-used group
-    # (a pure puncher or pure kicker leaves reward on the table).
+    # Two strike groups for kickboxing diversity accounting (dealt hit energy is
+    # tracked per group so the reward pays for the under-used group). Labels are
+    # kept as "hands"/"legs" because telemetry and monitoring key off them, but
+    # each now spans the whole upper / lower limb respectively.
     strike_body_group_names: Dict[str, List[str]] = field(
         default_factory=lambda: {
-            "hands": ["LeftHand", "RightHand"],
-            "legs": ["LeftFoot", "RightFoot", "LeftShin", "RightShin"],
+            "hands": ["LeftArm", "LeftForeArm", "LeftHand",
+                      "RightArm", "RightForeArm", "RightHand"],
+            "legs": ["LeftLeg", "LeftShin", "LeftFoot",
+                     "RightLeg", "RightShin", "RightFoot"],
         }
     )
-    # Per-limb damage weighting, applied to RAW strike energy BEFORE the hit
-    # integrator's log-normalization. Legs already hit harder physically (more
-    # mass -> more contact force), but the log-normalization compresses that
-    # advantage, so the policy collapses to punching (easier to land). Weighting
-    # legs above hands on the raw energy restores a real payoff for kicking
-    # without falsifying the physics. Ungrouped/unlisted bodies default to 1.0.
+    # No per-limb damage multiplier: kick-vs-punch hardness is left entirely to
+    # the physics (energy = contact force x closing speed; legs hit harder via
+    # their greater mass). Kept as a 1.0 no-op knob in case a mild, explicit
+    # nudge is wanted later.
     strike_group_multipliers: Dict[str, float] = field(
-        default_factory=lambda: {"hands": 1.0, "legs": 2.0}
+        default_factory=lambda: {"hands": 1.0, "legs": 1.0}
     )
     damage_body_names: List[str] = field(
-        default_factory=lambda: ["Head", "Chest", "Hips"]
+        default_factory=lambda: ["Head", "Chest", "Spine2", "Spine1", "Hips"]
     )
-    # Region multipliers, aligned with damage_body_names (head > torso > pelvis)
-    damage_multipliers: List[float] = field(default_factory=lambda: [2.0, 1.0, 0.5])
+    # Region multipliers, aligned with damage_body_names. Spine2/Spine1 are the
+    # mid-torso (upper/lower abdomen — solar plexus / liver), previously not
+    # damageable so body shots to the stomach scored nothing.
+    # head > stomach > chest > pelvis (a clean liver/solar-plexus shot lands hard)
+    damage_multipliers: List[float] = field(
+        default_factory=lambda: [2.0, 1.0, 1.25, 1.25, 0.5]
+    )
     # Key bodies exposed in opponent observations
     key_body_names: List[str] = field(
         default_factory=lambda: ["Head", "LeftHand", "RightHand", "LeftFoot", "RightFoot"]
