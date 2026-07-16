@@ -22,3 +22,8 @@ renders/
 # (license-restricted; rebuild with scripts/run_seed_prior_pipeline.sh)
 data/soma_seed_curated.pt
 data/soma_combat_viewer.pt
+
+# Atlas rig assets: 192MB, exceeds remote push limits. Regenerate via
+# data/scripts/retune_atlas_mjcf.py + usd_convert/ chain, or rsync.
+protomotions/data/assets/mesh/Atlas/
+protomotions/data/assets/usd/atlas/
