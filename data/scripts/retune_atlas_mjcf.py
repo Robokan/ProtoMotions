@@ -93,19 +93,25 @@ def main():
             if joint.get("type") == "ball" and (joint.get("name") or "").startswith("Foot_"):
                 side = "L" if "_L_" in joint.get("name") else "R"
                 body.remove(joint)
-                for jname, axis, rng in [
+                # DECLARATION ORDER MUST BE x, y, z: the framework's
+                # euler_xyz 3-DOF decomposition (used by motion converters)
+                # assumes hinges are ordered X, Y, Z like soma23's bodies.
+                # (reversed() because insert(0) reverses.)
+                specs = [
                     (f"Foot_{side}_Pitch", "1 0 0",
                      f"{ANKLE_RANGE[0]:g} {ANKLE_RANGE[1]:g}"),
                     (f"Foot_{side}_Roll", "0 1 0", "-0.5236 0.5236"),
                     # 3rd hinge: framework requires 1-or-3 joints per body;
                     # the real Atlas 2025 foot does swivel (yaw).
                     (f"Foot_{side}_Yaw", "0 0 1", "-0.5236 0.5236"),
-                ]:
+                ]
+                for jname, axis, rng in reversed(specs):
                     j = ET.Element("joint", dict(
                         name=jname, type="hinge", pos="0 0 0", axis=axis,
                         range=rng, limited="true",
                     ))
                     body.insert(0, j)
+                for jname, _, _ in specs:
                     new_ankle_joints.append(jname)
     print("ankle balls replaced with hinges:", new_ankle_joints)
 

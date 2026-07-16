@@ -314,7 +314,7 @@
               <geom type="mesh" mesh="Leg4_L__Wbody" material="Wbody" />
               <geom type="mesh" mesh="Leg4_L" class="collision" />
               <body name="Foot_L" pos="-0.0032969 -0.435823 0.0859463">
-                <joint name="Foot_L_Yaw" type="hinge" pos="0 0 0" axis="0 0 1" range="-0.5236 0.5236" limited="true" actuatorfrcrange="-60 60" armature="0.01" frictionloss="0.1" /><joint name="Foot_L_Roll" type="hinge" pos="0 0 0" axis="0 1 0" range="-0.5236 0.5236" limited="true" actuatorfrcrange="-60 60" armature="0.01" frictionloss="0.1" /><joint name="Foot_L_Pitch" type="hinge" pos="0 0 0" axis="1 0 0" range="-0.7854 0.7854" limited="true" actuatorfrcrange="-90 90" armature="0.015" frictionloss="0.1" /><geom type="mesh" mesh="Foot_L__Aluminium" material="Aluminium" />
+                <joint name="Foot_L_Pitch" type="hinge" pos="0 0 0" axis="1 0 0" range="-0.7854 0.7854" limited="true" actuatorfrcrange="-90 90" armature="0.015" frictionloss="0.1" /><joint name="Foot_L_Roll" type="hinge" pos="0 0 0" axis="0 1 0" range="-0.5236 0.5236" limited="true" actuatorfrcrange="-60 60" armature="0.01" frictionloss="0.1" /><joint name="Foot_L_Yaw" type="hinge" pos="0 0 0" axis="0 0 1" range="-0.5236 0.5236" limited="true" actuatorfrcrange="-60 60" armature="0.01" frictionloss="0.1" /><geom type="mesh" mesh="Foot_L__Aluminium" material="Aluminium" />
                 <geom type="mesh" mesh="Foot_L__Bbody" material="Bbody" />
                 <geom type="mesh" mesh="Foot_L__Rubber" material="Rubber" />
                 <geom type="mesh" mesh="Foot_L" class="collision" />
@@ -348,7 +348,7 @@
               <geom type="mesh" mesh="Leg4_R__Wbody" material="Wbody" />
               <geom type="mesh" mesh="Leg4_R" class="collision" />
               <body name="Foot_R" pos="0.00329714 -0.444216 0.000808588">
-                <joint name="Foot_R_Yaw" type="hinge" pos="0 0 0" axis="0 0 1" range="-0.5236 0.5236" limited="true" actuatorfrcrange="-60 60" armature="0.01" frictionloss="0.1" /><joint name="Foot_R_Roll" type="hinge" pos="0 0 0" axis="0 1 0" range="-0.5236 0.5236" limited="true" actuatorfrcrange="-60 60" armature="0.01" frictionloss="0.1" /><joint name="Foot_R_Pitch" type="hinge" pos="0 0 0" axis="1 0 0" range="-0.7854 0.7854" limited="true" actuatorfrcrange="-90 90" armature="0.015" frictionloss="0.1" /><geom type="mesh" mesh="Foot_R__Aluminium" material="Aluminium" />
+                <joint name="Foot_R_Pitch" type="hinge" pos="0 0 0" axis="1 0 0" range="-0.7854 0.7854" limited="true" actuatorfrcrange="-90 90" armature="0.015" frictionloss="0.1" /><joint name="Foot_R_Roll" type="hinge" pos="0 0 0" axis="0 1 0" range="-0.5236 0.5236" limited="true" actuatorfrcrange="-60 60" armature="0.01" frictionloss="0.1" /><joint name="Foot_R_Yaw" type="hinge" pos="0 0 0" axis="0 0 1" range="-0.5236 0.5236" limited="true" actuatorfrcrange="-60 60" armature="0.01" frictionloss="0.1" /><geom type="mesh" mesh="Foot_R__Aluminium" material="Aluminium" />
                 <geom type="mesh" mesh="Foot_R__Bbody" material="Bbody" />
                 <geom type="mesh" mesh="Foot_R__Rubber" material="Rubber" />
                 <geom type="mesh" mesh="Foot_R" class="collision" />
