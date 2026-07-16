@@ -121,6 +121,12 @@ def _quat_to_mat(q) -> np.ndarray:
 _ZUP_TO_YUP = np.array([[1.0, 0.0, 0.0], [0.0, 0.0, 1.0], [0.0, -1.0, 0.0]])
 
 
+# This ufbx binding SEGFAULTS when a Scene object is destroyed — keep every
+# loaded scene alive for the process lifetime (callers should os._exit before
+# interpreter teardown to skip the destructors entirely).
+_SCENE_KEEPALIVE = []
+
+
 def load_tpose_bind(tpose_path: Path):
     """Bind world rotations {manny_bone: [3,3]} from a T-pose reference FBX.
 
@@ -132,6 +138,7 @@ def load_tpose_bind(tpose_path: Path):
     import ufbx
 
     scene = ufbx.load_file(str(tpose_path))
+    _SCENE_KEEPALIVE.append(scene)
     wanted = set(MANNY_MAP.values())
     by_name = {n.name: n for n in scene.nodes}
     missing = wanted - set(by_name)
@@ -190,6 +197,7 @@ def load_fbx_frames(fbx_path: Path, output_fps: int):
     import ufbx
 
     scene = ufbx.load_file(str(fbx_path))
+    _SCENE_KEEPALIVE.append(scene)
 
     wanted = set(MANNY_MAP.values())
     by_name = {n.name: n for n in scene.nodes}
@@ -505,6 +513,13 @@ def main():
     print(f"\nconverted: {converted} | failed: {len(failed)}")
     for name, reason in failed[:20]:
         print(f"  FAIL {name}: {reason[:90]}")
+
+    # Skip interpreter teardown: destroying kept-alive ufbx scenes segfaults
+    # this binding (the source of the exit-code -11 "crashes" after successful
+    # saves). Work is flushed; exit hard with a real code.
+    import os
+    sys.stdout.flush()
+    os._exit(0)
 
 
 if __name__ == "__main__":
