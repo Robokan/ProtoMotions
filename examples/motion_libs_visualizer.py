@@ -917,15 +917,22 @@ class MotionVisualizerSmoothness:
                         self._loops_done = 0
                         self._switch_to_next_motion()
 
-            # Zero torque control to maintain pose
-            _common_actions = torch.zeros(
-                self.num_envs, self.kinematic_info.num_dofs, device=self.device
-            )
-
             if marker_states is None or step_count % frames_per_step == 0:
                 marker_states = self._get_updated_marker_positions()
 
-            self.simulator.step(_common_actions, markers_callback=lambda: marker_states)
+            # PURE KINEMATIC playback: update markers and render WITHOUT
+            # stepping physics. The old simulator.step(zero_actions) ran real
+            # physics substeps between pose teleports — gravity + zero-target
+            # PD dragged the body off the mocap every frame, making playback
+            # look like a (bad) tracker following the motion, with genuine
+            # foot contacts. Skipping the step shows the recorded motion
+            # exactly as stored.
+            if marker_states:
+                self.simulator._update_markers(marker_states)
+            self.simulator.render()  # camera follow + recording bookkeeping
+            inner_sim = getattr(self.simulator, "_sim", None)
+            if inner_sim is not None and not self.simulator.headless:
+                inner_sim.render()  # draw the frame (isaaclab)
 
             step_count += 1
 
