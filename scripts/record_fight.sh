@@ -19,7 +19,7 @@
 set -euo pipefail
 
 BOUTS="${1:-3}"
-RUN="${2:-soma_battle_league_v3}"
+RUN="${2:-soma_battle_league_v4}"
 RESOLVED="results/${RUN}/resolved_configs_inference.pt"
 OUT_DIR="output/fight_videos"
 

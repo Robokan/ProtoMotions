@@ -102,21 +102,28 @@ def compute_range_reward(
     desired_range: float = 1.0,
     weak_gain: float = 0.2,
     back_away_distance: float = 3.0,
+    min_closing_speed: float = 0.5,
 ) -> Tensor:
-    """Approach/range shaping (IsaacLabASE ``r_close``).
+    """Approach/range shaping (IsaacLabASE ``r_close``, satisficing variant).
 
-    Outside ``desired_range``: reward closing speed toward the opponent.
-    Inside: heavily attenuated closing reward (don't reward crowding).
+    Outside ``desired_range``: full reward for ANY closing speed at or above
+    ``min_closing_speed`` — the reward saturates, so a cautious stalk and an
+    explosive blitz earn the same. Below the floor it ramps linearly (keeps a
+    learning gradient toward moving in). The original linear-in-speed version
+    baked "faster approach is better" into the strategy space; approach pace
+    is a tactic the league should discover, not a constant we prescribe.
+    Inside: heavily attenuated (don't reward crowding).
     Opponent down: reward holding ``back_away_distance`` instead of piling on.
     """
     delta_xy = opp_root_pos[..., :2] - root_pos[..., :2]
     dist = torch.norm(delta_xy, dim=-1)
     u = torch.nn.functional.normalize(delta_xy, dim=-1)
     toward_speed = (root_vel[..., :2] * u).sum(dim=-1).clamp_min(0.0)
+    closing = (toward_speed / max(min_closing_speed, 1e-6)).clamp(0.0, 1.0)
 
-    outside = toward_speed
+    outside = closing
     x = (dist / desired_range).clamp(0.0, 1.0)
-    inside = weak_gain * x * x * toward_speed
+    inside = weak_gain * x * x * closing
     r = torch.where(dist > desired_range, outside, inside)
 
     # Opponent on the ground: back off to a respectful distance

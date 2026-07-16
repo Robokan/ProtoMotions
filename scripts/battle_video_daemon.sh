@@ -30,7 +30,7 @@
 #   WORKDIR=/workspace/sparkpack/ProtoMotions   repo root inside container
 set -uo pipefail
 
-RUN="${1:-soma_battle_league_v3}"
+RUN="${1:-soma_battle_league_v4}"
 INTERVAL="${2:-3600}"
 CONTAINER="${3:-battle}"
 MIN_GB="${MIN_GB:-25}"

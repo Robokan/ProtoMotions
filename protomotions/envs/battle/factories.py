@@ -112,7 +112,11 @@ def battle_range_reward_factory(
     weight: float = 4.0,
     desired_range: float = 1.0,
     back_away_distance: float = 3.0,
+    min_closing_speed: float = 0.5,
 ) -> MdpComponent:
+    """Satisficing approach reward: full credit for closing at or above
+    ``min_closing_speed`` (m/s), no extra for charging faster — approach pace
+    is a tactic for the league to discover, not a prescribed optimum."""
     return MdpComponent(
         compute_func=compute_range_reward,
         dynamic_vars={
@@ -125,6 +129,7 @@ def battle_range_reward_factory(
             "weight": weight,
             "desired_range": desired_range,
             "back_away_distance": back_away_distance,
+            "min_closing_speed": min_closing_speed,
         },
     )
 
