@@ -61,10 +61,26 @@ def _unwrap(v):
     return np.asarray(v)
 
 
-def load_npy_frames(npy_path: Path, output_fps: int):
+def _slerp_quats(q: np.ndarray, t_idx: np.ndarray) -> np.ndarray:
+    """Sample quaternion tracks [T, J, 4] at fractional frame indices."""
+    lo = np.floor(t_idx).astype(np.int64).clip(0, len(q) - 1)
+    hi = np.minimum(lo + 1, len(q) - 1)
+    a = (t_idx - lo)[:, None, None]
+    q0, q1 = q[lo], q[hi]
+    # Align hemispheres then normalized lerp (adequate at 30fps deltas).
+    dot = (q0 * q1).sum(-1, keepdims=True)
+    q1 = np.where(dot < 0, -q1, q1)
+    out = (1 - a) * q0 + a * q1
+    return out / np.clip(np.linalg.norm(out, axis=-1, keepdims=True), 1e-9, None)
+
+
+def load_npy_frames(npy_path: Path, output_fps: int, time_scale: float = 1.0):
     """Poselib npy -> (world_rots {manny_bone: [T,3,3]}, root_pos [T,3]).
 
     Output is meters, y-up — the frame the shared retarget expects.
+    ``time_scale`` > 1 stretches the clip (slows it down): a 1.35 stretch cuts
+    all velocities ~26%, the lever for taming whip-fast game-anim strikes the
+    physics tracker cannot follow.
     """
     data = np.load(npy_path, allow_pickle=True).item()
     if not data.get("is_local", False):
@@ -82,21 +98,25 @@ def load_npy_frames(npy_path: Path, output_fps: int):
     if missing:
         raise ValueError(f"missing bones: {sorted(missing)}")
 
+    # Time resampling: source-fps conversion and/or time_scale stretch, done
+    # on the local quats (slerp) BEFORE FK so the result stays smooth.
+    T = quats.shape[0]
+    eff = (output_fps / fps) * max(time_scale, 1e-3)
+    if abs(eff - 1.0) > 1e-6:
+        new_T = max(2, int(round(T * eff)))
+        t_idx = np.linspace(0.0, T - 1.0, new_T)
+        quats = _slerp_quats(quats, t_idx)
+        lo = np.floor(t_idx).astype(np.int64).clip(0, T - 1)
+        hi = np.minimum(lo + 1, T - 1)
+        a = (t_idx - lo)[:, None]
+        root_t = (1 - a) * root_t[lo] + a * root_t[hi]
+
     local = _quats_to_mats(quats)  # [T, J, 3, 3]
-    T, J = local.shape[:2]
+    J = local.shape[1]
     world = np.empty_like(local)
     for j in range(J):  # parent_indices are topologically ordered in poselib
         p = parents[j]
         world[:, j] = local[:, j] if p < 0 else world[:, p] @ local[:, j]
-
-    # Resample to output fps by nearest-frame (fps is usually already 30).
-    if fps != output_fps:
-        idx = np.clip(
-            np.round(np.arange(0, T * output_fps / fps) * fps / output_fps),
-            0, T - 1,
-        ).astype(np.int64)
-        world = world[idx]
-        root_t = root_t[idx]
 
     name_to_j = {n: i for i, n in enumerate(names)}
     world_rots = {
@@ -117,6 +137,13 @@ def main():
     parser.add_argument("--ignore-filter", action="store_true")
     parser.add_argument("--min-height", type=float, default=-0.15)
     parser.add_argument("--max-velocity", type=float, default=20.0)
+    parser.add_argument(
+        "--time-scale",
+        type=float,
+        default=1.0,
+        help="Stretch factor >1 slows the clip (1.35 cuts velocities ~26%%) — "
+        "rescues whip-fast strikes the physics tracker cannot follow.",
+    )
     parser.add_argument(
         "--single-file",
         type=str,
@@ -144,6 +171,7 @@ def main():
                    "--output-fps", str(args.output_fps),
                    "--min-height", str(args.min_height),
                    "--max-velocity", str(args.max_velocity),
+                   "--time-scale", str(args.time_scale),
                    "--single-file", f.name]
             if args.mirror:
                 cmd.append("--mirror")
@@ -180,7 +208,9 @@ def main():
     converted, failed = 0, []
     for f in files:
         try:
-            world_rots, root_pos = load_npy_frames(f, args.output_fps)
+            world_rots, root_pos = load_npy_frames(
+                f, args.output_fps, time_scale=args.time_scale
+            )
         except Exception as exc:  # noqa: BLE001
             failed.append((f.name, str(exc)))
             continue

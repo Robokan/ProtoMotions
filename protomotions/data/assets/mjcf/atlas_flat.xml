@@ -1,0 +1,381 @@
+<mujoco model="atlas">
+  <compiler angle="radian" meshdir="../mesh/Atlas/" />
+  <option gravity="0 0 -9.81" />
+  <visual>
+    <global offwidth="1280" offheight="960" />
+  </visual>
+  <asset>
+    <texture type="2d" name="tex_Aluminium" file="../mesh/Atlas/textures/Aluminium_Difusse.png" />
+    <material name="Aluminium" specular="0.4" shininess="0.4" texture="tex_Aluminium" />
+    <texture type="2d" name="tex_Aluminium_Blue" file="../mesh/Atlas/textures/Aluminiumblue_Difusse.png" />
+    <material name="Aluminium_Blue" specular="0.4" shininess="0.4" texture="tex_Aluminium_Blue" />
+    <texture type="2d" name="tex_Bbody" file="../mesh/Atlas/textures/Bbody_Roughness.png" />
+    <material name="Bbody" specular="0.4" shininess="0.4" texture="tex_Bbody" />
+    <texture type="2d" name="tex_Emission" file="../mesh/Atlas/textures/Emission_Difusse.png" />
+    <material name="Emission" specular="0.4" shininess="0.4" texture="tex_Emission" />
+    <texture type="2d" name="tex_Glass" file="../mesh/Atlas/textures/Glass_Difusse.png" />
+    <material name="Glass" specular="0.4" shininess="0.4" texture="tex_Glass" />
+    <texture type="2d" name="tex_Plastic" file="../mesh/Atlas/textures/Plastic_Difusse.png" />
+    <material name="Plastic" specular="0.4" shininess="0.4" texture="tex_Plastic" />
+    <texture type="2d" name="tex_Rubber" file="../mesh/Atlas/textures/Ruber_Difusse.png" />
+    <material name="Rubber" specular="0.4" shininess="0.4" texture="tex_Rubber" />
+    <texture type="2d" name="tex_Wbody" file="../mesh/Atlas/textures/Wbody_Difusse.png" />
+    <material name="Wbody" specular="0.4" shininess="0.4" texture="tex_Wbody" />
+    <mesh name="Hip" file="Hip.obj" />
+    <mesh name="Hip__Aluminium_Blue" file="Hip__Aluminium_Blue.obj" />
+    <mesh name="Hip__Wbody" file="Hip__Wbody.obj" />
+    <mesh name="Waist" file="Waist.obj" />
+    <mesh name="Waist__Aluminium" file="Waist__Aluminium.obj" />
+    <mesh name="Waist__Aluminium_Blue" file="Waist__Aluminium_Blue.obj" />
+    <mesh name="Waist__Bbody" file="Waist__Bbody.obj" />
+    <mesh name="Chest" file="Chest.obj" />
+    <mesh name="Chest__Aluminium" file="Chest__Aluminium.obj" />
+    <mesh name="Chest__Emission" file="Chest__Emission.obj" />
+    <mesh name="Chest__Plastic" file="Chest__Plastic.obj" />
+    <mesh name="Chest__Wbody" file="Chest__Wbody.obj" />
+    <mesh name="Neck_1" file="Neck_1.obj" />
+    <mesh name="Neck_1__Aluminium" file="Neck_1__Aluminium.obj" />
+    <mesh name="Head" file="Head.obj" />
+    <mesh name="Head__Aluminium" file="Head__Aluminium.obj" />
+    <mesh name="Head__Emission" file="Head__Emission.obj" />
+    <mesh name="Head__Glass" file="Head__Glass.obj" />
+    <mesh name="Head__Plastic" file="Head__Plastic.obj" />
+    <mesh name="Head__Wbody" file="Head__Wbody.obj" />
+    <mesh name="Arm1_L" file="Arm1_L.obj" />
+    <mesh name="Arm1_L__Aluminium" file="Arm1_L__Aluminium.obj" />
+    <mesh name="Arm1_L__Aluminium_Blue" file="Arm1_L__Aluminium_Blue.obj" />
+    <mesh name="Arm1_L__Bbody" file="Arm1_L__Bbody.obj" />
+    <mesh name="Arm2_L" file="Arm2_L.obj" />
+    <mesh name="Arm2_L__Wbody" file="Arm2_L__Wbody.obj" />
+    <mesh name="Arm3_L" file="Arm3_L.obj" />
+    <mesh name="Arm3_L__Aluminium" file="Arm3_L__Aluminium.obj" />
+    <mesh name="Arm3_L__Aluminium_Blue" file="Arm3_L__Aluminium_Blue.obj" />
+    <mesh name="Arm3_L__Bbody" file="Arm3_L__Bbody.obj" />
+    <mesh name="Arm4_L" file="Arm4_L.obj" />
+    <mesh name="Arm4_L__Aluminium" file="Arm4_L__Aluminium.obj" />
+    <mesh name="Arm4_L__Aluminium_Blue" file="Arm4_L__Aluminium_Blue.obj" />
+    <mesh name="Arm4_L__Bbody" file="Arm4_L__Bbody.obj" />
+    <mesh name="Arm4_L__Rubber" file="Arm4_L__Rubber.obj" />
+    <mesh name="Arm7_L" file="Arm7_L.obj" />
+    <mesh name="Arm7_L__Aluminium" file="Arm7_L__Aluminium.obj" />
+    <mesh name="Arm7_L__Bbody" file="Arm7_L__Bbody.obj" />
+    <mesh name="Arm5_L" file="Arm5_L.obj" />
+    <mesh name="Arm5_L__Aluminium" file="Arm5_L__Aluminium.obj" />
+    <mesh name="Arm5_L__Bbody" file="Arm5_L__Bbody.obj" />
+    <mesh name="Arm6_L" file="Arm6_L.obj" />
+    <mesh name="Arm6_L__Aluminium_Blue" file="Arm6_L__Aluminium_Blue.obj" />
+    <mesh name="Arm6_L__Wbody" file="Arm6_L__Wbody.obj" />
+    <mesh name="Hand1_L" file="Hand1_L.obj" />
+    <mesh name="Hand1_L__Aluminium" file="Hand1_L__Aluminium.obj" />
+    <mesh name="Hand1_L__Aluminium_Blue" file="Hand1_L__Aluminium_Blue.obj" />
+    <mesh name="Hand1_L__Bbody" file="Hand1_L__Bbody.obj" />
+    <mesh name="Hand1_L__Rubber" file="Hand1_L__Rubber.obj" />
+    <mesh name="Arm1_R" file="Arm1_R.obj" />
+    <mesh name="Arm1_R__Aluminium" file="Arm1_R__Aluminium.obj" />
+    <mesh name="Arm1_R__Aluminium_Blue" file="Arm1_R__Aluminium_Blue.obj" />
+    <mesh name="Arm1_R__Bbody" file="Arm1_R__Bbody.obj" />
+    <mesh name="Arm2_R" file="Arm2_R.obj" />
+    <mesh name="Arm2_R__Wbody" file="Arm2_R__Wbody.obj" />
+    <mesh name="Arm3_R" file="Arm3_R.obj" />
+    <mesh name="Arm3_R__Aluminium" file="Arm3_R__Aluminium.obj" />
+    <mesh name="Arm3_R__Aluminium_Blue" file="Arm3_R__Aluminium_Blue.obj" />
+    <mesh name="Arm3_R__Bbody" file="Arm3_R__Bbody.obj" />
+    <mesh name="Arm4_R" file="Arm4_R.obj" />
+    <mesh name="Arm4_R__Aluminium" file="Arm4_R__Aluminium.obj" />
+    <mesh name="Arm4_R__Aluminium_Blue" file="Arm4_R__Aluminium_Blue.obj" />
+    <mesh name="Arm4_R__Bbody" file="Arm4_R__Bbody.obj" />
+    <mesh name="Arm4_R__Rubber" file="Arm4_R__Rubber.obj" />
+    <mesh name="Arm7_R" file="Arm7_R.obj" />
+    <mesh name="Arm7_R__Aluminium" file="Arm7_R__Aluminium.obj" />
+    <mesh name="Arm7_R__Bbody" file="Arm7_R__Bbody.obj" />
+    <mesh name="Arm5_R" file="Arm5_R.obj" />
+    <mesh name="Arm5_R__Aluminium" file="Arm5_R__Aluminium.obj" />
+    <mesh name="Arm5_R__Bbody" file="Arm5_R__Bbody.obj" />
+    <mesh name="Arm6_R" file="Arm6_R.obj" />
+    <mesh name="Arm6_R__Aluminium_Blue" file="Arm6_R__Aluminium_Blue.obj" />
+    <mesh name="Arm6_R__Wbody" file="Arm6_R__Wbody.obj" />
+    <mesh name="Hand1_R" file="Hand1_R.obj" />
+    <mesh name="Hand1_R__Aluminium" file="Hand1_R__Aluminium.obj" />
+    <mesh name="Hand1_R__Aluminium_Blue" file="Hand1_R__Aluminium_Blue.obj" />
+    <mesh name="Hand1_R__Bbody" file="Hand1_R__Bbody.obj" />
+    <mesh name="Hand1_R__Rubber" file="Hand1_R__Rubber.obj" />
+    <mesh name="Leg1_L" file="Leg1_L.obj" />
+    <mesh name="Leg1_L__Aluminium" file="Leg1_L__Aluminium.obj" />
+    <mesh name="Leg1_L__Bbody" file="Leg1_L__Bbody.obj" />
+    <mesh name="Leg2_L" file="Leg2_L.obj" />
+    <mesh name="Leg2_L__Bbody" file="Leg2_L__Bbody.obj" />
+    <mesh name="Leg2_L__Plastic" file="Leg2_L__Plastic.obj" />
+    <mesh name="Leg2_L__Wbody" file="Leg2_L__Wbody.obj" />
+    <mesh name="Leg3_L" file="Leg3_L.obj" />
+    <mesh name="Leg3_L__Aluminium" file="Leg3_L__Aluminium.obj" />
+    <mesh name="Leg3_L__Bbody" file="Leg3_L__Bbody.obj" />
+    <mesh name="Leg3_L__Wbody" file="Leg3_L__Wbody.obj" />
+    <mesh name="Leg4_L" file="Leg4_L.obj" />
+    <mesh name="Leg4_L__Aluminium" file="Leg4_L__Aluminium.obj" />
+    <mesh name="Leg4_L__Aluminium_Blue" file="Leg4_L__Aluminium_Blue.obj" />
+    <mesh name="Leg4_L__Bbody" file="Leg4_L__Bbody.obj" />
+    <mesh name="Leg4_L__Wbody" file="Leg4_L__Wbody.obj" />
+    <mesh name="Foot_L" file="Foot_L.obj" />
+    <mesh name="Foot_L__Aluminium" file="Foot_L__Aluminium.obj" />
+    <mesh name="Foot_L__Bbody" file="Foot_L__Bbody.obj" />
+    <mesh name="Foot_L__Rubber" file="Foot_L__Rubber.obj" />
+    <mesh name="Leg1_R" file="Leg1_R.obj" />
+    <mesh name="Leg1_R__Aluminium" file="Leg1_R__Aluminium.obj" />
+    <mesh name="Leg1_R__Bbody" file="Leg1_R__Bbody.obj" />
+    <mesh name="Leg2_R" file="Leg2_R.obj" />
+    <mesh name="Leg2_R__Bbody" file="Leg2_R__Bbody.obj" />
+    <mesh name="Leg2_R__Plastic" file="Leg2_R__Plastic.obj" />
+    <mesh name="Leg2_R__Wbody" file="Leg2_R__Wbody.obj" />
+    <mesh name="Leg3_R" file="Leg3_R.obj" />
+    <mesh name="Leg3_R__Aluminium" file="Leg3_R__Aluminium.obj" />
+    <mesh name="Leg3_R__Bbody" file="Leg3_R__Bbody.obj" />
+    <mesh name="Leg3_R__Wbody" file="Leg3_R__Wbody.obj" />
+    <mesh name="Leg4_R" file="Leg4_R.obj" />
+    <mesh name="Leg4_R__Aluminium" file="Leg4_R__Aluminium.obj" />
+    <mesh name="Leg4_R__Aluminium_Blue" file="Leg4_R__Aluminium_Blue.obj" />
+    <mesh name="Leg4_R__Bbody" file="Leg4_R__Bbody.obj" />
+    <mesh name="Leg4_R__Wbody" file="Leg4_R__Wbody.obj" />
+    <mesh name="Foot_R" file="Foot_R.obj" />
+    <mesh name="Foot_R__Aluminium" file="Foot_R__Aluminium.obj" />
+    <mesh name="Foot_R__Bbody" file="Foot_R__Bbody.obj" />
+    <mesh name="Foot_R__Rubber" file="Foot_R__Rubber.obj" />
+  </asset>
+  <worldbody>
+    <light pos="0 0 3" dir="0 0 -1" diffuse="0.8 0.8 0.8" specular="0.3 0.3 0.3" />
+    <geom name="floor" type="plane" size="5 5 0.1" rgba="0.8 0.9 0.8 1" contype="1" conaffinity="1" group="2" density="0" />
+    <body name="Hip" pos="-1.41474e-05 -0.15036 1.06151" quat="1 0 0 0">
+      <geom type="mesh" mesh="Hip__Aluminium_Blue" material="Aluminium_Blue" pos="0 0 0" quat="0.6708201 0.74162011 -2.6347604e-14 -4.2156206e-14" contype="0" conaffinity="0" group="1" density="0" name="Hip__Aluminium_Blue_visual" />
+      <geom type="mesh" mesh="Hip__Wbody" material="Wbody" pos="0 0 0" quat="0.6708201 0.74162011 -2.6347604e-14 -4.2156206e-14" contype="0" conaffinity="0" group="1" density="0" name="Hip__Wbody_visual" />
+      <geom type="mesh" mesh="Hip" pos="0 0 0" quat="0.6708201 0.74162011 -2.6347604e-14 -4.2156206e-14" contype="1" conaffinity="1" group="3" density="592.77" rgba="0.5 0.5 0.5 0.5" name="Hip_geom" />
+      <body name="Waist" pos="1.40684e-05 -0.024572036 -0.13845927" quat="0.6708201 0.74162011 -2.6347604e-14 -4.2156206e-14">
+        <joint name="Twist_Joint" pos="0 0 0" axis="-4.5413e-09 0.996733 -0.0807635" type="hinge" range="-0.785398 0.785398" limited="true" actuatorfrcrange="-140 140" armature="0.03" frictionloss="0.1" damping="1.0" />
+        <geom type="mesh" mesh="Waist__Aluminium" material="Aluminium" contype="0" conaffinity="0" group="1" density="0" name="Waist__Aluminium_visual" />
+        <geom type="mesh" mesh="Waist__Aluminium_Blue" material="Aluminium_Blue" contype="0" conaffinity="0" group="1" density="0" name="Waist__Aluminium_Blue_visual" />
+        <geom type="mesh" mesh="Waist__Bbody" material="Bbody" contype="0" conaffinity="0" group="1" density="0" name="Waist__Bbody_visual" />
+        <geom type="mesh" mesh="Waist" contype="1" conaffinity="1" group="3" density="592.77" rgba="0.5 0.5 0.5 0.5" name="Waist_geom" />
+        <body name="Chest" pos="-0.000993592 0.277748 -0.0462775">
+          <joint name="Backbone_Joint" pos="0 0 0" axis="-0.999986 0.0026688 0.00452751" type="hinge" range="-0.785398 0.785398" limited="true" actuatorfrcrange="-140 140" armature="0.03" frictionloss="0.1" damping="1.0" />
+          <geom type="mesh" mesh="Chest__Aluminium" material="Aluminium" contype="0" conaffinity="0" group="1" density="0" name="Chest__Aluminium_visual" />
+          <geom type="mesh" mesh="Chest__Emission" material="Emission" contype="0" conaffinity="0" group="1" density="0" name="Chest__Emission_visual" />
+          <geom type="mesh" mesh="Chest__Plastic" material="Plastic" contype="0" conaffinity="0" group="1" density="0" name="Chest__Plastic_visual" />
+          <geom type="mesh" mesh="Chest__Wbody" material="Wbody" contype="0" conaffinity="0" group="1" density="0" name="Chest__Wbody_visual" />
+          <geom type="mesh" mesh="Chest" contype="1" conaffinity="1" group="3" density="592.77" rgba="0.5 0.5 0.5 0.5" name="Chest_geom" />
+          <body name="Neck_1" pos="0.00130593 0.457717 -0.0275483">
+            <joint name="Neck_2_Joint" pos="0 0 0" axis="-0.999832 0.017648 0.00485446" type="hinge" range="-0.785398 0.785398" limited="true" actuatorfrcrange="-25 25" armature="0.005" frictionloss="0.1" damping="1.0" />
+            <geom type="mesh" mesh="Neck_1__Aluminium" material="Aluminium" contype="0" conaffinity="0" group="1" density="0" name="Neck_1__Aluminium_visual" />
+            <geom type="mesh" mesh="Neck_1" contype="1" conaffinity="1" group="3" density="592.77" rgba="0.5 0.5 0.5 0.5" name="Neck_1_geom" />
+            <body name="Head" pos="0.000462341 0.0258914 -0.00161411" quat="0.905481 -0.424125 0.00491796 -0.0140914">
+              <joint name="Head_Joint" pos="0 0 0" axis="-0.0296906 0.639839 0.767935" type="hinge" range="-1.5708 1.5708" limited="true" actuatorfrcrange="-25 25" armature="0.005" frictionloss="0.1" damping="1.0" />
+              <geom type="mesh" mesh="Head__Aluminium" material="Aluminium" contype="0" conaffinity="0" group="1" density="0" name="Head__Aluminium_visual" />
+              <geom type="mesh" mesh="Head__Emission" material="Emission" contype="0" conaffinity="0" group="1" density="0" name="Head__Emission_visual" />
+              <geom type="mesh" mesh="Head__Glass" material="Glass" contype="0" conaffinity="0" group="1" density="0" name="Head__Glass_visual" />
+              <geom type="mesh" mesh="Head__Plastic" material="Plastic" contype="0" conaffinity="0" group="1" density="0" name="Head__Plastic_visual" />
+              <geom type="mesh" mesh="Head__Wbody" material="Wbody" contype="0" conaffinity="0" group="1" density="0" name="Head__Wbody_visual" />
+              <geom type="mesh" mesh="Head" contype="1" conaffinity="1" group="3" density="592.77" rgba="0.5 0.5 0.5 0.5" name="Head_geom" />
+            </body>
+          </body>
+          <body name="Arm1_L" pos="0.145179 0.355523 -0.0288776">
+            <joint name="Arm_1_L_Joint" pos="0 0 0" axis="-0.993873 -0.11047 0.00358324" type="hinge" range="-0.785398 3.14159" limited="true" actuatorfrcrange="-90 90" armature="0.015" frictionloss="0.1" damping="1.0" />
+            <geom type="mesh" mesh="Arm1_L__Aluminium" material="Aluminium" contype="0" conaffinity="0" group="1" density="0" name="Arm1_L__Aluminium_visual" />
+            <geom type="mesh" mesh="Arm1_L__Aluminium_Blue" material="Aluminium_Blue" contype="0" conaffinity="0" group="1" density="0" name="Arm1_L__Aluminium_Blue_visual" />
+            <geom type="mesh" mesh="Arm1_L__Bbody" material="Bbody" contype="0" conaffinity="0" group="1" density="0" name="Arm1_L__Bbody_visual" />
+            <geom type="mesh" mesh="Arm1_L" contype="1" conaffinity="1" group="3" density="592.77" rgba="0.5 0.5 0.5 0.5" name="Arm1_L_geom" />
+            <body name="Arm2_L" pos="0.084146 -0.00733737 -0.00353384">
+              <joint name="Arm_3_L_Joint" pos="0 0 0" axis="0.00594887 -0.197116 0.980362" type="hinge" range="-1.5708 3.14159" limited="true" actuatorfrcrange="-90 90" armature="0.015" frictionloss="0.1" damping="1.0" />
+              <geom type="mesh" mesh="Arm2_L__Wbody" material="Wbody" contype="0" conaffinity="0" group="1" density="0" name="Arm2_L__Wbody_visual" />
+              <geom type="mesh" mesh="Arm2_L" contype="1" conaffinity="1" group="3" density="592.77" rgba="0.5 0.5 0.5 0.5" name="Arm2_L_geom" />
+              <body name="Arm3_L" pos="0.0994325 -0.185082 -0.0188377">
+                <joint name="Arm_4_L_Joint" pos="0 0 0" axis="-0.385018 0.904198 0.184897" type="hinge" range="-0.785398 0.785398" limited="true" actuatorfrcrange="-60 60" armature="0.01" frictionloss="0.1" damping="1.0" />
+                <geom type="mesh" mesh="Arm3_L__Aluminium" material="Aluminium" contype="0" conaffinity="0" group="1" density="0" name="Arm3_L__Aluminium_visual" />
+                <geom type="mesh" mesh="Arm3_L__Aluminium_Blue" material="Aluminium_Blue" contype="0" conaffinity="0" group="1" density="0" name="Arm3_L__Aluminium_Blue_visual" />
+                <geom type="mesh" mesh="Arm3_L__Bbody" material="Bbody" contype="0" conaffinity="0" group="1" density="0" name="Arm3_L__Bbody_visual" />
+                <geom type="mesh" mesh="Arm3_L" contype="1" conaffinity="1" group="3" density="592.77" rgba="0.5 0.5 0.5 0.5" name="Arm3_L_geom" />
+                <body name="Arm4_L" pos="0.0320598 -0.0772461 0.00585727" quat="0.995352 0.0963002 -6.62027e-08 1.1397e-07">
+                  <joint name="Arm_6_L_Joint" pos="0 0 0" axis="0.92419 0.381925 -0.00241082" type="hinge" range="-1.5708 0.785398" limited="true" actuatorfrcrange="-90 90" armature="0.015" frictionloss="0.1" damping="1.0" />
+                  <geom type="mesh" mesh="Arm4_L__Aluminium" material="Aluminium" contype="0" conaffinity="0" group="1" density="0" name="Arm4_L__Aluminium_visual" />
+                  <geom type="mesh" mesh="Arm4_L__Aluminium_Blue" material="Aluminium_Blue" contype="0" conaffinity="0" group="1" density="0" name="Arm4_L__Aluminium_Blue_visual" />
+                  <geom type="mesh" mesh="Arm4_L__Bbody" material="Bbody" contype="0" conaffinity="0" group="1" density="0" name="Arm4_L__Bbody_visual" />
+                  <geom type="mesh" mesh="Arm4_L__Rubber" material="Rubber" contype="0" conaffinity="0" group="1" density="0" name="Arm4_L__Rubber_visual" />
+                  <geom type="mesh" mesh="Arm4_L" contype="1" conaffinity="1" group="3" density="592.77" rgba="0.5 0.5 0.5 0.5" name="Arm4_L_geom" />
+                  <body name="Arm7_L" pos="0.046634 -0.104384 0.0851649">
+                    <joint name="Arm_7_L_Joint" pos="0 0 0" axis="-0.257524 0.741303 -0.6198" type="hinge" range="-1.5708 1.5708" limited="true" actuatorfrcrange="-30 30" armature="0.005" frictionloss="0.1" damping="1.0" />
+                    <geom type="mesh" mesh="Arm7_L__Aluminium" material="Aluminium" contype="0" conaffinity="0" group="1" density="0" name="Arm7_L__Aluminium_visual" />
+                    <geom type="mesh" mesh="Arm7_L__Bbody" material="Bbody" contype="0" conaffinity="0" group="1" density="0" name="Arm7_L__Bbody_visual" />
+                    <geom type="mesh" mesh="Arm7_L" contype="1" conaffinity="1" group="3" density="592.77" rgba="0.5 0.5 0.5 0.5" name="Arm7_L_geom" />
+                    <body name="Arm5_L" pos="0.0164872 -0.0339731 0.0517">
+                      <joint name="Arm_8_L_Joint" pos="0 0 0" axis="0.923117 0.378274 0.0690158" type="hinge" range="-1.5708 1.5708" limited="true" actuatorfrcrange="-30 30" armature="0.005" frictionloss="0.1" damping="1.0" />
+                      <geom type="mesh" mesh="Arm5_L__Aluminium" material="Aluminium" contype="0" conaffinity="0" group="1" density="0" name="Arm5_L__Aluminium_visual" />
+                      <geom type="mesh" mesh="Arm5_L__Bbody" material="Bbody" contype="0" conaffinity="0" group="1" density="0" name="Arm5_L__Bbody_visual" />
+                      <geom type="mesh" mesh="Arm5_L" contype="1" conaffinity="1" group="3" density="592.77" rgba="0.5 0.5 0.5 0.5" name="Arm5_L_geom" />
+                      <body name="Arm6_L" pos="0.0225847 -0.0463439 0.0726973">
+                        <joint name="Arm_9_L_Joint" pos="0 0 0" axis="-0.2892 0.564731 0.772944" type="hinge" range="-1.5708 1.5708" limited="true" actuatorfrcrange="-30 30" armature="0.005" frictionloss="0.1" damping="1.0" />
+                        <geom type="mesh" mesh="Arm6_L__Aluminium_Blue" material="Aluminium_Blue" contype="0" conaffinity="0" group="1" density="0" name="Arm6_L__Aluminium_Blue_visual" />
+                        <geom type="mesh" mesh="Arm6_L__Wbody" material="Wbody" contype="0" conaffinity="0" group="1" density="0" name="Arm6_L__Wbody_visual" />
+                        <geom type="mesh" mesh="Arm6_L" contype="1" conaffinity="1" group="3" density="592.77" rgba="0.5 0.5 0.5 0.5" name="Arm6_L_geom" />
+                        <body name="Hand1_L" pos="0.0123554 -0.0254644 0.0399185">
+                          <geom type="mesh" mesh="Hand1_L__Aluminium" material="Aluminium" contype="0" conaffinity="0" group="1" density="0" name="Hand1_L__Aluminium_visual" />
+                          <geom type="mesh" mesh="Hand1_L__Aluminium_Blue" material="Aluminium_Blue" contype="0" conaffinity="0" group="1" density="0" name="Hand1_L__Aluminium_Blue_visual" />
+                          <geom type="mesh" mesh="Hand1_L__Bbody" material="Bbody" contype="0" conaffinity="0" group="1" density="0" name="Hand1_L__Bbody_visual" />
+                          <geom type="mesh" mesh="Hand1_L__Rubber" material="Rubber" contype="0" conaffinity="0" group="1" density="0" name="Hand1_L__Rubber_visual" />
+                          <geom type="mesh" mesh="Hand1_L" contype="1" conaffinity="1" group="3" density="592.77" rgba="0.5 0.5 0.5 0.5" name="Hand1_L_geom" />
+                        </body>
+                      </body>
+                    </body>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+          <body name="Arm1_R" pos="-0.143191 0.355524 -0.0288776">
+            <joint name="Arm_1_R_Joint" pos="0 0 0" axis="-0.993873 0.11047 -0.00358342" type="hinge" range="-0.785398 3.14159" limited="true" actuatorfrcrange="-90 90" armature="0.015" frictionloss="0.1" damping="1.0" />
+            <geom type="mesh" mesh="Arm1_R__Aluminium" material="Aluminium" contype="0" conaffinity="0" group="1" density="0" name="Arm1_R__Aluminium_visual" />
+            <geom type="mesh" mesh="Arm1_R__Aluminium_Blue" material="Aluminium_Blue" contype="0" conaffinity="0" group="1" density="0" name="Arm1_R__Aluminium_Blue_visual" />
+            <geom type="mesh" mesh="Arm1_R__Bbody" material="Bbody" contype="0" conaffinity="0" group="1" density="0" name="Arm1_R__Bbody_visual" />
+            <geom type="mesh" mesh="Arm1_R" contype="1" conaffinity="1" group="3" density="592.77" rgba="0.5 0.5 0.5 0.5" name="Arm1_R_geom" />
+            <body name="Arm2_R" pos="-0.0841461 -0.00733777 -0.00353389" quat="0.995352 0.0962997 3.13498e-08 1.4424e-07">
+              <joint name="Arm_3_R_Joint" pos="0 0 0" axis="0.00594941 0.00552097 -0.999967" type="hinge" range="-1.5708 3.14159" limited="true" actuatorfrcrange="-90 90" armature="0.015" frictionloss="0.1" damping="1.0" />
+              <geom type="mesh" mesh="Arm2_R__Wbody" material="Wbody" contype="0" conaffinity="0" group="1" density="0" name="Arm2_R__Wbody_visual" />
+              <geom type="mesh" mesh="Arm2_R" contype="1" conaffinity="1" group="3" density="592.77" rgba="0.5 0.5 0.5 0.5" name="Arm2_R_geom" />
+              <body name="Arm3_R" pos="-0.0994326 -0.18526 0.0169923">
+                <joint name="Arm_4_R_Joint" pos="0 0 0" axis="-0.385018 -0.904198 -0.184899" type="hinge" range="-0.785398 0.785398" limited="true" actuatorfrcrange="-60 60" armature="0.01" frictionloss="0.1" damping="1.0" />
+                <geom type="mesh" mesh="Arm3_R__Aluminium" material="Aluminium" contype="0" conaffinity="0" group="1" density="0" name="Arm3_R__Aluminium_visual" />
+                <geom type="mesh" mesh="Arm3_R__Aluminium_Blue" material="Aluminium_Blue" contype="0" conaffinity="0" group="1" density="0" name="Arm3_R__Aluminium_Blue_visual" />
+                <geom type="mesh" mesh="Arm3_R__Bbody" material="Bbody" contype="0" conaffinity="0" group="1" density="0" name="Arm3_R__Bbody_visual" />
+                <geom type="mesh" mesh="Arm3_R" contype="1" conaffinity="1" group="3" density="592.77" rgba="0.5 0.5 0.5 0.5" name="Arm3_R_geom" />
+                <body name="Arm4_R" pos="-0.0320599 -0.0746908 0.0205571" quat="0.995352 -0.0962998 -2.84276e-07 3.01892e-07">
+                  <joint name="Arm_6_R_Joint" pos="0 0 0" axis="0.92419 -0.35476 -0.141484" type="hinge" range="-1.5708 0.785398" limited="true" actuatorfrcrange="-90 90" armature="0.015" frictionloss="0.1" damping="1.0" />
+                  <geom type="mesh" mesh="Arm4_R__Aluminium" material="Aluminium" contype="0" conaffinity="0" group="1" density="0" name="Arm4_R__Aluminium_visual" />
+                  <geom type="mesh" mesh="Arm4_R__Aluminium_Blue" material="Aluminium_Blue" contype="0" conaffinity="0" group="1" density="0" name="Arm4_R__Aluminium_Blue_visual" />
+                  <geom type="mesh" mesh="Arm4_R__Bbody" material="Bbody" contype="0" conaffinity="0" group="1" density="0" name="Arm4_R__Bbody_visual" />
+                  <geom type="mesh" mesh="Arm4_R__Rubber" material="Rubber" contype="0" conaffinity="0" group="1" density="0" name="Arm4_R__Rubber_visual" />
+                  <geom type="mesh" mesh="Arm4_R" contype="1" conaffinity="1" group="3" density="592.77" rgba="0.5 0.5 0.5 0.5" name="Arm4_R_geom" />
+                  <body name="Arm7_R" pos="-0.046634 -0.118774 0.0635747">
+                    <joint name="Arm_7_R_Joint" pos="0 0 0" axis="-0.257523 -0.741302 0.619801" type="hinge" range="-1.5708 1.5708" limited="true" actuatorfrcrange="-30 30" armature="0.005" frictionloss="0.1" damping="1.0" />
+                    <geom type="mesh" mesh="Arm7_R__Aluminium" material="Aluminium" contype="0" conaffinity="0" group="1" density="0" name="Arm7_R__Aluminium_visual" />
+                    <geom type="mesh" mesh="Arm7_R__Bbody" material="Bbody" contype="0" conaffinity="0" group="1" density="0" name="Arm7_R__Bbody_visual" />
+                    <geom type="mesh" mesh="Arm7_R" contype="1" conaffinity="1" group="3" density="592.77" rgba="0.5 0.5 0.5 0.5" name="Arm7_R_geom" />
+                    <body name="Arm5_R" pos="-0.0164873 -0.0432541 0.0442285">
+                      <joint name="Arm_8_R_Joint" pos="0 0 0" axis="0.923117 -0.378274 -0.0690167" type="hinge" range="-1.5708 1.5708" limited="true" actuatorfrcrange="-30 30" armature="0.005" frictionloss="0.1" damping="1.0" />
+                      <geom type="mesh" mesh="Arm5_R__Aluminium" material="Aluminium" contype="0" conaffinity="0" group="1" density="0" name="Arm5_R__Aluminium_visual" />
+                      <geom type="mesh" mesh="Arm5_R__Bbody" material="Bbody" contype="0" conaffinity="0" group="1" density="0" name="Arm5_R__Bbody_visual" />
+                      <geom type="mesh" mesh="Arm5_R" contype="1" conaffinity="1" group="3" density="592.77" rgba="0.5 0.5 0.5 0.5" name="Arm5_R_geom" />
+                      <body name="Arm6_R" pos="-0.0225846 -0.0594209 0.0624648">
+                        <joint name="Arm_9_R_Joint" pos="0 0 0" axis="-0.289202 -0.564732 -0.772943" type="hinge" range="-1.5708 1.5708" limited="true" actuatorfrcrange="-30 30" armature="0.005" frictionloss="0.1" damping="1.0" />
+                        <geom type="mesh" mesh="Arm6_R__Aluminium_Blue" material="Aluminium_Blue" contype="0" conaffinity="0" group="1" density="0" name="Arm6_R__Aluminium_Blue_visual" />
+                        <geom type="mesh" mesh="Arm6_R__Wbody" material="Wbody" contype="0" conaffinity="0" group="1" density="0" name="Arm6_R__Wbody_visual" />
+                        <geom type="mesh" mesh="Arm6_R" contype="1" conaffinity="1" group="3" density="592.77" rgba="0.5 0.5 0.5 0.5" name="Arm6_R_geom" />
+                        <body name="Hand1_R" pos="-0.0123554 -0.0326447 0.0342966">
+                          <geom type="mesh" mesh="Hand1_R__Aluminium" material="Aluminium" contype="0" conaffinity="0" group="1" density="0" name="Hand1_R__Aluminium_visual" />
+                          <geom type="mesh" mesh="Hand1_R__Aluminium_Blue" material="Aluminium_Blue" contype="0" conaffinity="0" group="1" density="0" name="Hand1_R__Aluminium_Blue_visual" />
+                          <geom type="mesh" mesh="Hand1_R__Bbody" material="Bbody" contype="0" conaffinity="0" group="1" density="0" name="Hand1_R__Bbody_visual" />
+                          <geom type="mesh" mesh="Hand1_R__Rubber" material="Rubber" contype="0" conaffinity="0" group="1" density="0" name="Hand1_R__Rubber_visual" />
+                          <geom type="mesh" mesh="Hand1_R" contype="1" conaffinity="1" group="3" density="592.77" rgba="0.5 0.5 0.5 0.5" name="Hand1_R_geom" />
+                        </body>
+                      </body>
+                    </body>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+      <body name="Leg1_L" pos="0.075976 -0.024572119 -0.073597951" quat="0.6708201 0.74162011 -2.6347604e-14 -4.2156206e-14">
+        <joint name="Leg_1_L_Joint" pos="0 0 0" axis="-0.929607 0.368469 -0.00784586" type="hinge" range="-1.5708 1.5708" limited="true" actuatorfrcrange="-280 280" armature="0.04" frictionloss="0.1" damping="1.0" />
+        <geom type="mesh" mesh="Leg1_L__Aluminium" material="Aluminium" contype="0" conaffinity="0" group="1" density="0" name="Leg1_L__Aluminium_visual" />
+        <geom type="mesh" mesh="Leg1_L__Bbody" material="Bbody" contype="0" conaffinity="0" group="1" density="0" name="Leg1_L__Bbody_visual" />
+        <geom type="mesh" mesh="Leg1_L" contype="1" conaffinity="1" group="3" density="592.77" rgba="0.5 0.5 0.5 0.5" name="Leg1_L_geom" />
+        <body name="Leg2_L" pos="0.0854835 -0.0636453 0.00585084" quat="0.351034 -0.925645 0.112501 0.0854396">
+          <joint name="Leg_3_L_Joint" pos="0 0 0" axis="-0.246971 -0.69302 -0.677294" type="hinge" range="-1.5708 1.5708" limited="true" actuatorfrcrange="-280 280" armature="0.04" frictionloss="0.1" damping="1.0" />
+          <geom type="mesh" mesh="Leg2_L__Bbody" material="Bbody" contype="0" conaffinity="0" group="1" density="0" name="Leg2_L__Bbody_visual" />
+          <geom type="mesh" mesh="Leg2_L__Plastic" material="Plastic" contype="0" conaffinity="0" group="1" density="0" name="Leg2_L__Plastic_visual" />
+          <geom type="mesh" mesh="Leg2_L__Wbody" material="Wbody" contype="0" conaffinity="0" group="1" density="0" name="Leg2_L__Wbody_visual" />
+          <geom type="mesh" mesh="Leg2_L" contype="1" conaffinity="1" group="3" density="592.77" rgba="0.5 0.5 0.5 0.5" name="Leg2_L_geom" />
+          <body name="Leg3_L" pos="-0.00644194 0.064857 -0.0714167" quat="0.351034 0.925645 -0.112502 -0.0854427">
+            <joint name="Leg_5_L_Joint" pos="0 0 0" axis="-0.0745108 0.676105 -0.733028" type="hinge" range="-0.785398 0.785398" limited="true" actuatorfrcrange="-280 280" armature="0.04" frictionloss="0.1" damping="1.0" />
+            <geom type="mesh" mesh="Leg3_L__Aluminium" material="Aluminium" contype="0" conaffinity="0" group="1" density="0" name="Leg3_L__Aluminium_visual" />
+            <geom type="mesh" mesh="Leg3_L__Bbody" material="Bbody" contype="0" conaffinity="0" group="1" density="0" name="Leg3_L__Bbody_visual" />
+            <geom type="mesh" mesh="Leg3_L__Wbody" material="Wbody" contype="0" conaffinity="0" group="1" density="0" name="Leg3_L__Wbody_visual" />
+            <geom type="mesh" mesh="Leg3_L" contype="1" conaffinity="1" group="3" density="592.77" rgba="0.5 0.5 0.5 0.5" name="Leg3_L_geom" />
+            <body name="Leg4_L" pos="0.00240404 -0.310981 0.0153778" quat="0.995351 0.096312 -1.83478e-07 7.66053e-07">
+              <joint name="Leg_8_L_Joint" pos="0 0 0" axis="-0.999059 0.00334733 -0.0432389" type="hinge" range="-2.0944 0" limited="true" actuatorfrcrange="-280 280" armature="0.04" frictionloss="0.1" damping="1.0" />
+              <geom type="mesh" mesh="Leg4_L__Aluminium" material="Aluminium" contype="0" conaffinity="0" group="1" density="0" name="Leg4_L__Aluminium_visual" />
+              <geom type="mesh" mesh="Leg4_L__Aluminium_Blue" material="Aluminium_Blue" contype="0" conaffinity="0" group="1" density="0" name="Leg4_L__Aluminium_Blue_visual" />
+              <geom type="mesh" mesh="Leg4_L__Bbody" material="Bbody" contype="0" conaffinity="0" group="1" density="0" name="Leg4_L__Bbody_visual" />
+              <geom type="mesh" mesh="Leg4_L__Wbody" material="Wbody" contype="0" conaffinity="0" group="1" density="0" name="Leg4_L__Wbody_visual" />
+              <geom type="mesh" mesh="Leg4_L" contype="1" conaffinity="1" group="3" density="592.77" rgba="0.5 0.5 0.5 0.5" name="Leg4_L_geom" />
+              <body name="Foot_L" pos="-0.0032969 -0.435823 0.0859463">
+                <joint name="Foot_L_Yaw" type="hinge" pos="0 0 0" axis="0 0 1" range="-0.5236 0.5236" limited="true" actuatorfrcrange="-60 60" armature="0.01" frictionloss="0.1" damping="1.0" /><joint name="Foot_L_Roll" type="hinge" pos="0 0 0" axis="0 1 0" range="-0.5236 0.5236" limited="true" actuatorfrcrange="-60 60" armature="0.01" frictionloss="0.1" damping="1.0" /><joint name="Foot_L_Pitch" type="hinge" pos="0 0 0" axis="1 0 0" range="-0.7854 0.7854" limited="true" actuatorfrcrange="-90 90" armature="0.015" frictionloss="0.1" damping="1.0" /><geom type="mesh" mesh="Foot_L__Aluminium" material="Aluminium" contype="0" conaffinity="0" group="1" density="0" name="Foot_L__Aluminium_visual" />
+                <geom type="mesh" mesh="Foot_L__Bbody" material="Bbody" contype="0" conaffinity="0" group="1" density="0" name="Foot_L__Bbody_visual" />
+                <geom type="mesh" mesh="Foot_L__Rubber" material="Rubber" contype="0" conaffinity="0" group="1" density="0" name="Foot_L__Rubber_visual" />
+                <geom type="mesh" mesh="Foot_L" contype="1" conaffinity="1" group="3" density="592.77" rgba="0.5 0.5 0.5 0.5" name="Foot_L_geom" />
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+      <body name="Leg1_R" pos="-0.0759477 -0.024572019 -0.073597941" quat="0.59628404 0.80277311 1.930571e-07 1.6763753e-07">
+        <joint name="Leg_1_R_Joint" pos="0 0 0" axis="-0.929607 -0.360131 0.078336" type="hinge" range="-1.5708 1.5708" limited="true" actuatorfrcrange="-280 280" armature="0.04" frictionloss="0.1" damping="1.0" />
+        <geom type="mesh" mesh="Leg1_R__Aluminium" material="Aluminium" contype="0" conaffinity="0" group="1" density="0" name="Leg1_R__Aluminium_visual" />
+        <geom type="mesh" mesh="Leg1_R__Bbody" material="Bbody" contype="0" conaffinity="0" group="1" density="0" name="Leg1_R__Bbody_visual" />
+        <geom type="mesh" mesh="Leg1_R" contype="1" conaffinity="1" group="3" density="592.77" rgba="0.5 0.5 0.5 0.5" name="Leg1_R_geom" />
+        <body name="Leg2_R" pos="-0.0854836 -0.0613431 0.0179428" quat="0.83997 -0.524549 0.130628 0.047286">
+          <joint name="Leg_3_R_Joint" pos="0 0 0" axis="0.275417 0.82571 -0.492289" type="hinge" range="-1.5708 1.5708" limited="true" actuatorfrcrange="-280 280" armature="0.04" frictionloss="0.1" damping="1.0" />
+          <geom type="mesh" mesh="Leg2_R__Bbody" material="Bbody" contype="0" conaffinity="0" group="1" density="0" name="Leg2_R__Bbody_visual" />
+          <geom type="mesh" mesh="Leg2_R__Plastic" material="Plastic" contype="0" conaffinity="0" group="1" density="0" name="Leg2_R__Plastic_visual" />
+          <geom type="mesh" mesh="Leg2_R__Wbody" material="Wbody" contype="0" conaffinity="0" group="1" density="0" name="Leg2_R__Wbody_visual" />
+          <geom type="mesh" mesh="Leg2_R" contype="1" conaffinity="1" group="3" density="592.77" rgba="0.5 0.5 0.5 0.5" name="Leg2_R_geom" />
+          <body name="Leg3_R" pos="0.0140158 -0.0709312 -0.0641917" quat="0.83997 0.524549 -0.130629 -0.0472862">
+            <joint name="Leg_5_R_Joint" pos="0 0 0" axis="-0.170051 -0.889126 -0.424896" type="hinge" range="-0.785398 0.785398" limited="true" actuatorfrcrange="-280 280" armature="0.04" frictionloss="0.1" damping="1.0" />
+            <geom type="mesh" mesh="Leg3_R__Aluminium" material="Aluminium" contype="0" conaffinity="0" group="1" density="0" name="Leg3_R__Aluminium_visual" />
+            <geom type="mesh" mesh="Leg3_R__Bbody" material="Bbody" contype="0" conaffinity="0" group="1" density="0" name="Leg3_R__Bbody_visual" />
+            <geom type="mesh" mesh="Leg3_R__Wbody" material="Wbody" contype="0" conaffinity="0" group="1" density="0" name="Leg3_R__Wbody_visual" />
+            <geom type="mesh" mesh="Leg3_R" contype="1" conaffinity="1" group="3" density="592.77" rgba="0.5 0.5 0.5 0.5" name="Leg3_R_geom" />
+            <body name="Leg4_R" pos="-0.00240405 -0.302266 0.0747057" quat="0.995352 -0.0963005 1.91405e-07 4.67192e-08">
+              <joint name="Leg_8_R_Joint" pos="0 0 0" axis="-0.999059 -0.0193729 0.0388008" type="hinge" range="-2.0944 0" limited="true" actuatorfrcrange="-280 280" armature="0.04" frictionloss="0.1" damping="1.0" />
+              <geom type="mesh" mesh="Leg4_R__Aluminium" material="Aluminium" contype="0" conaffinity="0" group="1" density="0" name="Leg4_R__Aluminium_visual" />
+              <geom type="mesh" mesh="Leg4_R__Aluminium_Blue" material="Aluminium_Blue" contype="0" conaffinity="0" group="1" density="0" name="Leg4_R__Aluminium_Blue_visual" />
+              <geom type="mesh" mesh="Leg4_R__Bbody" material="Bbody" contype="0" conaffinity="0" group="1" density="0" name="Leg4_R__Bbody_visual" />
+              <geom type="mesh" mesh="Leg4_R__Wbody" material="Wbody" contype="0" conaffinity="0" group="1" density="0" name="Leg4_R__Wbody_visual" />
+              <geom type="mesh" mesh="Leg4_R" contype="1" conaffinity="1" group="3" density="592.77" rgba="0.5 0.5 0.5 0.5" name="Leg4_R_geom" />
+              <body name="Foot_R" pos="0.00329714 -0.444216 0.000808588">
+                <joint name="Foot_R_Yaw" type="hinge" pos="0 0 0" axis="0 0 1" range="-0.5236 0.5236" limited="true" actuatorfrcrange="-60 60" armature="0.01" frictionloss="0.1" damping="1.0" /><joint name="Foot_R_Roll" type="hinge" pos="0 0 0" axis="0 1 0" range="-0.5236 0.5236" limited="true" actuatorfrcrange="-60 60" armature="0.01" frictionloss="0.1" damping="1.0" /><joint name="Foot_R_Pitch" type="hinge" pos="0 0 0" axis="1 0 0" range="-0.7854 0.7854" limited="true" actuatorfrcrange="-90 90" armature="0.015" frictionloss="0.1" damping="1.0" /><geom type="mesh" mesh="Foot_R__Aluminium" material="Aluminium" contype="0" conaffinity="0" group="1" density="0" name="Foot_R__Aluminium_visual" />
+                <geom type="mesh" mesh="Foot_R__Bbody" material="Bbody" contype="0" conaffinity="0" group="1" density="0" name="Foot_R__Bbody_visual" />
+                <geom type="mesh" mesh="Foot_R__Rubber" material="Rubber" contype="0" conaffinity="0" group="1" density="0" name="Foot_R__Rubber_visual" />
+                <geom type="mesh" mesh="Foot_R" contype="1" conaffinity="1" group="3" density="592.77" rgba="0.5 0.5 0.5 0.5" name="Foot_R_geom" />
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    <joint type="free" name="Hip" limited="false" actuatorfrclimited="false" /></body>
+  </worldbody>
+  <actuator>
+    <motor name="motor_Twist_Joint" joint="Twist_Joint" ctrlrange="-140 140" ctrllimited="true" />
+    <motor name="motor_Backbone_Joint" joint="Backbone_Joint" ctrlrange="-140 140" ctrllimited="true" />
+    <motor name="motor_Neck_2_Joint" joint="Neck_2_Joint" ctrlrange="-25 25" ctrllimited="true" />
+    <motor name="motor_Head_Joint" joint="Head_Joint" ctrlrange="-25 25" ctrllimited="true" />
+    <motor name="motor_Arm_1_L_Joint" joint="Arm_1_L_Joint" ctrlrange="-90 90" ctrllimited="true" />
+    <motor name="motor_Arm_3_L_Joint" joint="Arm_3_L_Joint" ctrlrange="-90 90" ctrllimited="true" />
+    <motor name="motor_Arm_4_L_Joint" joint="Arm_4_L_Joint" ctrlrange="-60 60" ctrllimited="true" />
+    <motor name="motor_Arm_6_L_Joint" joint="Arm_6_L_Joint" ctrlrange="-90 90" ctrllimited="true" />
+    <motor name="motor_Arm_7_L_Joint" joint="Arm_7_L_Joint" ctrlrange="-30 30" ctrllimited="true" />
+    <motor name="motor_Arm_8_L_Joint" joint="Arm_8_L_Joint" ctrlrange="-30 30" ctrllimited="true" />
+    <motor name="motor_Arm_9_L_Joint" joint="Arm_9_L_Joint" ctrlrange="-30 30" ctrllimited="true" />
+    <motor name="motor_Arm_1_R_Joint" joint="Arm_1_R_Joint" ctrlrange="-90 90" ctrllimited="true" />
+    <motor name="motor_Arm_3_R_Joint" joint="Arm_3_R_Joint" ctrlrange="-90 90" ctrllimited="true" />
+    <motor name="motor_Arm_4_R_Joint" joint="Arm_4_R_Joint" ctrlrange="-60 60" ctrllimited="true" />
+    <motor name="motor_Arm_6_R_Joint" joint="Arm_6_R_Joint" ctrlrange="-90 90" ctrllimited="true" />
+    <motor name="motor_Arm_7_R_Joint" joint="Arm_7_R_Joint" ctrlrange="-30 30" ctrllimited="true" />
+    <motor name="motor_Arm_8_R_Joint" joint="Arm_8_R_Joint" ctrlrange="-30 30" ctrllimited="true" />
+    <motor name="motor_Arm_9_R_Joint" joint="Arm_9_R_Joint" ctrlrange="-30 30" ctrllimited="true" />
+    <motor name="motor_Leg_1_L_Joint" joint="Leg_1_L_Joint" ctrlrange="-280 280" ctrllimited="true" />
+    <motor name="motor_Leg_3_L_Joint" joint="Leg_3_L_Joint" ctrlrange="-280 280" ctrllimited="true" />
+    <motor name="motor_Leg_5_L_Joint" joint="Leg_5_L_Joint" ctrlrange="-280 280" ctrllimited="true" />
+    <motor name="motor_Leg_8_L_Joint" joint="Leg_8_L_Joint" ctrlrange="-280 280" ctrllimited="true" />
+    <motor name="motor_Leg_1_R_Joint" joint="Leg_1_R_Joint" ctrlrange="-280 280" ctrllimited="true" />
+    <motor name="motor_Leg_3_R_Joint" joint="Leg_3_R_Joint" ctrlrange="-280 280" ctrllimited="true" />
+    <motor name="motor_Leg_5_R_Joint" joint="Leg_5_R_Joint" ctrlrange="-280 280" ctrllimited="true" />
+    <motor name="motor_Leg_8_R_Joint" joint="Leg_8_R_Joint" ctrlrange="-280 280" ctrllimited="true" />
+  <motor name="motor_Foot_L_Pitch" joint="Foot_L_Pitch" ctrlrange="-90 90" ctrllimited="true" /><motor name="motor_Foot_L_Roll" joint="Foot_L_Roll" ctrlrange="-60 60" ctrllimited="true" /><motor name="motor_Foot_L_Yaw" joint="Foot_L_Yaw" ctrlrange="-60 60" ctrllimited="true" /><motor name="motor_Foot_R_Pitch" joint="Foot_R_Pitch" ctrlrange="-90 90" ctrllimited="true" /><motor name="motor_Foot_R_Roll" joint="Foot_R_Roll" ctrlrange="-60 60" ctrllimited="true" /><motor name="motor_Foot_R_Yaw" joint="Foot_R_Yaw" ctrlrange="-60 60" ctrllimited="true" /></actuator>
+</mujoco>
