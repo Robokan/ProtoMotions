@@ -82,6 +82,13 @@ parser.add_argument(
     default=[0.0, 0.0],
     help="Target x,y position to move all motions to (default: 0.0 0.0)",
 )
+parser.add_argument(
+    "--loops_per_motion",
+    type=int,
+    default=2,
+    help="Play each motion this many times, then auto-advance to the next "
+    "motion in the library (cycles through the whole lib).",
+)
 args = parser.parse_args()
 
 # Import simulator before torch - isaacgym/isaaclab must be imported before torch
@@ -441,7 +448,7 @@ class MotionVisualizerSmoothness:
         print("  Yellow spheres - Bodies exceeding smoothness threshold")
         print("  Purple spheres - Bodies in contact with ground")
         print("Controls:")
-        print("  'R' - Switch to next motion")
+        print("  Motions AUTO-ADVANCE after --loops_per_motion plays each")
         print("  '1' - Increase playback speed by 150% (NumPad 1 for IsaacLab)")
         print("  '2' - Decrease playback speed by 150% (NumPad 2 for IsaacLab)")
         print("  '3' - Increase smoothness threshold by 1.5x (NumPad 3 for IsaacLab)")
@@ -898,9 +905,17 @@ class MotionVisualizerSmoothness:
                 # Advance frame with skip for fast playback
                 self.current_frame += frame_skip
 
-                # Loop motion when finished
+                # Motion finished: replay it loops_per_motion times, then
+                # AUTO-ADVANCE to the next motion in the library. (The old
+                # R-key path relied on simulator.user_requested_reset, which
+                # no longer exists in the simulator API — without this, the
+                # visualizer looped motion 0 forever.)
                 if self.current_frame >= self.current_motion_length:
                     self.current_frame = 0
+                    self._loops_done = getattr(self, "_loops_done", 0) + 1
+                    if self._loops_done >= max(1, int(args.loops_per_motion)):
+                        self._loops_done = 0
+                        self._switch_to_next_motion()
 
             # Zero torque control to maintain pose
             _common_actions = torch.zeros(
