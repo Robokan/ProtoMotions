@@ -87,6 +87,9 @@ class RobotAssetConfig:
     # Optional fields with defaults
     asset_root: str = "protomotions/data/assets"
     self_collisions: bool = True
+    # Spawn-time uniform visual material (light gray). Robots whose USD
+    # carries real textured materials set this False to keep them.
+    override_visual_material: bool = True
 
     # Optional fields
     asset_file_name: str = None

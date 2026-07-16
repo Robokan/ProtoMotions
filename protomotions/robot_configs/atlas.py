@@ -60,6 +60,7 @@ class AtlasRobotConfig(RobotConfig):
     asset: RobotAssetConfig = field(
         default_factory=lambda: RobotAssetConfig(
             asset_file_name="mjcf/atlas.xml",
+            override_visual_material=False,  # USD carries the rig's textures
             usd_asset_file_name="usd/atlas/atlas_flat.usda",
             usd_bodies_root_prim_path="/World/envs/env_.*/Robot/Hip/",
             max_linear_velocity=1000.0,

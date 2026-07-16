@@ -178,8 +178,12 @@ class SceneCfg(InteractiveSceneCfg):
                     contact_offset=config.sim.physx.contact_offset,
                     rest_offset=config.sim.physx.rest_offset,
                 ),
-                visual_material=sim_utils.PreviewSurfaceCfg(
-                    diffuse_color=(0.9, 0.9, 0.9), metallic=0.5
+                visual_material=(
+                    sim_utils.PreviewSurfaceCfg(
+                        diffuse_color=(0.9, 0.9, 0.9), metallic=0.5
+                    )
+                    if getattr(robot_config.asset, "override_visual_material", True)
+                    else None
                 ),
             ),
             init_state=ArticulationCfg.InitialStateCfg(
