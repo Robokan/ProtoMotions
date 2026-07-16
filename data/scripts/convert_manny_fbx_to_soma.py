@@ -472,6 +472,12 @@ def main():
                 # ground work) sits at 0, then rebuild the motion.
                 zmin = motion_dict["rigid_body_pos"][..., 2].min(dim=1).values
                 offset = float(zmin.median())
+                # Bound the worst transient dip (kick follow-throughs, fall
+                # impacts): after median alignment, lift further if any body
+                # would still sink more than 8 cm below ground.
+                worst = float(zmin.min()) - offset
+                if worst < -0.08:
+                    offset += worst + 0.08
                 if abs(offset) > 0.01:
                     root = root.clone()
                     root[:, 1] -= offset  # y-up height, pre-conversion
