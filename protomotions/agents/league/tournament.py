@@ -482,7 +482,7 @@ class BattleTournament:
         # --- scoreboard overlay (champion on the left, opponent on the right,
         # each with an HP bar). Drawn onto every frame before it's encoded. ---
         ego_id, opp_id = match_index, match_index + n
-        init_hp = max(float(getattr(cfg, "initial_health", 1.0)), 1e-6)
+        init_hp = max(float(getattr(bc.config, "initial_health", 1.0)), 1e-6)
         try:
             from PIL import Image, ImageDraw, ImageFont
 
