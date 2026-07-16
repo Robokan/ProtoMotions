@@ -161,6 +161,9 @@ def main():
                 multi_dof_decomposition_method="euler_xyz",
             )
             motion.dof_pos = q2[:, 7:]
+            dv = torch.zeros_like(motion.dof_pos)
+            dv[1:] = (motion.dof_pos[1:] - motion.dof_pos[:-1]) * float(round(fps))
+            motion.dof_vel = dv
             motion.fix_height_per_frame(height_offset=0.02)
             motion.fix_height(height_offset=0.04)
             motion.rigid_body_contacts = torch.zeros(
