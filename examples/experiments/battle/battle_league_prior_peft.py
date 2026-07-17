@@ -120,6 +120,7 @@ def motion_lib_config(args: argparse.Namespace):
 def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
     from protomotions.envs.action import make_pd_action_config
     from protomotions.envs.battle.control import BattleControlConfig
+    from protomotions.envs.battle.hit_state import HitStateConfig
     from protomotions.envs.battle.factories import (
         battle_task_obs_factory,
         default_battle_reward_components,
@@ -149,9 +150,29 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
         reset_grace_period=5,
         ref_respawn_offset=0.05,
         control_components={
+            # Kinetic-energy damage model (see HitStateConfig/BattleControlConfig):
+            # HP loss = damage_to_health (HP/joule) x 0.5 m_limb v_impact^2 x
+            # region mult, ONCE per contact event, zero below strike_min_speed,
+            # capped at max_hp_per_hit. Pushes/leans/grinds physically cannot
+            # score; legs out-damage hands via their larger mass (0.5 m v^2).
+            # Calibrated 2026-07-17: probe showed the v4 champion's contacts
+            # all arrive < 1.02 m/s (grinds, never strikes), so the 2.5 m/s
+            # gate zeroes its entire repertoire; constants above target ~5
+            # clean head punches (19 J) or ~4 head kicks (38 J, capped) to KO.
             "battle": BattleControlConfig(
                 arena_size=ARENA_SIZE,
                 arena_spacing=ARENA_SPACING,
+                raw_health_damage=True,
+                damage_to_health=0.005,  # HP/joule: hand@6m/s~19J -> ~19% head hit
+                max_hp_per_hit=0.25,
+                hit_state=HitStateConfig(strike_min_speed=2.5),  # champion's max-ever contact: 1.02 m/s
+                # Concussion-gated knockouts (enabled 2026-07-17 with the KE
+                # model): a downed fighter is KO'd only while stun > 0.4.
+                # Stun deposits stun_gain*KE/stun_raw_energy_ref, head-weighted:
+                # any head kick >= the 2.5 m/s gate (~9.5 J) dizzies; a hand
+                # needs ~4.2 m/s. Trips and pushes deposit zero stun -> the
+                # fallen fighter gets the 2 s window to stand and fight on.
+                stun_gates_ko=True,
             ),
         },
         observation_components=observation_components,

@@ -984,6 +984,17 @@ class Simulator(RecordingMixin, ABC):
         bodies_state = bodies_state.convert_to_common(self.data_conversion)
         return bodies_state
 
+    def get_body_masses(self) -> torch.Tensor:
+        """Per-body masses in COMMON body ordering, shape [num_envs, num_bodies].
+
+        Used by physically-based damage models (kinetic energy of the striking
+        limb). Optional: simulators that do not expose rigid-body masses raise
+        NotImplementedError and callers should fall back to unit masses.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not expose per-body masses"
+        )
+
     @abstractmethod
     def _get_simulator_bodies_state(
         self, env_ids: Optional[torch.Tensor] = None

@@ -10,6 +10,11 @@
 # display needed. Defaults to the latest snapshot vs a random other snapshot
 # from the pool; pass A/B checkpoints to override.
 #
+# Records with the trained prior_constraint decode and stochastic sampling
+# (i.e. NOT --deterministic and NOT the nucleus fast-sampling shortcut) so the
+# fighters reproduce the combat behavior they were trained with. Greedy/nucleus
+# decode collapses toward generic locomotion (they just walk and bump).
+#
 # Run from the ProtoMotions root inside the training container:
 #   scripts/record_fight.sh [bouts] [run_name] [A_ckpt] [B_ckpt]
 #
@@ -17,6 +22,10 @@
 #   scripts/record_fight.sh 5 soma_battle_league_v3
 #   scripts/record_fight.sh 1 soma_battle_league_v3 path/to/policy_9.ckpt path/to/policy_3.ckpt
 set -euo pipefail
+
+# Isaac Sim on this box needs the EULA acknowledged non-interactively;
+# harmless once already accepted.
+export OMNI_KIT_ACCEPT_EULA="${OMNI_KIT_ACCEPT_EULA:-YES}"
 
 BOUTS="${1:-3}"
 RUN="${2:-soma_battle_league_v4}"
@@ -54,6 +63,6 @@ python protomotions/battle_tournament.py \
     --resolved-configs "$RESOLVED" \
     --exhibition "$A" "$B" \
     --record "$OUT" --bouts "$BOUTS" \
-    --num-envs 2 --deterministic
+    --num-envs 2 --no-fast-sampling
 
 echo "record_fight: done -> ${OUT}"

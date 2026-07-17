@@ -657,6 +657,11 @@ class IsaacLabSimulator(Simulator):
             dof_names=self._robot.data.joint_names,
         )
 
+    def get_body_masses(self) -> torch.Tensor:
+        """Per-body masses [num_envs, num_bodies] in COMMON body ordering."""
+        masses = self._robot.data.default_mass.to(self.device)
+        return masses[:, self.data_conversion.body_convert_to_common]
+
     def _get_simulator_bodies_state(
         self, env_ids: Optional[torch.Tensor] = None
     ) -> RobotState:

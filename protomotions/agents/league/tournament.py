@@ -258,6 +258,8 @@ class BattleTournament:
                 torch.cuda.synchronize()
 
         held_ego = None
+        # Per contact-onset event (pre-speed-gate): impact speed, KE, group.
+        event_speeds, event_kes, event_groups = [], [], []
         for step in range(steps):
             obs = self.agent.add_agent_info_to_obs(obs)
 
@@ -283,6 +285,19 @@ class BattleTournament:
             done_ids = dones.nonzero(as_tuple=False).flatten()
             if len(done_ids) > 0:
                 obs, _ = self.env.reset(done_ids)
+
+            # Calibration: collect contact-onset events (pre-speed-gate).
+            hs = inner.battle_control.hit_state
+            mask = hs.last_event_speed > 0
+            if mask.any():
+                event_speeds.append(hs.last_event_speed[mask].detach().cpu())
+                event_kes.append(hs.last_event_ke[mask].detach().cpu())
+                if hs.strike_body_groups is not None:
+                    event_groups.append(
+                        hs.strike_body_groups[hs.last_event_striker[mask]]
+                        .detach()
+                        .cpu()
+                    )
 
             if step == steps - 1:
                 n = max(1, steps - timed_from)
@@ -315,6 +330,46 @@ class BattleTournament:
                     [round(float(v), 3) for v in b.downed[:2]],
                     float(held_ego.std()),
                 )
+
+        # Calibration report: per contact-onset event, the impact speed and
+        # kinetic energy (0.5 m v^2) of the attributed striker, pre-speed-gate.
+        if event_speeds:
+            spd = torch.cat(event_speeds)
+            kes = torch.cat(event_kes)
+            qs = torch.tensor([0.5, 0.75, 0.9, 0.95, 0.99])
+            sp = torch.quantile(spd, qs)
+            kp = torch.quantile(kes, qs)
+            log.info(
+                "HIT EVENTS: %d contact onsets | impact speed m/s "
+                "p50=%.2f p75=%.2f p90=%.2f p95=%.2f p99=%.2f max=%.2f",
+                spd.numel(),
+                *[float(v) for v in sp],
+                float(spd.max()),
+            )
+            log.info(
+                "HIT EVENTS: kinetic energy J "
+                "p50=%.1f p75=%.1f p90=%.1f p95=%.1f p99=%.1f max=%.1f",
+                *[float(v) for v in kp],
+                float(kes.max()),
+            )
+            if event_groups:
+                grp = torch.cat(event_groups)
+                labels = inner.battle_control.strike_group_labels
+                for g, name in enumerate(labels):
+                    sel = grp == g
+                    if sel.any():
+                        log.info(
+                            "HIT EVENTS[%s]: n=%d speed p50=%.2f p95=%.2f | "
+                            "KE p50=%.1f p95=%.1f",
+                            name,
+                            int(sel.sum()),
+                            float(spd[sel].median()),
+                            float(torch.quantile(spd[sel], 0.95)),
+                            float(kes[sel].median()),
+                            float(torch.quantile(kes[sel], 0.95)),
+                        )
+        else:
+            log.info("HIT EVENTS: no contact onsets sampled")
 
     @torch.no_grad()
     def record_pairing(

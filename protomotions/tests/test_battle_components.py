@@ -63,7 +63,7 @@ def _hit_inputs(num_envs=2, num_bodies=4, force=100.0, close=True, closing_speed
 
 def test_hit_state_scores_proximal_gated_contact():
     hs = _make_hit_state()
-    taken, _, _ = hs.step(*_hit_inputs(close=True))
+    taken, _, _, _ = hs.step(*_hit_inputs(close=True))
     assert taken.shape == (2,)
     assert (taken > 0).all(), "forceful, proximal, closing contact must score"
 
@@ -71,14 +71,14 @@ def test_hit_state_scores_proximal_gated_contact():
 def test_hit_state_ignores_contact_without_nearby_striker():
     """Ground contact attribution: force with no opponent nearby scores zero."""
     hs = _make_hit_state()
-    taken, _, _ = hs.step(*_hit_inputs(close=False))
+    taken, _, _, _ = hs.step(*_hit_inputs(close=False))
     assert (taken == 0).all()
 
 
 def test_hit_state_requires_closing_velocity():
     """Pushing (no closing speed) must not accumulate hit energy."""
     hs = _make_hit_state()
-    taken, _, _ = hs.step(*_hit_inputs(closing_speed=0.0))
+    taken, _, _, _ = hs.step(*_hit_inputs(closing_speed=0.0))
     assert (taken == 0).all()
 
 
@@ -87,7 +87,7 @@ def test_hit_state_warmup_gates_early_steps():
     hs.config = HitStateConfig(proximity_radius=0.5, warmup_steps=10)
     inputs = list(_hit_inputs(close=True))
     inputs[5] = torch.full((2,), 3, dtype=torch.long)  # progress < warmup
-    taken, _, _ = hs.step(*inputs)
+    taken, _, _, _ = hs.step(*inputs)
     assert (taken == 0).all()
 
 
@@ -97,6 +97,61 @@ def test_hit_state_reset_clears_accumulators():
     hs.reset(torch.tensor([0, 1]))
     assert (hs._e_accum == 0).all()
     assert not hs._active.any()
+
+
+def test_ke_damage_gates_on_impact_speed():
+    """HEALTH damage (4th return) is per-hit kinetic energy: a fast strike
+    scores 0.5*m*v^2 at contact onset; a slow push scores exactly zero."""
+    cfg = HitStateConfig(proximity_radius=0.5, warmup_steps=0, strike_min_speed=2.0)
+
+    hs = _make_hit_state()
+    hs.config = cfg
+    _, _, _, ke_strike = hs.step(*_hit_inputs(force=100.0, closing_speed=4.0))
+    # unit mass -> KE = 0.5 * 1.0 * 4^2 = 8 J on the contacted body
+    assert torch.allclose(
+        ke_strike.sum(dim=-1), torch.full((2,), 8.0)
+    ), "a qualifying strike must deposit 0.5*m*v^2"
+
+    hs = _make_hit_state()
+    hs.config = cfg
+    _, _, _, ke_push = hs.step(*_hit_inputs(force=500.0, closing_speed=0.5))
+    assert (ke_push == 0).all(), "a slow push must deal ZERO HP however forceful"
+
+
+def test_ke_damage_deposits_once_per_contact_event():
+    """Lingering contact must not re-score: KE deposits only on the FSM
+    rising edge, so step 2 of the same contact adds nothing."""
+    cfg = HitStateConfig(proximity_radius=0.5, warmup_steps=0, strike_min_speed=2.0)
+    hs = _make_hit_state()
+    hs.config = cfg
+    inputs = _hit_inputs(force=100.0, closing_speed=4.0)
+    _, _, _, first = hs.step(*inputs)
+    assert (first.sum(dim=-1) > 0).all()
+    _, _, _, second = hs.step(*inputs)  # same sustained contact
+    assert (second == 0).all(), "sustained contact must not deposit again"
+
+
+def test_ke_damage_scales_with_speed_squared_and_mass():
+    """KE = 0.5*m*v^2: doubling impact speed quadruples damage; heavier
+    striking limbs (legs) hit harder at the same speed."""
+    cfg = HitStateConfig(proximity_radius=0.5, warmup_steps=0, strike_min_speed=2.0)
+
+    hs = _make_hit_state()
+    hs.config = cfg
+    _, _, _, slow = hs.step(*_hit_inputs(force=100.0, closing_speed=3.0))
+
+    hs = _make_hit_state()
+    hs.config = cfg
+    _, _, _, fast = hs.step(*_hit_inputs(force=100.0, closing_speed=6.0))
+    ratio = (fast[0].sum() / slow[0].sum()).item()
+    assert abs(ratio - 4.0) < 1e-3, f"expected 4x from 2x speed, got {ratio:.3f}x"
+
+    hs = _make_hit_state()
+    hs.config = cfg
+    hs.set_strike_body_masses(torch.tensor([3.0, 3.0]))  # heavier limbs
+    _, _, _, heavy = hs.step(*_hit_inputs(force=100.0, closing_speed=3.0))
+    ratio_m = (heavy[0].sum() / slow[0].sum()).item()
+    assert abs(ratio_m - 3.0) < 1e-3, f"expected 3x from 3x mass, got {ratio_m:.3f}x"
 
 
 def test_resolve_body_ids_rejects_unknown_names():
@@ -280,7 +335,7 @@ def test_hit_energy_attributed_to_striker_group():
     hs = _make_grouped_hit_state()
     # Hand striker (body 2) close to damage body 0; leg striker far away
     inputs = _hit_inputs(close=True)
-    taken, by_group, _ = hs.step(*inputs)
+    taken, by_group, _, _ = hs.step(*inputs)
     assert by_group.shape == (2, 2)
     assert (by_group[:, 0] > 0).all(), "hand-group strike must be attributed"
     assert (by_group[:, 1] == 0).all(), "leg group dealt nothing"
@@ -294,7 +349,7 @@ def test_hit_energy_attributed_to_leg_group():
     opp_pos[:, 3, :] = 0.0
     opp_pos[:, 3, 0] = 0.1
     opp_vel[:, 3, 0] = 2.0
-    taken, by_group, _ = hs.step(cf, bp, bv, opp_pos, opp_vel, prog)
+    taken, by_group, _, _ = hs.step(cf, bp, bv, opp_pos, opp_vel, prog)
     assert (by_group[:, 1] > 0).all()
     assert (by_group[:, 0] == 0).all()
 

@@ -36,6 +36,18 @@ class HitStateConfig:
     e0_ema: float = 0.99  # EMA coefficient for the global energy scale
     proximity_radius: float = 0.35  # m, strike body must be this close to count
     warmup_steps: int = 10  # zero hit rewards for the first N steps of an episode
+    # HEALTH-damage model (independent of the log-normalized REWARD stream):
+    # kinetic energy of the striking limb, KE = 0.5 * m_limb * v_impact^2,
+    # deposited ONCE per contact event at its onset (the FSM rising edge).
+    # Contact-solver forces are impulse artifacts and play no part; mass and
+    # velocity come from ground-truth sim state. A contact only qualifies if
+    # the striking limb's closing speed at onset is >= strike_min_speed — a
+    # push, lean, grind, or standing touch arrives well under 1 m/s and scores
+    # exactly zero, while a committed swing arrives at several m/s. Lingering
+    # contact never re-scores: one hit, one deposit.
+    strike_min_speed: float = 2.5  # m/s, impact-speed gate (calibrated on data)
+    # Legacy field from the abandoned force-energy damage model; unused.
+    min_hit_energy: float = 50.0
 
 
 class BattleHitState:
@@ -58,6 +70,7 @@ class BattleHitState:
         strike_body_groups: Tensor = None,
         num_strike_groups: int = 0,
         strike_multipliers: Tensor = None,
+        strike_body_masses: Tensor = None,
     ):
         """
         Args:
@@ -89,6 +102,12 @@ class BattleHitState:
         self.strike_multipliers = (
             strike_multipliers.to(device) if strike_multipliers is not None else None
         )
+        # Per-strike-body masses [S] (kg) for the kinetic-energy damage model.
+        # None -> unit masses (pure speed^2); the caller may set this lazily
+        # once the simulator exposes real masses (see set_strike_body_masses).
+        self.strike_body_masses = (
+            strike_body_masses.to(device) if strike_body_masses is not None else None
+        )
 
         num_damage = len(damage_body_ids)
         self._active = torch.zeros(num_envs, num_damage, dtype=torch.bool, device=device)
@@ -97,6 +116,19 @@ class BattleHitState:
         self._cooldown = torch.zeros(num_envs, num_damage, device=device)
         self._e0 = 1.0  # global log-normalization scale (python float EMA)
         self._steps_cool = max(1, int(round(config.cooldown_time / dt)))
+        # Diagnostics for the last step's contact-onset events (pre-speed-gate),
+        # used by the calibration probe: impact speed, kinetic energy, and
+        # attributed striker index per (env, damage body); zero where no event
+        # started this step.
+        self.last_event_speed = torch.zeros(num_envs, num_damage, device=device)
+        self.last_event_ke = torch.zeros(num_envs, num_damage, device=device)
+        self.last_event_striker = torch.zeros(
+            num_envs, num_damage, dtype=torch.long, device=device
+        )
+
+    def set_strike_body_masses(self, masses: Tensor) -> None:
+        """Set per-strike-body masses [S] (kg) for KE damage (lazy wiring)."""
+        self.strike_body_masses = masses.to(self.device)
 
     def reset(self, env_ids: Tensor) -> None:
         self._active[env_ids] = False
@@ -224,7 +256,38 @@ class BattleHitState:
         taken_per_body = torch.where(
             warmup.unsqueeze(-1), torch.zeros_like(r_weighted), r_weighted
         )
-        return r_taken, taken_by_group, taken_per_body
+
+        # --- Health damage: RAW physical energy, linear, thresholded --------
+        # The reward stream above (r_taken) is log-normalized for stable PPO
+        # magnitudes. Health instead drains from the raw per-step energy that
+        # landed during an active bout, so a hard strike hurts in proportion to
+        # f_mag * v_rel (not its log). Sub-threshold contact — a tap or a lean,
+        # whose low closing speed yields low energy — is zeroed by
+        # ``min_hit_energy``, so only committed strikes remove HP. Region
+        # multipliers (head-heavy) and warm-up gating apply as for the reward.
+        # --- Kinetic-energy hit events (HEALTH damage; reward untouched) -----
+        # One deposit per contact event, at its onset (`start` rising edge):
+        # KE = 0.5 * m_striker * v_impact^2, from ground-truth limb mass and
+        # closing speed — contact-solver force magnitudes play no part (they
+        # are impulse artifacts whose per-step peaks are discretization noise).
+        # A sustained push/lean/grind arrives at ~0 m/s and scores nothing;
+        # lingering contact after a hit never re-scores.
+        if self.strike_body_masses is not None:
+            striker_mass = self.strike_body_masses[nearest_s]  # [2N, D]
+        else:
+            striker_mass = torch.ones_like(v_rel)
+        ke = 0.5 * striker_mass * v_rel * v_rel  # [2N, D] joules
+        event = start  # rising edge already requires force_on & include
+        # Diagnostics (pre-speed-gate) for calibration probes.
+        self.last_event_speed = v_rel * event
+        self.last_event_ke = ke * event
+        self.last_event_striker = nearest_s
+        ke_event = ke * (event & (v_rel >= cfg.strike_min_speed))
+        ke_event = torch.where(
+            warmup.unsqueeze(-1), torch.zeros_like(ke_event), ke_event
+        )
+
+        return r_taken, taken_by_group, taken_per_body, ke_event
 
 
 def resolve_body_ids(body_names: List[str], all_body_names: List[str]) -> Tensor:

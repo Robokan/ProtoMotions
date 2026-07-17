@@ -20,6 +20,7 @@ Match-end rules (per the SOMA GPC combat plan; constants from IsaacLabASE):
   healths are within ``points_decision_eps``.
 """
 
+import logging
 import math
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, TYPE_CHECKING
@@ -35,6 +36,8 @@ from protomotions.envs.battle.hit_state import (
     resolve_body_ids,
 )
 from protomotions.envs.control.base import ControlComponent, ControlComponentConfig
+
+log = logging.getLogger(__name__)
 from protomotions.simulator.base_simulator.config import (
     MarkerConfig,
     MarkerState,
@@ -114,8 +117,30 @@ class BattleControlConfig(ControlComponentConfig):
 
     # Fight rules
     initial_health: float = 1.0
-    # Health lost per unit of log-normalized hit energy taken (region-weighted).
+    # Health lost per unit of hit energy taken (region-weighted). The energy
+    # source depends on raw_health_damage below: log-normalized (False) or raw
+    # thresholded (True) — the two scales are NOT comparable (log ~O(1)/step,
+    # raw ~O(100) for a hard strike), so this value must match the mode.
     damage_to_health: float = 0.05
+    # False (default): health drains from the LOG-NORMALIZED hit energy — the
+    # original model every existing checkpoint/frozen config was built with.
+    # True: health drains from the KINETIC ENERGY of qualifying strikes —
+    # 0.5 * m_limb * v_impact^2, one deposit per contact event, zero below the
+    # hit_state.strike_min_speed impact-speed gate (pushes/leans/grinds score
+    # nothing; see HitStateConfig). damage_to_health is then HP-per-joule
+    # (e.g. ~0.002: a 70 J head strike x2 region mult removes ~28%). STUN, if
+    # gated, also uses the same per-hit KE (divided by stun_raw_energy_ref) so
+    # only genuine strikes concuss. False (default): the original
+    # log-normalized damage model every existing frozen config was built with.
+    raw_health_damage: bool = False
+    # KE (joules) counting as "one full unit" of stun input in KE mode — set
+    # near a solid strike's energy so one clean head hit concusses briefly and
+    # body hits barely register.
+    stun_raw_energy_ref: float = 70.0
+    # Hard per-hit ceiling on HP removed by a single contact event in KE mode.
+    # Backstop against any residual state glitch: no single touch can wipe a
+    # health bar regardless of measured energy.
+    max_hp_per_hit: float = 0.25
     knockdown_height: float = 0.2  # m, root below this counts as "down"
     knockdown_grace_seconds: float = 2.0  # get-up window before KO
     points_decision_eps: float = 0.02  # health diff below this at timeout = draw
@@ -444,7 +469,28 @@ class BattleControl(ControlComponent):
         contact_forces = state.rigid_body_contact_forces
 
         # Hit integration (energy TAKEN per env; dealt = partner's taken)
-        taken, taken_by_group, taken_per_body = self.hit_state.step(
+        # Lazy one-time wiring of real limb masses for the KE damage model
+        # (masses are only available once the sim articulation is initialized).
+        if cfg.raw_health_damage and self.hit_state.strike_body_masses is None:
+            try:
+                masses = env.simulator.get_body_masses()  # [N, B] common order
+                self.hit_state.set_strike_body_masses(
+                    masses.mean(dim=0)[self.strike_body_ids.to(masses.device)]
+                )
+                log.info(
+                    "KE damage: strike-limb masses (kg) = %s",
+                    [round(float(m), 2) for m in self.hit_state.strike_body_masses],
+                )
+            except NotImplementedError:
+                log.warning(
+                    "Simulator exposes no body masses; KE damage uses unit "
+                    "masses (pure speed^2)."
+                )
+                self.hit_state.set_strike_body_masses(
+                    torch.ones(len(self.strike_body_ids), device=env.device)
+                )
+
+        taken, taken_by_group, taken_per_body, ke_per_body = self.hit_state.step(
             contact_forces=contact_forces,
             body_pos=body_pos,
             body_vel=body_vel,
@@ -452,13 +498,37 @@ class BattleControl(ControlComponent):
             opp_body_vel=body_vel[partner],
             progress=env.progress_buf,
         )
+        # REWARD stream: log-normalized hit energy (stable magnitudes).
         self.hit_energy_taken = taken
         self.hit_energy_dealt = taken[partner]
-        self.health = (self.health - cfg.damage_to_health * taken).clamp_min(0.0)
+        # HEALTH: in KE mode, one deposit per qualifying strike —
+        # damage_to_health (HP/joule) x KE x region multiplier, each hit capped
+        # at max_hp_per_hit. Otherwise the original log-normalized model.
+        if cfg.raw_health_damage:
+            hp_per_hit = (
+                cfg.damage_to_health
+                * ke_per_body
+                * self.hit_state.damage_multipliers.unsqueeze(0)
+            ).clamp_max(cfg.max_hp_per_hit)
+            hp_loss = hp_per_hit.sum(dim=-1)
+            self.health = (self.health - hp_loss).clamp_min(0.0)
+        else:
+            self.health = (
+                self.health - cfg.damage_to_health * taken
+            ).clamp_min(0.0)
 
         # Stun accumulator: deposit region-weighted (head-heavy) hit energy,
         # decay at a fixed rate. Both peak and duration scale with hit hardness.
-        stun_input = (taken_per_body * self._stun_region_weights).sum(dim=-1)
+        # KE mode: stun comes from the same per-hit kinetic energy as health
+        # (normalized by stun_raw_energy_ref), so pushes and taps deposit zero
+        # stun and the stun_gates_ko concussion gate means what it says.
+        if cfg.raw_health_damage:
+            stun_input = (
+                (ke_per_body / max(cfg.stun_raw_energy_ref, 1e-6))
+                * self._stun_region_weights
+            ).sum(dim=-1)
+        else:
+            stun_input = (taken_per_body * self._stun_region_weights).sum(dim=-1)
         self.stun = (
             self.stun + cfg.stun_gain * stun_input - cfg.stun_decay_per_sec * env.dt
         ).clamp_min(0.0)
