@@ -164,8 +164,11 @@ def main():
             dv = torch.zeros_like(motion.dof_pos)
             dv[1:] = (motion.dof_pos[1:] - motion.dof_pos[:-1]) * float(round(fps))
             motion.dof_vel = dv
-            motion.fix_height_per_frame(height_offset=0.02)
-            motion.fix_height(height_offset=0.04)
+            # Atlas: the Foot BODY origin sits 0.076m above the sole plane
+            # (measured at rest, mujoco qpos0). Generic offsets sank the sole
+            # ~2-3cm under ground.
+            motion.fix_height_per_frame(height_offset=0.056)
+            motion.fix_height(height_offset=0.076)
             motion.rigid_body_contacts = torch.zeros(
                 motion.rigid_body_pos.shape[0],
                 motion.rigid_body_pos.shape[1],
