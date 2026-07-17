@@ -25,13 +25,13 @@ relative paths (~4.2 GB total):
 | Path | Size | Why |
 |---|---|---|
 | `results/soma_battle_league_v4/` (whole dir) | 1.6 GB | checkpoint (`last.ckpt`), frozen configs (`resolved_configs*.pt`), league opponent pool (`lightning_logs/*/league/policy_*.ckpt`, 12 snapshots), env sampling state |
-| `results/soma_gpc_prior_p2/last.ckpt` | 2.3 GB | the frozen GPC prior — referenced by the league config on every launch |
+| `results/soma_gpc_prior_p2/` (whole dir, skip `lightning_logs/`) | 3.1 GB | the frozen GPC prior — the league loads BOTH `last.ckpt` AND the `resolved_configs*.pt` beside it (`load_resolved_configs_from_checkpoint`); the bare ckpt alone crashes at startup |
 | `data/soma_combat_viewer.pt` | 60 MB | the merged 184-motion combat library (SEED curated + Reallusion kicks, boxing-weighted) |
 | `data/pretrained_models/motion_tracker/soma_bones_fsq/` | 240 MB | FSQ tracker (safety: prior tokenization references it in some paths) |
 
 ```bash
 rsync -avP evaughan@<spark-host>:~/sparkpack/ProtoMotions/results/soma_battle_league_v4 results/
-rsync -avP evaughan@<spark-host>:~/sparkpack/ProtoMotions/results/soma_gpc_prior_p2/last.ckpt results/soma_gpc_prior_p2/
+rsync -avP --exclude lightning_logs evaughan@<spark-host>:~/sparkpack/ProtoMotions/results/soma_gpc_prior_p2 results/
 rsync -avP evaughan@<spark-host>:~/sparkpack/ProtoMotions/data/soma_combat_viewer.pt data/
 rsync -avP evaughan@<spark-host>:~/sparkpack/ProtoMotions/data/pretrained_models/motion_tracker/soma_bones_fsq data/pretrained_models/motion_tracker/
 ```
