@@ -87,7 +87,13 @@ for fam, mat in mats.items():
     reader.CreateInput("varname", Sdf.ValueTypeNames.Token).Set("st")
     tex = UsdShade.Shader.Define(stage, mpath.AppendChild("diffuseTex"))
     tex.CreateIdAttr("UsdUVTexture")
-    tex.CreateInput("file", Sdf.ValueTypeNames.Asset).Set(old_tex)
+    # ABSOLUTE path: the battle container's Fabric UsdToMdl pipeline fails
+    # to anchor layer-relative asset paths ("can not be found: materials/X").
+    import os as _os
+    abs_tex = _os.path.abspath(
+        _os.path.join("protomotions/data/assets/usd/atlas/configuration", str(old_tex))
+    )
+    tex.CreateInput("file", Sdf.ValueTypeNames.Asset).Set(abs_tex)
     tex.CreateInput("st", Sdf.ValueTypeNames.Float2).ConnectToSource(
         reader.CreateOutput("result", Sdf.ValueTypeNames.Float2)
     )
