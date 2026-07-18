@@ -93,6 +93,35 @@ def main():
     # root cause). Knee flexion axis is x, so ankle pitch = x, roll = y.
     new_ankle_joints = []
     parent_of = {c: par for par in root.iter() for c in par}
+
+    # Case A: the GMR model already carries TWO ankle hinges in the one Foot
+    # body (post hinge-ankle GMR update). Mujoco is fine with that, but the
+    # IsaacLab MJCF importer merges multi-joint bodies into one D6 — same
+    # falls-over failure as the ball ankle. Split: first hinge (pitch) moves
+    # to a new chained Ankle_<side> body, Foot keeps the roll hinge.
+    for body in list(root.iter("body")):
+        joints = body.findall("joint")
+        if len(joints) == 2 and (body.get("name") or "").startswith("Foot_"):
+            side = "L" if body.get("name").endswith("_L") else "R"
+            parent = parent_of[body]
+            ankle = ET.Element("body", dict(name=f"Ankle_{side}",
+                                            pos=body.get("pos") or "0 0 0"))
+            if body.get("quat"):
+                ankle.set("quat", body.get("quat"))
+            ET.SubElement(ankle, "inertial", dict(
+                pos="0 0 0", mass="0.02", diaginertia="1e-05 1e-05 1e-05"))
+            pitch = joints[0]
+            body.remove(pitch)
+            ankle.append(pitch)
+            idx = list(parent).index(body)
+            parent.remove(body)
+            body.set("pos", "0 0 0")
+            if body.get("quat"):
+                del body.attrib["quat"]
+            ankle.append(body)
+            parent.insert(idx, ankle)
+            new_ankle_joints += [j.get("name") for j in joints]
+    # Case B (legacy): passive ball ankle joints.
     for body in list(root.iter("body")):
         for joint in list(body.findall("joint")):
             if joint.get("type") == "ball" and (joint.get("name") or "").startswith("Foot_"):
