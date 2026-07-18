@@ -148,6 +148,10 @@ class BattleControlConfig(ControlComponentConfig):
     max_hp_per_hit: float = 0.25
     knockdown_height: float = 0.2  # m, root below this counts as "down"
     knockdown_grace_seconds: float = 2.0  # get-up window before KO
+    # Referee's count: down for ANY reason this long loses the bout,
+    # regardless of stun (the concussion gate covers real KOs; this is the
+    # backstop so a fighter can't camp on the canvas).
+    count_out_seconds: float = 5.0
     points_decision_eps: float = 0.02  # health diff below this at timeout = draw
 
     # Stun / concussion model. A hit deposits stun scaled by its (region-
@@ -604,7 +608,10 @@ class BattleControl(ControlComponent):
         down_ko = self.down_timer > cfg.knockdown_grace_seconds
         if cfg.stun_gates_ko:
             down_ko = down_ko & (self.stun > cfg.stun_ko_threshold)
-        knocked_out = (down_ko | (self.health <= 0.0)) & ~in_recovery
+        # Referee's count-out: down past count_out_seconds loses regardless
+        # of stun — canvas-camping is never safe.
+        counted_out = self.down_timer > cfg.count_out_seconds
+        knocked_out = (down_ko | counted_out | (self.health <= 0.0)) & ~in_recovery
 
         root_xy = body_pos[:, 0, :2]
         half = cfg.arena_size / 2.0
