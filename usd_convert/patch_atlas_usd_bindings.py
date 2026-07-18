@@ -75,10 +75,11 @@ from pxr import Sdf  # noqa: E402
 CONSTANT_COLOR = {
     "Emission": Gf.Vec3f(0.341, 0.906, 0.349),
 }
-# Bbody ships no diffuse texture (the MJCF pointed it at the roughness map);
-# keep that binding per Eric's preference — he dials it in with albedo add.
+# Bbody's diffuse is the flat Bbody_difussion.png Eric color-tunes by hand
+# (same file the GMR MJCF binds); force it in case the import predates the
+# GMR-side fix that pointed tex_Bbody at it.
 FORCED_TEXTURE = {
-    "Bbody": "materials/Bbody_Roughness.png",
+    "Bbody": "materials/Bbody_difussion.png",
 }
 
 for fam, mat in mats.items():
@@ -100,7 +101,7 @@ for fam, mat in mats.items():
                     old_tex = fi.Get().path.lstrip("./")
     if surface is None:
         continue
-    if old_tex is None and fam in FORCED_TEXTURE:
+    if fam in FORCED_TEXTURE:
         old_tex = FORCED_TEXTURE[fam]
     sp = surface.GetPrim()
     # Universal surface output alongside the existing mdl:surface one.
@@ -168,11 +169,10 @@ for fam, mat in mats.items():
     tex.CreateInput("file", Sdf.ValueTypeNames.Asset).Set(rel_tex)
     # MDL context reads THIS input — same layer-anchored path.
     surface.CreateInput("diffuse_texture", Sdf.ValueTypeNames.Asset).Set(rel_tex)
-    # Eric's calibrated adjustments for the dark textured families.
-    if fam == "Plastic":
-        surface.CreateInput("albedo_add", Sdf.ValueTypeNames.Float).Set(0.05)
-    elif fam == "Bbody":
-        surface.CreateInput("albedo_brightness", Sdf.ValueTypeNames.Float).Set(0.3)
+    # No albedo adjustments: the texture IS the intended color (Bbody's flat
+    # diffuse is hand-tuned at the source). Strip any authored by past runs.
+    sp.RemoveProperty("inputs:albedo_add")
+    sp.RemoveProperty("inputs:albedo_brightness")
     tex.CreateInput("st", Sdf.ValueTypeNames.Float2).ConnectToSource(
         reader.CreateOutput("result", Sdf.ValueTypeNames.Float2)
     )
