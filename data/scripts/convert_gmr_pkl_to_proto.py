@@ -95,26 +95,31 @@ def gmr_pkl_to_qpos(pkl_path: Path):
     root_wxyz = rr[:, [3, 0, 1, 2]]
     dof = np.asarray(d["dof_pos"], dtype=np.float64)
     T = root_pos.shape[0]
-    assert dof.shape[1] == 34, f"expected atlas_fists 34-dim dof_pos, got {dof.shape}"
+    assert dof.shape[1] in (30, 34), f"expected atlas_fists dof_pos 30 (hinge) or 34 (ball), got {dof.shape}"
 
     # Root: compose with the bake conjugate (identity root frame model).
     qb = ATLAS_ROOT_BAKE_QUAT / np.linalg.norm(ATLAS_ROOT_BAKE_QUAT)
     qb_conj = qb * np.array([1.0, -1.0, -1.0, -1.0])
     root_new = _qmul(root_wxyz, np.tile(qb_conj, (T, 1)))
 
-    hinges1 = dof[:, :N_HINGE_BLOCK1]
-    ball_l = dof[:, 22:26]
-    legr = dof[:, 26:30]
-    ball_r = dof[:, 30:34]
-    pl, rl, yl = _ball_to_xyz_hinges(ball_l)
-    pr, rr_, yr = _ball_to_xyz_hinges(ball_r)
-
-    qpos = np.concatenate([
-        root_pos, root_new, hinges1,
-        np.stack([pl, rl], axis=-1),   # Pitch(x), Roll(y) — yaw dropped
-        legr,
-        np.stack([pr, rr_], axis=-1),
-    ], axis=-1)
+    if dof.shape[1] == 30:
+        # New GMR layout (hinge ankles): direct passthrough.
+        qpos = np.concatenate([root_pos, root_new, dof], axis=-1)
+    else:
+        # Legacy GMR layout (ball ankles, 34 dof): decompose to pitch/roll.
+        assert dof.shape[1] == 34, dof.shape
+        hinges1 = dof[:, :N_HINGE_BLOCK1]
+        ball_l = dof[:, 22:26]
+        legr = dof[:, 26:30]
+        ball_r = dof[:, 30:34]
+        pl, rl, yl = _ball_to_xyz_hinges(ball_l)
+        pr, rr_, yr = _ball_to_xyz_hinges(ball_r)
+        qpos = np.concatenate([
+            root_pos, root_new, hinges1,
+            np.stack([pl, rl], axis=-1),   # Pitch(x), Roll(y) — yaw dropped
+            legr,
+            np.stack([pr, rr_], axis=-1),
+        ], axis=-1)
     assert qpos.shape[1] == 37, qpos.shape
     return torch.from_numpy(qpos).float(), float(d.get("fps", 30.0))
 
