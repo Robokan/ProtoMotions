@@ -60,6 +60,27 @@ print(f"bound {bound} visual meshes; {plain} plain meshes left unbound", flush=T
 # surface.diffuseColor.
 from pxr import Sdf  # noqa: E402
 
+# IMPORTANT: these materials expose ONLY an outputs:mdl:surface output (no
+# universal outputs:surface), so every Omniverse renderer — the GUI and the
+# training-time Fabric pipeline alike — resolves them through the MDL
+# context, which reads the OmniPBR-STYLE inputs (diffuse_texture,
+# diffuse_color_constant, metallic_constant, ...), NOT the UsdPreviewSurface
+# inputs. The legacy inputs are therefore the AUTHORITATIVE ones and must be
+# authored with correct values; the UsdPreviewSurface network is kept and a
+# universal outputs:surface added for non-MDL consumers (usdview, other DCCs).
+
+# Families rendered as a plain color CONSTANT so the color stays editable in
+# the GUI (OmniPBR ignores the color constant whenever a texture is bound).
+# Emission's shipped texture is a flat green (std ~0.01) — nothing is lost.
+CONSTANT_COLOR = {
+    "Emission": Gf.Vec3f(0.341, 0.906, 0.349),
+}
+# Bbody ships no diffuse texture (the MJCF pointed it at the roughness map);
+# keep that binding per Eric's preference — he dials it in with albedo add.
+FORCED_TEXTURE = {
+    "Bbody": "materials/Bbody_Roughness.png",
+}
+
 for fam, mat in mats.items():
     surface = None
     old_tex = None
@@ -71,14 +92,65 @@ for fam, mat in mats.items():
                 ti = shd.GetInput("diffuse_texture")
                 if ti and ti.Get():
                     old_tex = ti.Get().path  # layer-relative texture path
+            elif sh.GetName() == "diffuseTex":
+                # Re-run after legacy inputs were stripped: recover the
+                # texture path from the network a previous run built.
+                fi = UsdShade.Shader(sh).GetInput("file")
+                if old_tex is None and fi and fi.Get():
+                    old_tex = fi.Get().path.lstrip("./")
     if surface is None:
         continue
-    surface.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(0.5)
-    surface.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(0.4)
-    if fam == "Bbody" or old_tex is None:
-        # No usable diffuse texture (rig ships none for Bbody): constant color.
-        color = Gf.Vec3f(0.04, 0.04, 0.045) if fam == "Bbody" else Gf.Vec3f(0.5, 0.5, 0.5)
-        surface.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(color)
+    if old_tex is None and fam in FORCED_TEXTURE:
+        old_tex = FORCED_TEXTURE[fam]
+    sp = surface.GetPrim()
+    # Universal surface output alongside the existing mdl:surface one.
+    mat.CreateSurfaceOutput().ConnectToSource(
+        surface.CreateOutput("surface", Sdf.ValueTypeNames.Token)
+    )
+    # Per-family PBR params from the source Atlas2025 rig; families not
+    # listed use the generic painted-metal defaults. Dark families (Plastic's
+    # diffuse texture averages 0.1) MUST be dielectric (metallic 0) or they
+    # render as environment-gray, same failure as Bbody.
+    metallic, roughness, spec = {
+        "Plastic": (0.0, 0.56, 0.5),
+        "Emission": (0.0, 0.5, 0.5),
+        "Bbody": (0.0, 0.48, 0.13181818),
+    }.get(fam, (0.4, 0.5, None))
+    surface.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(roughness)
+    surface.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(metallic)
+    # Legacy/MDL-context values (what actually renders in Omniverse).
+    surface.CreateInput("metallic_constant", Sdf.ValueTypeNames.Float).Set(metallic)
+    surface.CreateInput(
+        "reflection_roughness_constant", Sdf.ValueTypeNames.Float
+    ).Set(roughness)
+    if spec is not None:
+        surface.CreateInput("specular", Sdf.ValueTypeNames.Float).Set(spec)
+        surface.CreateInput("specular_level", Sdf.ValueTypeNames.Float).Set(spec)
+    if fam in CONSTANT_COLOR or old_tex is None:
+        # Constant-color families: no texture bound, so the GUI color
+        # controls actually take effect.
+        color = CONSTANT_COLOR.get(fam, Gf.Vec3f(0.5, 0.5, 0.5))
+        di = surface.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f)
+        di.GetAttr().ClearConnections()
+        di.Set(color)
+        sp.RemoveProperty("inputs:diffuse_texture")
+        surface.CreateInput(
+            "diffuse_color_constant", Sdf.ValueTypeNames.Color3f
+        ).Set(color)
+        # Drop any texture network a previous run of this script built.
+        for child in ("diffuseTex", "stReader"):
+            cpath = mat.GetPrim().GetPath().AppendChild(child)
+            if stage.GetPrimAtPath(cpath):
+                stage.RemovePrim(cpath)
+        if fam == "Emission":
+            # The accent rings glow their surface color.
+            ec = surface.CreateInput("emissiveColor", Sdf.ValueTypeNames.Color3f)
+            ec.GetAttr().ClearConnections()
+            ec.Set(color)
+            sp.RemoveProperty("inputs:emissive_color_texture")
+            surface.CreateInput("enable_emission", Sdf.ValueTypeNames.Bool).Set(True)
+            surface.CreateInput("emissive_color", Sdf.ValueTypeNames.Color3f).Set(color)
+            surface.CreateInput("emissive_intensity", Sdf.ValueTypeNames.Float).Set(1.0)
         print(f"{fam}: constant diffuse {tuple(color)}", flush=True)
         continue
     mpath = mat.GetPrim().GetPath()
@@ -87,13 +159,20 @@ for fam, mat in mats.items():
     reader.CreateInput("varname", Sdf.ValueTypeNames.Token).Set("st")
     tex = UsdShade.Shader.Define(stage, mpath.AppendChild("diffuseTex"))
     tex.CreateIdAttr("UsdUVTexture")
-    # ABSOLUTE path: the battle container's Fabric UsdToMdl pipeline fails
-    # to anchor layer-relative asset paths ("can not be found: materials/X").
-    import os as _os
-    abs_tex = _os.path.abspath(
-        _os.path.join("protomotions/data/assets/usd/atlas/configuration", str(old_tex))
-    )
-    tex.CreateInput("file", Sdf.ValueTypeNames.Asset).Set(abs_tex)
+    # Layer-anchored relative path. The "./" prefix matters: a bare
+    # "materials/X.png" is a SEARCH path under USD's resolver rules (resolved
+    # against resolver search paths, hence the earlier "can not be found"
+    # errors), while "./materials/X.png" anchors to this layer's directory —
+    # portable across machines and mount points.
+    rel_tex = "./" + str(old_tex).lstrip("./")
+    tex.CreateInput("file", Sdf.ValueTypeNames.Asset).Set(rel_tex)
+    # MDL context reads THIS input — same layer-anchored path.
+    surface.CreateInput("diffuse_texture", Sdf.ValueTypeNames.Asset).Set(rel_tex)
+    # Eric's calibrated adjustments for the dark textured families.
+    if fam == "Plastic":
+        surface.CreateInput("albedo_add", Sdf.ValueTypeNames.Float).Set(0.05)
+    elif fam == "Bbody":
+        surface.CreateInput("albedo_brightness", Sdf.ValueTypeNames.Float).Set(0.3)
     tex.CreateInput("st", Sdf.ValueTypeNames.Float2).ConnectToSource(
         reader.CreateOutput("result", Sdf.ValueTypeNames.Float2)
     )

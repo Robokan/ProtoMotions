@@ -26,6 +26,25 @@ PER_FRAME = ["gts", "grs", "gvs", "gavs", "dvs", "dps", "contacts", "lrs"]
 PER_MOTION = ["motion_lengths", "motion_dt", "motion_num_frames", "motion_weights"]
 
 
+def subset(lib: dict, keep_idx: list[int]) -> dict:
+    """New lib dict containing only the given motion indices."""
+    starts = lib["length_starts"]
+    nf = lib["motion_num_frames"].long()
+    frames = torch.cat(
+        [torch.arange(int(starts[i]), int(starts[i]) + int(nf[i])) for i in keep_idx]
+    )
+    out = {k: lib[k][frames] for k in PER_FRAME if k in lib}
+    idx = torch.tensor(keep_idx, dtype=torch.long)
+    for k in PER_MOTION:
+        out[k] = lib[k][idx]
+    kept_nf = out["motion_num_frames"].long()
+    out["length_starts"] = torch.cat(
+        [torch.zeros(1, dtype=starts.dtype), kept_nf.cumsum(0)[:-1]]
+    )
+    out["motion_files"] = tuple(lib["motion_files"][i] for i in keep_idx)
+    return out
+
+
 def merge(base: dict, add: dict, match_weight_of: str | None) -> dict:
     out = {}
     n_base_frames = base["gts"].shape[0]
@@ -74,10 +93,29 @@ def main():
         "per-clip weight (renormalized). Omit to keep the added lib's own "
         "weights (rescaled into the merged total).",
     )
+    p.add_argument(
+        "--skip-duplicates",
+        action="store_true",
+        help="Drop added clips whose filename (basename) already exists in "
+        "the base lib.",
+    )
     args = p.parse_args()
 
     base = torch.load(args.base, map_location="cpu", weights_only=False)
     add = torch.load(args.add, map_location="cpu", weights_only=False)
+    if args.skip_duplicates:
+        base_names = {str(f).split("/")[-1] for f in base["motion_files"]}
+        keep = [
+            i for i, f in enumerate(add["motion_files"])
+            if str(f).split("/")[-1] not in base_names
+        ]
+        n_dup = len(add["motion_files"]) - len(keep)
+        if n_dup:
+            print(f"skipping {n_dup} duplicate clips already in base")
+        if not keep:
+            print("nothing new to add; leaving base unchanged")
+            return
+        add = subset(add, keep)
     merged = merge(base, add, args.match_weight_of)
 
     n_b, n_a = len(base["motion_files"]), len(add["motion_files"])

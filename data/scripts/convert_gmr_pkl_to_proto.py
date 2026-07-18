@@ -28,6 +28,7 @@ import numpy as np
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 # Root-frame bake constant from retune_atlas_mjcf.py (wxyz).
 ATLAS_ROOT_BAKE_QUAT = np.array([0.67082, 0.74162, 0.0, 0.0])
@@ -174,10 +175,9 @@ def main():
             # ~2-3cm under ground.
             motion.fix_height_per_frame(height_offset=0.056)
             motion.fix_height(height_offset=0.076)
-            motion.rigid_body_contacts = torch.zeros(
-                motion.rigid_body_pos.shape[0],
-                motion.rigid_body_pos.shape[1],
-                dtype=torch.bool,
+            from contact_detection import compute_contact_labels_from_pos_and_vel
+            motion.rigid_body_contacts = compute_contact_labels_from_pos_and_vel(
+                motion.rigid_body_pos, motion.rigid_body_vel
             )
             motion.local_rigid_body_rot = None
             torch.save(
