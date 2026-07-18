@@ -104,6 +104,11 @@ class BattleControlConfig(ControlComponentConfig):
     )
     # Head body for the gaze-based facing reward
     head_body_name: str = "Head"
+    # Where the gaze should POINT: boxers watch the opponent's upper chest /
+    # shoulder line (torso telegraphs strikes; hands are too fast to track,
+    # eyes deceive), not the face. The chest is also a steadier target that
+    # tolerates bladed stances and slipping better than the head.
+    facing_target_body_name: str = "Chest"
     # Gaze direction in the head's local frame. SOMA (SMPL-family) faces
     # body-frame -y; +x (the calc_heading convention) points out the ear.
     gaze_forward_axis: Tuple[float, float, float] = (0.0, -1.0, 0.0)
@@ -227,6 +232,9 @@ class BattleControl(ControlComponent):
         )
         self.head_body_id = int(
             resolve_body_ids([config.head_body_name], body_names)[0]
+        )
+        self.facing_target_body_id = int(
+            resolve_body_ids([config.facing_target_body_name], body_names)[0]
         )
 
         # Map each strike body to its group id (declaration order of
@@ -561,11 +569,14 @@ class BattleControl(ControlComponent):
             self.idle_time + cfg.idle_time_increment,
         )
 
-        # Gaze quality + potential-based delta (SOMA faces body-frame -y)
+        # Gaze quality + potential-based delta (SOMA faces body-frame -y).
+        # Gaze originates at own head; the TARGET is the opponent's chest —
+        # boxer's soft focus on the shoulder line, not eye contact.
         head_pos = body_pos[:, self.head_body_id]
         head_rot = state.rigid_body_rot[:, self.head_body_id]
+        facing_target = body_pos[:, self.facing_target_body_id]
         to_opp = torch.nn.functional.normalize(
-            head_pos[partner] - head_pos, dim=-1
+            facing_target[partner] - head_pos, dim=-1
         )
         gaze = torch.nn.functional.normalize(
             rotations.quat_rotate(
