@@ -266,6 +266,9 @@ class BattleControl(ControlComponent):
             strike_body_groups=strike_groups,
             num_strike_groups=len(self.strike_group_labels),
             strike_multipliers=strike_multipliers,
+            # KE mode uses the same per-event physics for the dense reward
+            # (continuous, ungated log1p(KE/ref)) as for health (speed-gated).
+            reward_from_event_ke=config.raw_health_damage,
         )
 
         # Stun region weights aligned to damage_body_names (head dominates).

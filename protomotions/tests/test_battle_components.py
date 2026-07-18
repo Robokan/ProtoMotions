@@ -118,6 +118,27 @@ def test_ke_damage_gates_on_impact_speed():
     assert (ke_push == 0).all(), "a slow push must deal ZERO HP however forceful"
 
 
+def test_ke_reward_is_continuous_and_ungated():
+    """In KE-reward mode the dense reward (1st return) pays continuously —
+    a sub-gate tap earns a small positive guide, a faster hit earns more —
+    while HEALTH (4th return) stays speed-gated to zero for the tap."""
+    cfg = HitStateConfig(proximity_radius=0.5, warmup_steps=0, strike_min_speed=2.0)
+
+    hs = _make_hit_state()
+    hs.config = cfg
+    hs.reward_from_event_ke = True
+    r_tap, _, _, ke_tap = hs.step(*_hit_inputs(force=100.0, closing_speed=1.0))
+    assert (r_tap > 0).all(), "a tap must still earn a small positive reward"
+    assert (ke_tap == 0).all(), "but a tap deals zero HEALTH damage"
+
+    hs = _make_hit_state()
+    hs.config = cfg
+    hs.reward_from_event_ke = True
+    r_hit, _, _, ke_hit = hs.step(*_hit_inputs(force=100.0, closing_speed=4.0))
+    assert (r_hit > r_tap).all(), "reward must grow with impact speed"
+    assert (ke_hit.sum(dim=-1) > 0).all(), "a qualifying strike damages health"
+
+
 def test_ke_damage_deposits_once_per_contact_event():
     """Lingering contact must not re-score: KE deposits only on the FSM
     rising edge, so step 2 of the same contact adds nothing."""

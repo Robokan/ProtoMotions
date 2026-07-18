@@ -48,6 +48,11 @@ class HitStateConfig:
     strike_min_speed: float = 2.5  # m/s, impact-speed gate (calibrated on data)
     # Legacy field from the abandoned force-energy damage model; unused.
     min_hit_energy: float = 50.0
+    # Reference energy (J) for the KE-mode REWARD: r = log1p(KE/ref) per
+    # contact event, continuous and UNGATED — a tap still earns a small
+    # positive guide; only health/wins apply strike_min_speed. ~70 J = a
+    # solid strike (hand@11 m/s or shin@7 m/s).
+    ke_reward_ref: float = 70.0
 
 
 class BattleHitState:
@@ -71,6 +76,7 @@ class BattleHitState:
         num_strike_groups: int = 0,
         strike_multipliers: Tensor = None,
         strike_body_masses: Tensor = None,
+        reward_from_event_ke: bool = False,
     ):
         """
         Args:
@@ -108,6 +114,9 @@ class BattleHitState:
         self.strike_body_masses = (
             strike_body_masses.to(device) if strike_body_masses is not None else None
         )
+        # True: reward = log1p(per-event KE / ke_reward_ref), continuous and
+        # ungated, replacing the accumulated-F*v log-delta stream.
+        self.reward_from_event_ke = reward_from_event_ke
 
         num_damage = len(damage_body_ids)
         self._active = torch.zeros(num_envs, num_damage, dtype=torch.bool, device=device)
@@ -233,8 +242,40 @@ class BattleHitState:
         self._e_prev = torch.where(end, torch.zeros_like(self._e_prev), self._e_prev)
         self._cooldown = (self._cooldown - 1.0).clamp_min(0.0)
 
-        # Region multipliers, warm-up gating, reduce over bodies
         warmup = progress < self.config.warmup_steps
+
+        # --- Kinetic-energy hit events -----------------------------------
+        # One deposit per contact event, at its onset (`start` rising edge):
+        # KE = 0.5 * m_striker * v_impact^2, from ground-truth limb mass and
+        # closing speed — contact-solver force magnitudes play no part (they
+        # are impulse artifacts whose per-step peaks are discretization
+        # noise). A sustained push/lean/grind arrives at ~0 m/s and scores
+        # ~nothing; lingering contact after a hit never re-scores.
+        if self.strike_body_masses is not None:
+            striker_mass = self.strike_body_masses[nearest_s]  # [2N, D]
+        else:
+            striker_mass = torch.ones_like(v_rel)
+        ke = 0.5 * striker_mass * v_rel * v_rel  # [2N, D] joules
+        event = start  # rising edge already requires force_on & include
+        # Diagnostics (pre-speed-gate) for calibration probes.
+        self.last_event_speed = v_rel * event
+        self.last_event_ke = ke * event
+        self.last_event_striker = nearest_s
+        # HEALTH damage: speed-GATED KE (taps deal zero; commitment wins).
+        ke_event = ke * (event & (v_rel >= cfg.strike_min_speed))
+        ke_event = torch.where(
+            warmup.unsqueeze(-1), torch.zeros_like(ke_event), ke_event
+        )
+
+        # REWARD: in KE mode, a continuous UNGATED function of the same
+        # per-event energy — log1p(KE/ref) — so even a light tap earns a
+        # small positive guide and the signal grows monotonically with how
+        # hard the hit lands. The speed gate applies only to health/wins:
+        # taps teach, but they never score.
+        if self.reward_from_event_ke:
+            r_per_body = torch.log1p((ke * event) / max(cfg.ke_reward_ref, 1e-6))
+
+        # Region multipliers, warm-up gating, reduce over bodies
         r_weighted = r_per_body * self.damage_multipliers.unsqueeze(0)  # [2N, D]
         r_taken = r_weighted.sum(dim=-1)
         r_taken = torch.where(warmup, torch.zeros_like(r_taken), r_taken)
@@ -255,36 +296,6 @@ class BattleHitState:
 
         taken_per_body = torch.where(
             warmup.unsqueeze(-1), torch.zeros_like(r_weighted), r_weighted
-        )
-
-        # --- Health damage: RAW physical energy, linear, thresholded --------
-        # The reward stream above (r_taken) is log-normalized for stable PPO
-        # magnitudes. Health instead drains from the raw per-step energy that
-        # landed during an active bout, so a hard strike hurts in proportion to
-        # f_mag * v_rel (not its log). Sub-threshold contact — a tap or a lean,
-        # whose low closing speed yields low energy — is zeroed by
-        # ``min_hit_energy``, so only committed strikes remove HP. Region
-        # multipliers (head-heavy) and warm-up gating apply as for the reward.
-        # --- Kinetic-energy hit events (HEALTH damage; reward untouched) -----
-        # One deposit per contact event, at its onset (`start` rising edge):
-        # KE = 0.5 * m_striker * v_impact^2, from ground-truth limb mass and
-        # closing speed — contact-solver force magnitudes play no part (they
-        # are impulse artifacts whose per-step peaks are discretization noise).
-        # A sustained push/lean/grind arrives at ~0 m/s and scores nothing;
-        # lingering contact after a hit never re-scores.
-        if self.strike_body_masses is not None:
-            striker_mass = self.strike_body_masses[nearest_s]  # [2N, D]
-        else:
-            striker_mass = torch.ones_like(v_rel)
-        ke = 0.5 * striker_mass * v_rel * v_rel  # [2N, D] joules
-        event = start  # rising edge already requires force_on & include
-        # Diagnostics (pre-speed-gate) for calibration probes.
-        self.last_event_speed = v_rel * event
-        self.last_event_ke = ke * event
-        self.last_event_striker = nearest_s
-        ke_event = ke * (event & (v_rel >= cfg.strike_min_speed))
-        ke_event = torch.where(
-            warmup.unsqueeze(-1), torch.zeros_like(ke_event), ke_event
         )
 
         return r_taken, taken_by_group, taken_per_body, ke_event
