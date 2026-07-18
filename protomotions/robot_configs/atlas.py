@@ -26,8 +26,8 @@ class AtlasRobotConfig(RobotConfig):
 
     Source model: the GMR retargeting rig (GMR/assets/atlas_mujoco/atlas.xml)
     made physics-ready by data/scripts/retune_atlas_mjcf.py — 68.04 kg total,
-    EngineAI-class strength-to-weight (280 Nm hips/knees), passive ankle ball
-    joints replaced by actuated pitch+roll hinges. 32 bodies, 30 actuated DOFs.
+    EngineAI-class strength-to-weight (280 Nm hips/knees), passive ankle ball joints
+    replaced by 2-DOF chained pitch+roll ankles (Ankle_L/R link bodies). 30 DOFs.
 
     Effort limits live in the MJCF (actuatorfrcrange per joint); the control
     override here supplies PD gains scaled per joint group.
@@ -86,7 +86,7 @@ class AtlasRobotConfig(RobotConfig):
                     stiffness=120, damping=6, effort_limit=90,
                     velocity_limit=35,
                 ),
-                r"Foot_[LR]_(Roll|Yaw)": ControlInfo(
+                r"Foot_[LR]_Roll": ControlInfo(
                     stiffness=80, damping=4, effort_limit=60,
                     velocity_limit=35,
                 ),

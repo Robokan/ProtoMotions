@@ -206,7 +206,8 @@ def verify_models_match(input_path: str, output_path: str) -> list[str]:
                 root.remove(elem)
         # Write temp alongside original so relative mesh paths resolve
         tmp = os.path.join(input_dir, "_flatten_verify_tmp.xml")
-        tree.write(tmp, xml_declaration=False, encoding="unicode")
+        with open(tmp, "w") as _fh:
+            tree.write(_fh, xml_declaration=False, encoding="unicode")
         try:
             return mujoco.MjModel.from_xml_path(tmp)
         finally:
@@ -268,7 +269,8 @@ def flatten_mjcf(input_path: str, output_path: str, verify: bool = True) -> None
     if fixes["joint_limits"]:
         print(f"  Added limited=\"true\" to {fixes['joint_limits']} joints with range")
 
-    tree.write(output_path, xml_declaration=False, encoding="unicode")
+    with open(output_path, "w") as fh:
+        tree.write(fh, xml_declaration=False, encoding="unicode")
     print(f"\nFlattened MJCF written to: {output_path}")
 
     if verify:

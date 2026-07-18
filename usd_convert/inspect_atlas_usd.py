@@ -20,7 +20,16 @@ for p in meshes[:14]:
     b = UsdShade.MaterialBindingAPI(p).ComputeBoundMaterial()[0]
     bpath = b.GetPrim().GetPath() if b else None
     print("M", p.GetPath(), "| uv:", uv, "| bound:", bpath, flush=True)
-for p in mats[:12]:
+from pxr import UsdPhysics
+joints=[pr for pr in st.Traverse() if pr.GetTypeName() in ("PhysicsRevoluteJoint","PhysicsPrismaticJoint")]
+print("JOINTS", len(joints), flush=True)
+for pr in joints[:8]:
+    drv = UsdPhysics.DriveAPI.Get(pr, "angular")
+    if drv:
+        print("J", pr.GetName(), "| stiff:", drv.GetStiffnessAttr().Get(), "| damp:", drv.GetDampingAttr().Get(), "| maxF:", drv.GetMaxForceAttr().Get(), flush=True)
+    else:
+        print("J", pr.GetName(), "| NO DRIVE", flush=True)
+for p in mats[:0]:
     print("MAT", p.GetPath(), flush=True)
     for sh in p.GetChildren():
         if sh.IsA(UsdShade.Shader):

@@ -37,8 +37,8 @@ ATLAS_ROOT_BAKE_QUAT = np.array([0.67082, 0.74162, 0.0, 0.0])
 #   22..25 Foot_L ball quat (wxyz)
 #   26..29 LegR hinges x4
 #   30..33 Foot_R ball quat (wxyz)
-# Physics-model dof order (32): same hinges with each ball replaced by
-# [Yaw, Roll, Pitch] hinge angles.
+# Physics-model dof order (30): same hinges with each ball replaced by a
+# CHAINED 2-DOF ankle [Pitch, Roll] (yaw dropped — real Atlas has none).
 N_HINGE_BLOCK1 = 22  # Twist .. Leg_8_L
 N_LEGR = 4
 
@@ -111,11 +111,11 @@ def gmr_pkl_to_qpos(pkl_path: Path):
 
     qpos = np.concatenate([
         root_pos, root_new, hinges1,
-        np.stack([pl, rl, yl], axis=-1),   # Pitch(x), Roll(y), Yaw(z)
+        np.stack([pl, rl], axis=-1),   # Pitch(x), Roll(y) — yaw dropped
         legr,
-        np.stack([pr, rr_, yr], axis=-1),
+        np.stack([pr, rr_], axis=-1),
     ], axis=-1)
-    assert qpos.shape[1] == 39, qpos.shape
+    assert qpos.shape[1] == 37, qpos.shape
     return torch.from_numpy(qpos).float(), float(d.get("fps", 30.0))
 
 

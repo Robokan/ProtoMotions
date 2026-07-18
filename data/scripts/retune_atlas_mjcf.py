@@ -85,34 +85,51 @@ def main():
                 el.set("density", f"{float(d) * density_scale:.2f}")
 
     # 2a. Ankles: the rig has PASSIVE BALL joints at the feet (Foot_L/R_Joint,
-    # unactuated) — replace each with an actuated pitch+roll hinge pair.
-    # Knee flexion axis is x, so ankle pitch = x, roll = y.
+    # unactuated). Real Atlas ankles are 2-DOF (pitch + roll). We build them as
+    # CHAINED SINGLE-JOINT BODIES — Leg_4 -> Ankle_<side> (pitch) -> Foot
+    # (roll) — because (a) the framework requires 1-or-3 joints per body and
+    # (b) the IsaacLab MJCF importer merges multi-joint bodies into one D6
+    # joint whose axis names never receive PD gains (the robot-falls-over
+    # root cause). Knee flexion axis is x, so ankle pitch = x, roll = y.
     new_ankle_joints = []
-    for body in root.iter("body"):
+    parent_of = {c: par for par in root.iter() for c in par}
+    for body in list(root.iter("body")):
         for joint in list(body.findall("joint")):
             if joint.get("type") == "ball" and (joint.get("name") or "").startswith("Foot_"):
                 side = "L" if "_L_" in joint.get("name") else "R"
+                parent = parent_of[body]
+                # Intermediate pitch body takes the Foot body's placement
+                ankle = ET.Element("body", dict(
+                    name=f"Ankle_{side}",
+                    pos=body.get("pos") or "0 0 0",
+                ))
+                if body.get("quat"):
+                    ankle.set("quat", body.get("quat"))
+                ET.SubElement(ankle, "inertial", dict(
+                    pos="0 0 0", mass="0.02",
+                    diaginertia="1e-05 1e-05 1e-05",
+                ))
+                pj = ET.SubElement(ankle, "joint", dict(
+                    name=f"Foot_{side}_Pitch", type="hinge", pos="0 0 0",
+                    axis="1 0 0",
+                    range=f"{ANKLE_RANGE[0]:g} {ANKLE_RANGE[1]:g}",
+                    limited="true",
+                ))
+                # Foot becomes the roll body, at the ankle origin
+                idx = list(parent).index(body)
+                parent.remove(body)
+                body.set("pos", "0 0 0")
+                if body.get("quat"):
+                    del body.attrib["quat"]
                 body.remove(joint)
-                # DECLARATION ORDER MUST BE x, y, z: the framework's
-                # euler_xyz 3-DOF decomposition (used by motion converters)
-                # assumes hinges are ordered X, Y, Z like soma23's bodies.
-                # (reversed() because insert(0) reverses.)
-                specs = [
-                    (f"Foot_{side}_Pitch", "1 0 0",
-                     f"{ANKLE_RANGE[0]:g} {ANKLE_RANGE[1]:g}"),
-                    (f"Foot_{side}_Roll", "0 1 0", "-0.5236 0.5236"),
-                    # 3rd hinge: framework requires 1-or-3 joints per body;
-                    # the real Atlas 2025 foot does swivel (yaw).
-                    (f"Foot_{side}_Yaw", "0 0 1", "-0.5236 0.5236"),
-                ]
-                for jname, axis, rng in reversed(specs):
-                    j = ET.Element("joint", dict(
-                        name=jname, type="hinge", pos="0 0 0", axis=axis,
-                        range=rng, limited="true",
-                    ))
-                    body.insert(0, j)
-                for jname, _, _ in specs:
-                    new_ankle_joints.append(jname)
+                rj = ET.Element("joint", dict(
+                    name=f"Foot_{side}_Roll", type="hinge", pos="0 0 0",
+                    axis="0 1 0", range="-0.5236 0.5236", limited="true",
+                ))
+                body.insert(0, rj)
+                ankle.append(body)
+                parent.insert(idx, ankle)
+                new_ankle_joints += [f"Foot_{side}_Pitch", f"Foot_{side}_Roll"]
     print("ankle balls replaced with hinges:", new_ankle_joints)
 
     # 2b. Joints: effort/armature/friction
@@ -186,7 +203,8 @@ def main():
         for motor in default.findall("motor"):
             motor.attrib.pop("ctrlrange", None)
 
-    tree.write(args.output, encoding="unicode", xml_declaration=False)
+    with open(args.output, "w") as fh:
+        tree.write(fh, encoding="unicode", xml_declaration=False)
 
     # 4. Verify with mujoco
     m = mujoco.MjModel.from_xml_path(str(args.output))
