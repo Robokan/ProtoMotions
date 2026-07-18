@@ -165,7 +165,7 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
                 raw_health_damage=True,
                 damage_to_health=0.005,  # HP/joule: hand@6m/s~19J -> ~19% head hit
                 max_hp_per_hit=0.25,
-                hit_state=HitStateConfig(strike_min_speed=2.5),  # champion's max-ever contact: 1.02 m/s
+                hit_state=HitStateConfig(strike_min_speed=2.5, ke_reward_ref=5.0),  # champion's max-ever contact: 1.02 m/s
                 # Concussion-gated knockouts (enabled 2026-07-17 with the KE
                 # model): a downed fighter is KO'd only while stun > 0.4.
                 # Stun deposits stun_gain*KE/stun_raw_energy_ref, head-weighted:
