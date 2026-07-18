@@ -260,6 +260,9 @@ class BattleTournament:
         held_ego = None
         # Per contact-onset event (pre-speed-gate): impact speed, KE, group.
         event_speeds, event_kes, event_groups = [], [], []
+        # Gait statistics (A/B diagnostics): per-step root height and
+        # down/fallen fraction, split into early (pre-engagement) vs all.
+        gait_heights, gait_down, gait_speed = [], [], []
         for step in range(steps):
             obs = self.agent.add_agent_info_to_obs(obs)
 
@@ -285,6 +288,17 @@ class BattleTournament:
             done_ids = dones.nonzero(as_tuple=False).flatten()
             if len(done_ids) > 0:
                 obs, _ = self.env.reset(done_ids)
+
+            # Gait stats: root height, below-knockdown fraction, planar speed.
+            rs = inner.simulator.get_root_state()
+            gait_heights.append(rs.root_pos[:, 2].detach().cpu().clone())
+            gait_down.append(
+                (rs.root_pos[:, 2] < inner.battle_control.config.knockdown_height)
+                .float().detach().cpu().clone()
+            )
+            gait_speed.append(
+                rs.root_vel[:, :2].norm(dim=-1).detach().cpu().clone()
+            )
 
             # Calibration: collect contact-onset events (pre-speed-gate).
             hs = inner.battle_control.hit_state
@@ -370,6 +384,20 @@ class BattleTournament:
                         )
         else:
             log.info("HIT EVENTS: no contact onsets sampled")
+
+        # Gait report (A/B diagnostics for rule-flag comparisons).
+        if gait_heights:
+            H = torch.stack(gait_heights)  # [T, 2N]
+            D = torch.stack(gait_down)
+            V = torch.stack(gait_speed)
+            early = max(1, min(150, H.shape[0]))
+            log.info(
+                "GAIT: root height mean %.3f m (early %.3f) | down fraction "
+                "%.1f%% (early %.1f%%) | planar speed mean %.2f m/s (early %.2f)",
+                float(H.mean()), float(H[:early].mean()),
+                100 * float(D.mean()), 100 * float(D[:early].mean()),
+                float(V.mean()), float(V[:early].mean()),
+            )
 
     @torch.no_grad()
     def record_pairing(
