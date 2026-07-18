@@ -1,3 +1,20 @@
+# Atlas motions that still fail GMR retargeting (rewrite: 2026-07-18)
+#
+# History: 235 clips originally flagged (of 8756). Two GMR fixes recovered
+# 205 of them:
+#   - first-frame IK settle (cold-start transient)         -> 39 rescued
+#   - widened joint limits (hips +-150deg, knee -170..+5,
+#     waist +-135, ankles +-80/75) for crouches and rolls  -> 166 rescued
+# ALL Reallusion combat clips and ALL drunken clips now convert cleanly.
+#
+# The 30 below remain broken. Dominant cause: IK bistability - the arm
+# (occasionally leg) flips between two solutions reaching the same target
+# mid-clip (50-85 rad/s joint teleports while the human moves smoothly).
+# Likely fix: temporal continuity cost / per-frame rate limit in the mink
+# solver setup. Families: dance (fast crossing arms), jog_avoid_bump,
+# ladder clips (climbing needs contact reasoning), a few crouch starts,
+# one shoulder-roll variant.
+#
 crouch_ff_loop_225_R_003__A198
 crouch_ff_start_180_R_001__A248
 crouch_ff_start_180_R_002__A244
