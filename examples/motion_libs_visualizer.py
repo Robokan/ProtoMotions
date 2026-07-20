@@ -34,11 +34,16 @@ parser.add_argument(
 parser.add_argument(
     "--robot",
     type=str,
-    choices=["g1", "rigv1", "h1_2", "smpl", "soma23", "atlas"],
+    choices=["g1", "rigv1", "h1_2", "smpl", "soma23", "atlas", "t800"],
     default="g1",
-    help="Robot to load (g1, rigv1, h1_2, smpl, or soma23)",
+    help="Robot to load (g1, rigv1, h1_2, smpl, soma23, atlas, or t800)",
 )
 parser.add_argument("--headless", action="store_true", help="Run in headless mode")
+parser.add_argument(
+    "--markers",
+    action="store_true",
+    help="Enable joint/contact visualization markers (can stall IsaacLab point-instancers)",
+)
 parser.add_argument(
     "--cpu-only",
     action="store_true",
@@ -148,6 +153,9 @@ ROBOT_SPECS = {
         viz_bodies=[],
     ),
     "soma23": RobotSpec(
+        viz_bodies=[],
+    ),
+    "t800": RobotSpec(
         viz_bodies=[],
     ),
 }
@@ -401,11 +409,16 @@ class MotionVisualizerSmoothness:
         # Use torque control (zero torque) to maintain poses
         self.robot_cfg.control.control_type = ControlType.TORQUE
 
-        # Create visualization markers
-        self.viz_markers = self._create_visualization_markers()
-
-        # Initialize body markers after kinematic info is loaded
-        self._initialize_body_markers()
+        # Markers are opt-in: IsaacLab point-instancers for per-body joint/contact
+        # markers have been stalling the visualizer after robot load (white frozen robot).
+        self.viz_markers = {}
+        self.joint_marker_name = "joint_highlight_markers"
+        self.contact_marker_name = "contact_markers"
+        if getattr(args, "markers", False):
+            self.viz_markers = self._create_visualization_markers()
+            self._initialize_body_markers()
+        else:
+            print("Markers off (pass --markers to enable)", flush=True)
 
         # Create custom key handlers for speed and threshold control
         custom_key_handlers = {
@@ -427,6 +440,7 @@ class MotionVisualizerSmoothness:
         SimulatorClass = get_class(self.simulator_cfg._target_)
 
         extra_params = extra_simulator_params or {}
+        print("Creating simulator...", flush=True)
         self.simulator = SimulatorClass(
             config=self.simulator_cfg,
             robot_config=self.robot_cfg,
@@ -436,10 +450,12 @@ class MotionVisualizerSmoothness:
             custom_key_handlers=custom_key_handlers,
             **extra_params,
         )
+        print("Simulator constructed; initializing markers/sim...", flush=True)
         # Initialize the simulator with visualization markers
         self.simulator._initialize_with_markers(self.viz_markers)
+        print("Simulator init finished", flush=True)
 
-        print(f"Loaded {robot_name} robot using {simulator_type}")
+        print(f"Loaded {robot_name} robot using {simulator_type}", flush=True)
         print(f"Visualizing bodies: {self.robot_spec.viz_bodies}")
         vel_source = "data_vel" if self.use_data_vel else "finite_diff"
         print(
@@ -458,7 +474,8 @@ class MotionVisualizerSmoothness:
         print("  '4' - Decrease smoothness threshold by 1.5x (NumPad 4 for IsaacLab)")
         print("Motion will play automatically and loop")
 
-        self.simulator.user_requested_reset = True
+        # Do not force an immediate motion skip on startup (was skipping clip 0).
+        self.simulator.user_requested_reset = False
 
         # Speed control state
         self.speed_change_factor = 1.5  # 150% speed change
@@ -470,8 +487,9 @@ class MotionVisualizerSmoothness:
         self.precomputed_smoothness = None
 
         # Pre-compute smoothness for the initial motion
-        print("Pre-computing smoothness metrics for initial motion...")
+        print("Pre-computing smoothness metrics for initial motion...", flush=True)
         self._precompute_motion_smoothness()
+        print("Ready to play", flush=True)
 
     def _create_visualization_markers(self) -> Dict[str, VisualizationMarkerConfig]:
         """Create visualization markers for specified body locations"""
@@ -876,6 +894,7 @@ class MotionVisualizerSmoothness:
         step_count = 0
         marker_states = None
         target_dt = 1.0 / FPS  # wall-clock time per motion frame
+        print("Entering play loop", flush=True)
 
         while True:
             frame_start = time.perf_counter()
