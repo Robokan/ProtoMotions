@@ -91,7 +91,13 @@ count-out pressure trained it out by ~snapshot 13. What to watch next:
 `end_ko_mean` compounding, first `reason="gate"` snapshot (the 70%-win-rate
 gate has probably fired by now given 92 snapshots — check
 `grep 'reason' results/soma_battle_league_v5.log` or snapshot metadata),
-hands/legs KE flow rising, Elo trending.
+hands/legs KE flow rising, Elo trending. **CRITICAL LIMIT (found 2026-07-22):
+the prior (`soma_gpc_prior_p2`) was trained on `soma_seed_curated.pt` (shadow
+boxing, SEED) and the tracker on a SEED-mini set — NEITHER ever saw the
+Reallusion kicks, which exist only in the league env's `soma_combat_viewer.pt`
+as spawn poses. The fighters CANNOT kick at any reward setting; do not chase
+`dealt_legs`. Kicks require Eric's planned tracker+prior retrain on the
+kick-inclusive corpus.**
 
 Telemetry one-liner:
 
