@@ -178,6 +178,10 @@ class BattleControlConfig(ControlComponentConfig):
     # running out the clock is never the safe harbor — engaging (points win
     # +1 / loss -1, symmetric zero EV) strictly dominates mutual passivity.
     draw_signal: float = -0.25
+    # Decisive wins/losses scale by (1 + this * time_left_frac): finishing
+    # early pays more, losing early costs more. 0 disables. See the
+    # early-finish block in _update_match_state.
+    early_finish_win_scale: float = 1.0
     # Out of bounds ends the match with a POINTS DECISION (like timeout)
     # rather than an instant loss: shoving the opponent out only "wins" if
     # you were already ahead on damage, so ring-outs stop being a strategy.
@@ -652,6 +656,20 @@ class BattleControl(ControlComponent):
         win = torch.where(
             drawn, torch.full_like(win, cfg.draw_signal), win
         )
+
+        # Early-finish bonus: decisive wins/losses scale with time remaining
+        # (factor 1 + early_finish_win_scale * time_left_frac, so a first-
+        # second KO pays up to 2x a timeout points win at scale 1.0). Without
+        # it, ending the fight early is economically irrational — the dense
+        # streams pay every step the fight continues, so a knockout forfeits
+        # more income than the win reward returns. Draws are never scaled.
+        # League bookkeeping is unaffected (env classifies by |win| vs 0.5).
+        if cfg.early_finish_win_scale > 0.0:
+            time_left = (
+                1.0 - env.progress_buf.float() / max(env.max_episode_length, 1)
+            ).clamp(0.0, 1.0)
+            factor = 1.0 + cfg.early_finish_win_scale * time_left
+            win = torch.where(drawn, win, win * factor)
 
         self.match_ended = ends
         self.win_signal = torch.where(ends, win, torch.zeros_like(win))

@@ -167,7 +167,7 @@ def default_battle_reward_components(dense_scale: float = 1.0) -> dict:
     dense term toward 0 as the league matures; the win term stays.
     """
     return {
-        "battle_win": battle_win_reward_factory(weight=100.0),
+        "battle_win": battle_win_reward_factory(weight=500.0),  # 100 lost to dense income (~1300/ep) -> fighters never finished
         # Approach (velocity toward opponent, gated by range) is the
         # engagement gradient — weight 4.0 per IsaacLabASE, double facing so
         # closing dominates circling. Its absence in the weekend run left
