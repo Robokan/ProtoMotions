@@ -60,6 +60,13 @@ def main():
     p.add_argument("--lib", required=True)
     p.add_argument("--reallusion-lib", required=True)
     p.add_argument("--exclude-list", default=None)
+    p.add_argument(
+        "--exclude-families",
+        default=None,
+        help="Comma-separated substrings; any clip whose name contains one is "
+        "dropped (e.g. 'crouch,come_up' — families that retarget badly on a "
+        "given robot; T800 crouches pop, come_up steps onto phantom props).",
+    )
     p.add_argument("--reallusion-weight-mult", type=float, default=4.0)
     p.add_argument("--out", required=True)
     args = p.parse_args()
@@ -86,6 +93,11 @@ def main():
     for i, n in enumerate(names):
         if n in exclude:
             reason["excluded"] += 1
+            continue
+        if args.exclude_families and any(
+            fam in n.lower() for fam in args.exclude_families.split(",")
+        ):
+            reason["excluded_family"] += 1
             continue
         low = n.lower()
         if n in real_names:
