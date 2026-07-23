@@ -434,6 +434,7 @@ class MotionVisualizerSmoothness:
             "2": self.decrease_speed,  # Key 2: Decrease playback speed
             "3": self.increase_smoothness_threshold,  # Key 3: Increase smoothness threshold
             "4": self.decrease_smoothness_threshold,  # Key 4: Decrease smoothness threshold
+            "R": self._request_next_motion,  # Key R: skip to next motion
         }
 
         # Create checkerboard ground for visualization
@@ -549,6 +550,11 @@ class MotionVisualizerSmoothness:
             color=(0.8, 0.0, 0.8),  # purple
             markers=contact_marker_configs,
         )
+
+    def _request_next_motion(self):
+        """R-key handler: flag a skip; the play loop consumes it (keeps
+        motion-state mutation on the loop thread)."""
+        self._next_motion_requested = True
 
     def _switch_to_next_motion(self):
         """Switch to the next motion: sequential, or a weighted random draw
@@ -913,10 +919,12 @@ class MotionVisualizerSmoothness:
         while True:
             frame_start = time.perf_counter()
 
-            # Check for reset request (R key press triggers this in simulator)
-            if self.simulator.user_requested_reset:
+            # R key: skip to the next motion (flag set by the key handler;
+            # the old simulator.user_requested_reset API no longer exists)
+            if getattr(self, "_next_motion_requested", False):
+                self._next_motion_requested = False
+                self._loops_done = 0
                 self._switch_to_next_motion()
-                self.simulator.user_requested_reset = False
 
             # Calculate playback parameters based on speed
             # For speed < 1.0: slow down by updating motion less frequently (frames_per_step > 1)
