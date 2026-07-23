@@ -165,13 +165,15 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
                 raw_health_damage=True,
                 damage_to_health=0.005,  # HP/joule: hand@6m/s~19J -> ~19% head hit
                 max_hp_per_hit=0.25,
-                hit_state=HitStateConfig(strike_min_speed=2.5, ke_reward_ref=5.0),  # champion's max-ever contact: 1.02 m/s
+                # Speed gate at 0 (was 2.5): probe showed champion contacts
+                # arrive <~1 m/s, so 2.5 zeroed all HP/stun. KE∝v² still
+                # makes true soft contacts tiny; force_on=20N still required.
+                hit_state=HitStateConfig(strike_min_speed=0.0, ke_reward_ref=5.0),
                 # Concussion-gated knockouts (enabled 2026-07-17 with the KE
                 # model): a downed fighter is KO'd only while stun > 0.4.
-                # Stun deposits stun_gain*KE/stun_raw_energy_ref, head-weighted:
-                # any head kick >= the 2.5 m/s gate (~9.5 J) dizzies; a hand
-                # needs ~4.2 m/s. Trips and pushes deposit zero stun -> the
-                # fallen fighter gets the 2 s window to stand and fight on.
+                # Stun deposits stun_gain*KE/stun_raw_energy_ref, head-weighted.
+                # With strike_min_speed=0, any contact event can deposit stun;
+                # trips/pushes are still small via KE∝v².
                 stun_gates_ko=True,
             ),
         },

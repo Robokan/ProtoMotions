@@ -53,6 +53,10 @@ class HitStateConfig:
     # positive guide; only health/wins apply strike_min_speed. ~70 J = a
     # solid strike (hand@11 m/s or shin@7 m/s).
     ke_reward_ref: float = 70.0
+    # Flat bonus added ONCE per env on any contact-onset event (KE-reward
+    # mode only), on top of log1p(KE/ref). Makes "land a touch" compete with
+    # dense facing while KE still ranks hardness. 0 = off (legacy).
+    hit_flat: float = 0.0
 
 
 class BattleHitState:
@@ -270,14 +274,22 @@ class BattleHitState:
         # REWARD: in KE mode, a continuous UNGATED function of the same
         # per-event energy — log1p(KE/ref) — so even a light tap earns a
         # small positive guide and the signal grows monotonically with how
-        # hard the hit lands. The speed gate applies only to health/wins:
-        # taps teach, but they never score.
+        # hard the hit lands. Optional hit_flat adds a once-per-onset bonus
+        # so sparse contacts can compete with dense facing. The speed gate
+        # applies only to health/wins: taps teach, but they never score HP.
         if self.reward_from_event_ke:
             r_per_body = torch.log1p((ke * event) / max(cfg.ke_reward_ref, 1e-6))
 
         # Region multipliers, warm-up gating, reduce over bodies
         r_weighted = r_per_body * self.damage_multipliers.unsqueeze(0)  # [2N, D]
         r_taken = r_weighted.sum(dim=-1)
+        if self.reward_from_event_ke:
+            hit_flat = float(getattr(cfg, "hit_flat", 0.0) or 0.0)
+            if hit_flat > 0.0:
+                # One flat deposit per env per step that has any onset — not
+                # per damage-body, so multi-region contact doesn't stack.
+                onset = event.any(dim=-1).to(dtype=r_taken.dtype)
+                r_taken = r_taken + hit_flat * onset
         r_taken = torch.where(warmup, torch.zeros_like(r_taken), r_taken)
 
         # Split by the attributed striker's group (hands vs legs for

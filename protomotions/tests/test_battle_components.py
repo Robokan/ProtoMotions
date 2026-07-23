@@ -139,6 +139,24 @@ def test_ke_reward_is_continuous_and_ungated():
     assert (ke_hit.sum(dim=-1) > 0).all(), "a qualifying strike damages health"
 
 
+def test_ke_reward_hit_flat_adds_once_per_onset():
+    """hit_flat is added once per env on contact onset, on top of log1p(KE)."""
+    cfg = HitStateConfig(
+        proximity_radius=0.5,
+        warmup_steps=0,
+        strike_min_speed=2.0,
+        ke_reward_ref=5.0,
+        hit_flat=0.05,
+    )
+    hs = _make_hit_state()
+    hs.config = cfg
+    hs.reward_from_event_ke = True
+    r, _, _, _ = hs.step(*_hit_inputs(force=100.0, closing_speed=1.0))
+    # tap KE = 0.5*1*1^2 = 0.5 J on damage body 0 (mult 2.0), then + flat.
+    expected = 2.0 * torch.log1p(torch.tensor(0.5 / 5.0)) + 0.05
+    assert torch.allclose(r, expected.expand_as(r), atol=1e-4)
+
+
 def test_ke_damage_deposits_once_per_contact_event():
     """Lingering contact must not re-score: KE deposits only on the FSM
     rising edge, so step 2 of the same contact adds nothing."""
