@@ -1179,6 +1179,8 @@ def test_base_agent_state_dicts_preserve_training_and_inference_state():
 
 
 def test_base_agent_observation_helpers_and_nan_checks_use_tensordicts():
+    from protomotions.agents.base_agent.agent import BaseAgent
+    BaseAgent._DEBUG_CHECKS = True  # nan checks are opt-in (perf)
     agent = object.__new__(BaseAgent)
     agent.device = torch.device("cpu")
     obs = {"obs": torch.ones(2, 3)}
