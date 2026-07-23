@@ -36,6 +36,7 @@ class OpponentLanes:
         model_factory: Callable[[], torch.nn.Module],
         num_lanes: int,
         share_frozen_base_with: Optional[torch.nn.Module] = None,
+        assign_fn: Optional[Callable[[torch.nn.Module, Dict[str, Tensor]], None]] = None,
     ):
         """
         Args:
@@ -46,7 +47,12 @@ class OpponentLanes:
             share_frozen_base_with: If given, every non-adapter parameter of
                 each lane is re-pointed at this model's storage, so N lanes
                 cost ~1x base + N x adapter memory.
+            assign_fn: How to load a member's snapshot payload into a lane
+                model. Default (None) is the PEFT path: load an adapter state
+                dict into the lane's actor. Full-model leagues (e.g. ASE)
+                pass ``lambda model, state: model.load_state_dict(state)``.
         """
+        self._assign_fn = assign_fn
         self.num_lanes = num_lanes
         self.lanes = []
         self.lane_member: list = [None] * num_lanes
@@ -123,8 +129,11 @@ class OpponentLanes:
                 )
             lane_idx = evictable[0]  # least recently used among evictable
             model = self.lanes[lane_idx]
-            actor = getattr(model, "_actor", model)
-            actor.load_adapter_state_dict(adapter_state)
+            if self._assign_fn is not None:
+                self._assign_fn(model, adapter_state)
+            else:
+                actor = getattr(model, "_actor", model)
+                actor.load_adapter_state_dict(adapter_state)
             self.lane_member[lane_idx] = member_id
         self._touch(lane_idx)
         return lane_idx
