@@ -17,6 +17,7 @@ from protomotions.simulator.base_simulator.config import (
     SimulatorConfig,
     get_matching_indices,
 )
+import protomotions.simulator.base_simulator.simulator_state as sim_state_mod
 from protomotions.simulator.base_simulator.simulator_state import (
     BaseBatchedState,
     DataConversionMapping,
@@ -190,6 +191,7 @@ def test_robot_state_properties_indexing_assignment_and_dict_roundtrip(capsys):
 
 
 def test_robot_state_empty_properties_and_extra_conversion_branches():
+    sim_state_mod._DEBUG_CHECKS = True  # finite checks are opt-in (perf)
     empty = RobotState(state_conversion=StateConversion.COMMON)
     assert empty.root_pos is None
     assert empty.root_rot is None
@@ -244,6 +246,7 @@ def test_robot_state_empty_properties_and_extra_conversion_branches():
 
 
 def test_robot_state_conversion_translation_height_and_merge_paths():
+    sim_state_mod._DEBUG_CHECKS = True  # finite checks are opt-in (perf)
     state = _robot_state(state_conversion=StateConversion.SIMULATOR)
     state.convert_to_common(_conversion(sim_w_last=True))
 
@@ -284,6 +287,7 @@ def test_robot_state_conversion_translation_height_and_merge_paths():
 
 
 def test_root_reset_and_object_state_paths():
+    sim_state_mod._DEBUG_CHECKS = True  # finite checks are opt-in (perf)
     conversion = _conversion(sim_w_last=False)
     root = RootOnlyState(
         state_conversion=StateConversion.SIMULATOR,

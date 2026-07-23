@@ -19,6 +19,7 @@ Key Features:
     - Episode statistics tracking
 """
 
+import os
 import torch
 from torch import Tensor
 import torch.distributed as dist
@@ -882,7 +883,14 @@ class BaseAgent:
         )
         return dones, terminated, extras
 
+    # Per-step isfinite asserts force a CPU<->GPU sync barrier each call
+    # (py-spy 2026-07-23). Off by default; PROTOMOTIONS_DEBUG_CHECKS=1
+    # re-enables when hunting NaNs.
+    _DEBUG_CHECKS = os.environ.get("PROTOMOTIONS_DEBUG_CHECKS", "0") == "1"
+
     def check_for_nans(self, *tensordicts: TensorDict):
+        if not self._DEBUG_CHECKS:
+            return
         for td in tensordicts:
             for key in td.keys():
                 if torch.is_tensor(td[key]):

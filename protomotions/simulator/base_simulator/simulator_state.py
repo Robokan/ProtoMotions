@@ -18,7 +18,12 @@ from typing import Dict, Optional, Callable, TypeVar, Tuple
 from abc import ABC, abstractmethod
 from enum import Enum
 
+import os
 import torch
+
+# Per-step isfinite validation forces CPU<->GPU sync barriers (py-spy
+# 2026-07-23: ~3.5% of wall-time). Enable with PROTOMOTIONS_DEBUG_CHECKS=1.
+_DEBUG_CHECKS = os.environ.get("PROTOMOTIONS_DEBUG_CHECKS", "0") == "1"
 from protomotions.utils import rotations
 
 
@@ -557,7 +562,7 @@ class RobotState(BaseBatchedState):
         self._check_finite("dof_vel", self.dof_vel)
 
     def _check_finite(self, name: str, tensor) -> None:
-        if tensor is None:
+        if not _DEBUG_CHECKS or tensor is None:
             return
         if torch.all(torch.isfinite(tensor)):
             return
@@ -637,6 +642,8 @@ class RootOnlyState(BaseBatchedState):
         self.root_pos = self.root_pos + translation
 
     def __post_init__(self):
+        if not _DEBUG_CHECKS:
+            return
         if self.root_pos is not None:
             assert torch.all(
                 torch.isfinite(self.root_pos)
@@ -740,6 +747,8 @@ class ResetState(BaseBatchedState):
         self.root_pos = self.root_pos + translation
 
     def __post_init__(self):
+        if not _DEBUG_CHECKS:
+            return
         if self.root_pos is not None:
             assert torch.all(
                 torch.isfinite(self.root_pos)
@@ -832,6 +841,8 @@ class ObjectState(BaseBatchedState):
         self.root_pos = self.root_pos + translation
 
     def __post_init__(self):
+        if not _DEBUG_CHECKS:
+            return
         if self.root_pos is not None:
             assert torch.all(
                 torch.isfinite(self.root_pos)
