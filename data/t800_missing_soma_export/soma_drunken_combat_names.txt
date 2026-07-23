@@ -1,0 +1,1 @@
+attack_03_clip,attack_03_clip_M,attack_04_clip,attack_04_clip_M,combo_05_4,idle,idle_M,rise_02,rise_02_M,combo_01_2,combo_03_2_M,combo_05_1_M,combo_05_4_M,rise_01,rise_01_M,combo_03_1,combo_02_2,combo_04_4_M,combo_03_1_M,combo_04_1
