@@ -194,6 +194,21 @@ harder for no benefit given the pairing structure):
   (isolates simulator work from body-table work); (2) SOMA-vs-SOMA via the
   new per-side tables; (3) SOMA-vs-Atlas exhibition; (4) training.
 
+## Phase 2b — Architecture-agnostic bundles (ASE x GPC, added 2026-07-22)
+
+Define the opponent bundle one level up: not "prior + adapter" but a
+SELF-CONTAINED POLICY — {obs spec, action spec, model builder, weights,
+provenance(robot, architecture family, rules era)}. A GPC bundle wraps
+prior+adapter; an ASE bundle (see ASE_BASELINE_PLAN.md) wraps its
+high-level+low-level composed. Lanes' per-member routing is already
+architecture-agnostic, so same-robot ASE-vs-GPC is the EASIEST cross-family
+case (identical obs/actions, no foreign frozen base to host). This makes
+architecture and morphology orthogonal axes: Phase 2 = cross-prior,
+Phase 2b = cross-architecture, Phase 3 = cross-morphology; bundles carry
+all three. Bonus: mixed TRAINING leagues — an ASE snapshot in a GPC pool
+(or an ASE main-exploiter seat: ~10x cheaper per step, stylistically
+alien) is a natural hole-finder.
+
 ## Phase G — Ghost sparring (cheap cross-robot exposure, anytime)
 
 `VirtualOpponentControl` proves BattleContext can be fed an opponent that is
