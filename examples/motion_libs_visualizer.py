@@ -40,6 +40,13 @@ parser.add_argument(
 )
 parser.add_argument("--headless", action="store_true", help="Run in headless mode")
 parser.add_argument(
+    "--overlay-character",
+    default=None,
+    help="Path to a rigged character USD (UsdSkel). Drives its skeleton "
+    "from the played motion each frame (SKINNED_OVERLAY_PLAN Phase B "
+    "validation: capsules + skinned character side by side).",
+)
+parser.add_argument(
     "--weighted-random",
     action="store_true",
     help="Pick the next motion by weighted random draw using the library's "
@@ -945,6 +952,37 @@ class MotionVisualizerSmoothness:
 
                 # Set robot pose
                 self._set_robot_pose(dof_pos, rigid_body_pos, rigid_body_rot)
+
+                # Skinned overlay (lazy init on first frame; offset the
+                # character 1.5 m so capsules and skin are side by side)
+                if args.overlay_character:
+                    if not hasattr(self, "_overlay"):
+                        from protomotions.simulator.isaaclab.overlay import (
+                            SkinnedOverlay,
+                        )
+                        from protomotions.simulator.isaaclab.overlay_map import (
+                            SOMA23_TO_CC,
+                        )
+                        import numpy as _np
+                        import omni.usd
+
+                        rest = _np.tile(
+                            _np.array([1.0, 0.0, 0.0, 0.0]),
+                            (rigid_body_rot.shape[1], 1),
+                        )
+                        self._overlay = SkinnedOverlay(
+                            stage=omni.usd.get_context().get_stage(),
+                            character_usd=args.overlay_character,
+                            prim_root="/World/overlay0",
+                            body_names=self.motion_libs[0].kinematic_info.body_names
+                            if hasattr(self.motion_libs[0], "kinematic_info")
+                            else self.simulator.robot_config.kinematic_info.body_names,
+                            body_rest_rot_wxyz=rest,
+                            joint_map=SOMA23_TO_CC,
+                        )
+                    shift = rigid_body_pos[0].clone()
+                    shift[:, 1] += 1.5
+                    self._overlay.sync(shift, rigid_body_rot[0])
 
                 # Advance frame with skip for fast playback
                 self.current_frame += frame_skip
