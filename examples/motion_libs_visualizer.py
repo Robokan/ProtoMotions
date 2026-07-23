@@ -40,6 +40,14 @@ parser.add_argument(
 )
 parser.add_argument("--headless", action="store_true", help="Run in headless mode")
 parser.add_argument(
+    "--weighted-random",
+    action="store_true",
+    help="Pick the next motion by weighted random draw using the library's "
+    "sampling weights (torch.multinomial, same as training) instead of "
+    "sequential order — playback then mirrors the training distribution "
+    "(e.g. 4x-weighted Reallusion clips appear 4x as often).",
+)
+parser.add_argument(
     "--markers",
     action="store_true",
     help="Enable joint/contact visualization markers (can stall IsaacLab point-instancers)",
@@ -543,8 +551,14 @@ class MotionVisualizerSmoothness:
         )
 
     def _switch_to_next_motion(self):
-        """Switch to the next motion in the dataset"""
-        self.current_motion_idx = (self.current_motion_idx + 1) % self.total_motions
+        """Switch to the next motion: sequential, or a weighted random draw
+        from the library's sampling weights (mirrors training's
+        torch.multinomial sampling) when --weighted-random is set."""
+        if getattr(args, "weighted_random", False):
+            weights = self.motion_libs[0].motion_weights
+            self.current_motion_idx = int(torch.multinomial(weights, 1).item())
+        else:
+            self.current_motion_idx = (self.current_motion_idx + 1) % self.total_motions
         self.current_frame = 0
         self.current_motion_length = (
             self.motion_libs[0]
