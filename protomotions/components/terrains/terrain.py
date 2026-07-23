@@ -150,6 +150,9 @@ class Terrain:
         self.scene_placement_map = torch.zeros(
             (self.tot_rows, self.tot_cols), dtype=torch.bool, device=self.device
         )
+        # Fast-path flag: scene-less runs skip the per-sample placement-map
+        # loop in is_valid_spawn_location (10.9% of wall-time, py-spy 2026-07-23).
+        self._has_scene_placements = False
 
         if self.config.load_terrain:
             print("Loading a pre-generated terrain")
@@ -425,6 +428,7 @@ class Terrain:
         y_max = min(self.tot_cols, y + radius + 1)
 
         self.scene_placement_map[x_min:x_max, y_min:y_max] = True
+        self._has_scene_placements = True
 
     def is_valid_spawn_location(self, locations: torch.Tensor) -> torch.Tensor:
         """
@@ -457,6 +461,12 @@ class Terrain:
             & (locations[:, 1] < self.tot_cols)
         )
         valid = centers_in_bounds & (x_max > x_min) & (y_max > y_min)
+
+        # Scene-less fast path: nothing is ever placed, so the placement-map
+        # scan below is a per-sample Python loop that can never reject.
+        # (Default True so terrains unpickled from older configs stay safe.)
+        if not getattr(self, "_has_scene_placements", True):
+            return valid
 
         # Use advanced indexing to check all valid locations in a single operation
         for i in range(batch_size):

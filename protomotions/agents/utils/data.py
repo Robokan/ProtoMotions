@@ -158,6 +158,21 @@ class DictDataset(Dataset):
         start_idx = index * self.batch_size
         end_idx = min((index + 1) * self.batch_size, self.num_tensors)
         indices = self.shuffled_to_original[start_idx:end_idx]
-        return {
-            k: v[indices % self._tensor_lengths[k]] for k, v in self.tensor_dict.items()
-        }
+        # Indexing device tensors with a numpy array uploads the indices
+        # host->device once PER KEY (7% of wall-time, py-spy 2026-07-23).
+        # Upload once per (length, device) instead and reuse.
+        idx_cache: Dict = {}
+        out = {}
+        for k, v in self.tensor_dict.items():
+            key = (self._tensor_lengths[k], getattr(v, "device", None))
+            mi = idx_cache.get(key)
+            if mi is None:
+                if isinstance(v, Tensor):
+                    mi = torch.from_numpy(indices % self._tensor_lengths[k]).to(
+                        v.device, non_blocking=True
+                    )
+                else:
+                    mi = indices % self._tensor_lengths[k]
+                idx_cache[key] = mi
+            out[k] = v[mi]
+        return out
