@@ -17,10 +17,11 @@ The CC bone names below match the omni.anim.people characters
 # hierarchy.
 SOMA23_TO_CC = {
     "Hips": "Hip",
-    "Spine": "Waist",
-    "Spine1": "Spine01",
-    "Spine2": "Spine02",
-    "Neck": "Neck",
+    "Spine1": "Waist",
+    "Spine2": "Spine01",
+    "Chest": "Spine02",
+    "Neck1": "NeckTwist01",
+    "Neck2": "NeckTwist02",
     "Head": "Head",
     "LeftShoulder": "L_Clavicle",
     "LeftArm": "L_Upperarm",
@@ -38,6 +39,4 @@ SOMA23_TO_CC = {
     "RightShin": "R_Calf",
     "RightFoot": "R_Foot",
     "RightToeBase": "R_ToeBase",
-    # SOMA "Chest" intentionally unmapped: CC spine has one fewer segment;
-    # Spine02 absorbs it. Revisit per-character if the torso looks stiff.
 }

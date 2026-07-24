@@ -921,6 +921,14 @@ class MotionVisualizerSmoothness:
         step_count = 0
         marker_states = None
         target_dt = 1.0 / FPS  # wall-clock time per motion frame
+        # Capture the robot's DEFAULT-pose body rotations (true rest
+        # baseline for the skinned overlay) before any clip pose is pushed.
+        if args.overlay_character:
+            self._overlay_rest_rot = (
+                self.simulator.get_bodies_state().rigid_body_rot[0]
+                .detach().cpu().numpy().astype(float)
+            )
+            print("[overlay] captured default-pose rest rotations", flush=True)
         print("Entering play loop", flush=True)
 
         while True:
@@ -966,10 +974,13 @@ class MotionVisualizerSmoothness:
                         import numpy as _np
                         import omni.usd
 
-                        rest = _np.tile(
-                            _np.array([1.0, 0.0, 0.0, 0.0]),
-                            (rigid_body_rot.shape[1], 1),
-                        )
+                        # SOMA body frames are NOT world-aligned in T-pose
+                        # (per-side frame conjugations from the SMPL
+                        # conversion: standing hips ~ 180deg about Y). The
+                        # rest baseline must be the robot's true default-pose
+                        # body rotations, captured from the sim BEFORE any
+                        # clip pose was applied this frame.
+                        rest = self._overlay_rest_rot
                         self._overlay = SkinnedOverlay(
                             stage=omni.usd.get_context().get_stage(),
                             character_usd=args.overlay_character,
@@ -983,6 +994,17 @@ class MotionVisualizerSmoothness:
                     shift = rigid_body_pos[0].clone()
                     shift[:, 1] += 1.5
                     self._overlay.sync(shift, rigid_body_rot[0])
+                    self._ov_n = getattr(self, "_ov_n", 0) + 1
+                    if self._ov_n in (1, 120, 600):
+                        bn = (self.motion_libs[0].kinematic_info.body_names
+                              if hasattr(self.motion_libs[0], "kinematic_info")
+                              else self.simulator.robot_config.kinematic_info.body_names)
+                        for probe in ("Hips", "LeftArm", "RightArm", "LeftLeg", "Head"):
+                            if probe in bn:
+                                q = rigid_body_rot[0][bn.index(probe)]
+                                print(f"[soma-rest-probe] n={self._ov_n} {probe}: "
+                                      f"[{q[0]:+.3f} {q[1]:+.3f} {q[2]:+.3f} {q[3]:+.3f}]",
+                                      flush=True)
 
                 # Advance frame with skip for fast playback
                 self.current_frame += frame_skip
