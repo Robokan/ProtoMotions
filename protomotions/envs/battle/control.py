@@ -669,7 +669,12 @@ class BattleControl(ControlComponent):
                 1.0 - env.progress_buf.float() / max(env.max_episode_length, 1)
             ).clamp(0.0, 1.0)
             factor = 1.0 + cfg.early_finish_win_scale * time_left
-            win = torch.where(drawn, win, win * factor)
+            # Asymmetric: only WINS earn the early-finish multiplier. When
+            # losses were amplified too (up to -2x), risk-taking became
+            # strictly dominated - the league converged to guard-crouch
+            # chip-and-turtle (2026-07-24 telemetry: KOs 0.0004 -> 0.0000,
+            # contact energy falling, points-decision meta).
+            win = torch.where(drawn | (win < 0), win, win * factor)
 
         self.match_ended = ends
         self.win_signal = torch.where(ends, win, torch.zeros_like(win))

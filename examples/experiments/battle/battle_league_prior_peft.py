@@ -168,7 +168,7 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
                 # Speed gate at 0 (was 2.5): probe showed champion contacts
                 # arrive <~1 m/s, so 2.5 zeroed all HP/stun. KE∝v² still
                 # makes true soft contacts tiny; force_on=20N still required.
-                hit_state=HitStateConfig(strike_min_speed=0.0, ke_reward_ref=5.0),
+                hit_state=HitStateConfig(strike_min_speed=1.5, ke_reward_ref=5.0),  # 1.5: above guard-press chip (the gate-0 era bred crouch-turtles), below a real jab
                 # Concussion-gated knockouts (enabled 2026-07-17 with the KE
                 # model): a downed fighter is KO'd only while stun > 0.4.
                 # Stun deposits stun_gain*KE/stun_raw_energy_ref, head-weighted.
