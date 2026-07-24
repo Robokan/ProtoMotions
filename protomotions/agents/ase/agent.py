@@ -158,6 +158,17 @@ class ASE(AMP):
             env_ids = torch.arange(self.num_envs, device=self.device)
         latents = self.sample_latents(len(env_ids))
         self.store_latents(latents, env_ids)
+        # At viewer scale, announce each skill switch on the console so
+        # behavior changes can be correlated with latent resamples
+        # (training-scale env counts stay silent).
+        if self.num_envs <= 4:
+            for k, e in enumerate(env_ids.tolist()):
+                z = latents[k]
+                print(
+                    f"[ASE] env {e}: new skill latent  "
+                    f"z[:4]=[{z[0]:+.2f} {z[1]:+.2f} {z[2]:+.2f} {z[3]:+.2f}]",
+                    flush=True,
+                )
 
     def store_latents(self, latents, env_ids):
         """Stores latent variables for specified environments.
