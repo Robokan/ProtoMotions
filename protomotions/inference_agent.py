@@ -103,10 +103,10 @@ def create_parser():
     parser.add_argument(
         "--overlay-ambient",
         type=float,
-        default=500.0,
+        default=50.0,
         help="Ambient fill lighting intensity when overlays are active: a "
         "dome light plus a soft opposite-side fill so shadows aren't pure "
-        "black (default 500; 0 disables).",
+        "black (default 50; 0 disables).",
     )
     parser.add_argument(
         "--full-eval",
