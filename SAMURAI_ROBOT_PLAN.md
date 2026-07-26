@@ -256,3 +256,21 @@ Facts for the next session:
 - Robot hand capsules are fist-sized (r=0.05) along +-X from the wrist;
   the skin gauntlet is bigger — a few cm of visual mismatch is inherent;
   ask Eric how large the offset actually looks before over-engineering.
+
+## NEXT TASK (Eric, 2026-07-26): kick-attempt shaping reward for the league
+Problem: league v6 shows no kicks (RL prunes risky moves; punch meta).
+Eric's design — implement in the battle env dense rewards:
+- Event: a foot rises above a height threshold (suggest foot z > 0.75 m,
+  i.e. waist-ish; knee-lifts don't count), with hysteresis: the foot must
+  drop below ~0.4 m before it can score again.
+- Reward: small fixed bonus per event (start ~0.5, tune vs KE hit rewards),
+  capped at 3 events PER FOOT per episode (LeftFoot and RightFoot counted
+  separately -> max 6 bonuses/episode). Counters reset on env reset.
+- Scope: dense reward component (so it anneals with --dense-reward-scale
+  as the league matures, like the other shaping terms).
+- Files: protomotions/envs/battle/factories.py
+  (default_battle_reward_components) + wherever per-episode state lives
+  (battle control resets); foot bodies via
+  robot_config common naming all_left/right_foot_bodies.
+- Optional refinement if lifted-leg cheese appears: require foot speed
+  > 2 m/s at event time so only dynamic lifts (actual kick attempts) pay.
