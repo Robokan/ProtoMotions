@@ -104,6 +104,18 @@ class BattleControlConfig(ControlComponentConfig):
     )
     # Head body for the gaze-based facing reward
     head_body_name: str = "Head"
+
+    # Kick-attempt shaping (Eric, 2026-07-26): pay a small bonus each time a
+    # foot rises above kick_bonus_height (a real kick-height lift), with
+    # hysteresis (must drop below kick_bonus_rearm_height to re-arm) and a
+    # per-foot per-episode cap — teaches the league to TRY kicks, which the
+    # early punch meta otherwise prunes. Weighted via the dense reward
+    # component, so it anneals with --dense-reward-scale.
+    kick_bonus_left_foot_body: str = "LeftFoot"
+    kick_bonus_right_foot_body: str = "RightFoot"
+    kick_bonus_height: float = 0.75
+    kick_bonus_rearm_height: float = 0.40
+    kick_bonus_max_per_foot: int = 3
     # Where the gaze should POINT: boxers watch the opponent's upper chest /
     # shoulder line (torso telegraphs strikes; hands are too fast to track,
     # eyes deceive), not the face. The chest is also a steadier target that
@@ -244,6 +256,11 @@ class BattleControl(ControlComponent):
         self.facing_target_body_id = int(
             resolve_body_ids([config.facing_target_body_name], body_names)[0]
         )
+        self.kick_foot_body_ids = resolve_body_ids(
+            [config.kick_bonus_left_foot_body,
+             config.kick_bonus_right_foot_body],
+            body_names,
+        ).to(device)
 
         # Map each strike body to its group id (declaration order of
         # strike_body_group_names). Ungrouped strike bodies go to group 0.
@@ -307,6 +324,12 @@ class BattleControl(ControlComponent):
         num_groups = len(self.strike_group_labels)
         self.dealt_by_group_cum = torch.zeros(num_envs, num_groups, device=device)
         self.strike_diversity_bonus = torch.zeros(num_envs, device=device)
+        # Kick-attempt shaping state: per-foot event counters + hysteresis arm
+        self.kick_counts = torch.zeros(
+            num_envs, 2, dtype=torch.long, device=device)
+        self.kick_armed = torch.ones(
+            num_envs, 2, dtype=torch.bool, device=device)
+        self.kick_attempt_bonus = torch.zeros(num_envs, device=device)
 
         # Outcome buffers, stamped on the step the match ends
         self.win_signal = torch.zeros(num_envs, device=device)
@@ -457,6 +480,9 @@ class BattleControl(ControlComponent):
         self.hit_energy_dealt[env_ids] = 0.0
         self.dealt_by_group_cum[env_ids] = 0.0
         self.strike_diversity_bonus[env_ids] = 0.0
+        self.kick_counts[env_ids] = 0
+        self.kick_armed[env_ids] = True
+        self.kick_attempt_bonus[env_ids] = 0.0
         self.facing[env_ids] = 0.0
         self.facing_delta[env_ids] = 0.0
         self._prev_facing[env_ids] = -1.0
@@ -560,6 +586,20 @@ class BattleControl(ControlComponent):
         self.dealt_by_group_cum = self.dealt_by_group_cum + dealt_by_group
         new_min = self.dealt_by_group_cum.min(dim=-1).values
         self.strike_diversity_bonus = (new_min - prev_min).clamp_min(0.0)
+
+        # Kick-attempt shaping: one bonus unit per armed foot crossing
+        # kick_bonus_height, capped per foot per episode; foot re-arms
+        # after dropping below kick_bonus_rearm_height (no leg-hold farming).
+        foot_z = body_pos[:, self.kick_foot_body_ids, 2]  # [2N, 2]
+        up = foot_z > cfg.kick_bonus_height
+        fired = self.kick_armed & up & (
+            self.kick_counts < cfg.kick_bonus_max_per_foot)
+        self.kick_counts = self.kick_counts + fired.long()
+        self.kick_armed = torch.where(
+            fired, torch.zeros_like(self.kick_armed), self.kick_armed)
+        self.kick_armed = self.kick_armed | (
+            foot_z < cfg.kick_bonus_rearm_height)
+        self.kick_attempt_bonus = fired.float().sum(dim=-1)
 
         # Knockdown timer
         root_height = body_pos[:, 0, 2]
@@ -728,6 +768,7 @@ class BattleControl(ControlComponent):
             hit_energy_dealt=self.hit_energy_dealt,
             hit_energy_taken=self.hit_energy_taken,
             strike_diversity_bonus=self.strike_diversity_bonus,
+            kick_attempt_bonus=self.kick_attempt_bonus,
             facing=self.facing,
             facing_delta=self.facing_delta,
             win_signal=self.win_signal,

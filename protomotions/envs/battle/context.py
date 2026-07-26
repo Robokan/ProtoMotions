@@ -57,6 +57,8 @@ class BattleContext:
     # Growth of the lesser strike-group cumulative (hands vs legs): pays for
     # damage from the under-used limb group (kickboxing diversity)
     strike_diversity_bonus: Tensor = FieldPath()  # [2N] this step
+    # Kick-attempt shaping events this step (0, 1 or 2 feet fired)
+    kick_attempt_bonus: Tensor = FieldPath()  # [2N]
 
     # Gaze quality in [0, 1] and its per-step change (potential-based facing)
     facing: Tensor = FieldPath()  # [2N]

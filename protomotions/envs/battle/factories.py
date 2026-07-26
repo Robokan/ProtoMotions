@@ -21,6 +21,7 @@ from protomotions.envs.battle.rewards import (
     compute_idle_penalty,
     compute_range_reward,
     compute_strike_diversity_bonus,
+    compute_kick_attempt_bonus,
     compute_win_reward,
 )
 
@@ -85,6 +86,17 @@ def battle_strike_diversity_factory(weight: float = 90.0) -> MdpComponent:
         compute_func=compute_strike_diversity_bonus,
         dynamic_vars={
             "strike_diversity_bonus": EnvContext.battle.strike_diversity_bonus
+        },
+        static_params={"weight": weight},
+    )
+
+
+def battle_kick_attempt_factory(weight: float = 15.0) -> MdpComponent:
+    """Capped per-foot kick-attempt bonus (see compute_kick_attempt_bonus)."""
+    return MdpComponent(
+        compute_func=compute_kick_attempt_bonus,
+        dynamic_vars={
+            "kick_attempt_bonus": EnvContext.battle.kick_attempt_bonus
         },
         static_params={"weight": weight},
     )
@@ -186,6 +198,12 @@ def default_battle_reward_components(dense_scale: float = 1.0) -> dict:
         # which makes kicks genuinely out-score punches at the source.
         "battle_strike_diversity": battle_strike_diversity_factory(
             weight=30.0 * dense_scale
+        ),
+        # Kick-attempt shaping (max 3 per foot per episode, hysteresis in
+        # the control component): pays for TRYING kicks so the early punch
+        # meta can't prune them before they ever land.
+        "battle_kick_attempt": battle_kick_attempt_factory(
+            weight=15.0 * dense_scale
         ),
         "battle_idle": battle_idle_penalty_factory(weight=1.0 * dense_scale),
         "battle_boundary": battle_boundary_penalty_factory(weight=1.0 * dense_scale),

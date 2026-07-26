@@ -162,3 +162,11 @@ __all__ = [
     "compute_idle_penalty",
     "compute_arena_boundary_penalty",
 ]
+
+
+def compute_kick_attempt_bonus(kick_attempt_bonus: Tensor) -> Tensor:
+    """Kick-attempt shaping: 1.0 per foot that crossed the kick height this
+    step (armed + under the per-episode cap; see BattleControl). Teaches the
+    league to try kicks at all — the punch meta otherwise prunes them before
+    the KE damage economics (legs out-hit hands) can reward them."""
+    return kick_attempt_bonus
