@@ -119,6 +119,12 @@ class SkinnedOverlay:
         self._body_index = {n: i for i, n in enumerate(body_names)}
         self._root_only = root_only
 
+        # Absolute layer path: a relative reference resolves the asset's own
+        # relative texture paths (@./textures/...@) against the wrong anchor
+        # -> untextured character.
+        from pathlib import Path as _Path
+        character_usd = str(_Path(character_usd).resolve())
+
         ref = stage.DefinePrim(prim_root, "Xform")
         ref.GetReferences().AddReference(character_usd)
         if root_only:
