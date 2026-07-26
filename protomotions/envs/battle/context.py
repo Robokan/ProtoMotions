@@ -92,6 +92,7 @@ class BattleContext:
         hit_energy_dealt: Tensor,
         hit_energy_taken: Tensor,
         strike_diversity_bonus: Tensor,
+        kick_attempt_bonus: Tensor,
         facing: Tensor,
         facing_delta: Tensor,
         win_signal: Tensor,
@@ -117,6 +118,7 @@ class BattleContext:
         self.hit_energy_dealt = hit_energy_dealt
         self.hit_energy_taken = hit_energy_taken
         self.strike_diversity_bonus = strike_diversity_bonus
+        self.kick_attempt_bonus = kick_attempt_bonus
         self.facing = facing
         self.facing_delta = facing_delta
         self.win_signal = win_signal
