@@ -66,6 +66,13 @@ def create_parser():
         help="Two adapters for an exhibition match (viewer on, 1+ arenas)",
     )
     parser.add_argument("--matches-per-pairing", type=int, default=32)
+    parser.add_argument(
+        "--overlay-character", nargs="+",
+        default=["protomotions/data/assets/overlay/red_samurai.usd",
+                 "protomotions/data/assets/overlay/gray_samurai.usd"],
+        help="Skin fighters with these UsdSkel characters (cycled across "
+        "envs; champion seat env0 gets the first). Pass 'none' to disable.")
+    parser.add_argument("--overlay-ambient", type=float, default=50.0)
     parser.add_argument("--num-envs", type=int, default=None)
     parser.add_argument("--simulator", default="isaaclab")
     parser.add_argument("--headless", action="store_true", default=None)
@@ -252,6 +259,17 @@ def main():
         motion_lib=components["motion_lib"],
         simulator=components["simulator"],
     )
+
+    if args.overlay_character and args.overlay_character[0].lower() != "none":
+        from protomotions.simulator.isaaclab.overlay_setup import (
+            attach_overlays,
+        )
+        attach_overlays(
+            env, simulator_config, robot_config,
+            characters=args.overlay_character,
+            skeleton="ue", fists=True, hide_robot=True,
+            ambient=args.overlay_ambient,
+        )
 
     AgentClass = get_class(agent_config._target_)
     agent = AgentClass(

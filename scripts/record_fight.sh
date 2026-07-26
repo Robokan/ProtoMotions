@@ -28,7 +28,7 @@ set -euo pipefail
 export OMNI_KIT_ACCEPT_EULA="${OMNI_KIT_ACCEPT_EULA:-YES}"
 
 BOUTS="${1:-3}"
-RUN="${2:-soma_battle_league_v5}"
+RUN="${2:-soma_battle_league_v6}"
 RESOLVED="results/${RUN}/resolved_configs_inference.pt"
 OUT_DIR="output/fight_videos"
 
