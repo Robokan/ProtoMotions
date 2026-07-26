@@ -103,16 +103,40 @@ class SkinnedOverlay:
         body_rest_rot_wxyz: np.ndarray,
         joint_map: Dict[str, str],
         scale: float = 1.0,
+        root_only: bool = False,
+        drive_bodies: Sequence[str] = (),
+        rest_rel: Dict[str, Sequence[float]] = None,
     ):
         from pxr import Usd, UsdGeom, UsdSkel, Sdf, Gf  # noqa: F401
 
         self._stage = stage
         self._root = prim_root
         self._body_index = {n: i for i, n in enumerate(body_names)}
+        self._root_only = root_only
 
         ref = stage.DefinePrim(prim_root, "Xform")
         ref.GetReferences().AddReference(character_usd)
-        if scale != 1.0:
+        if root_only:
+            # Root-only mode: the character keeps its authored pose (no
+            # SkelAnimation at all — the exact configuration known to render
+            # upright) and the whole prim rigidly follows the robot root.
+            # The referenced asset authors its own ops on this prim (its
+            # up-axis correction: translate, rotateXYZ, scale) — leave those
+            # untouched and layer suffixed ops OUTSIDE them (first in
+            # xformOpOrder = applied last to points).
+            xf = UsdGeom.Xformable(ref)
+            existing = xf.GetOrderedXformOps()
+            self._t_op = xf.AddTranslateOp(opSuffix="overlayRoot")
+            self._o_op = xf.AddOrientOp(opSuffix="overlayRoot")
+            self._t_op.Set(Gf.Vec3d(0.0, 0.0, 0.0))
+            self._o_op.Set(Gf.Quatf(1.0, Gf.Vec3f(0.0, 0.0, 0.0)))
+            ops = [self._t_op, self._o_op] + existing
+            if scale != 1.0:
+                s_op = xf.AddScaleOp(opSuffix="overlayRoot")
+                s_op.Set(Gf.Vec3f(scale, scale, scale))
+                ops.insert(2, s_op)
+            xf.SetXformOpOrder(ops)
+        elif scale != 1.0:
             UsdGeom.Xformable(ref).AddScaleOp().Set(Gf.Vec3f(scale, scale, scale))
 
         skel_prim = next(
@@ -133,6 +157,87 @@ class SkinnedOverlay:
         self._rest_local = np.array(
             [[list(m[i]) for i in range(4)] for m in rest], dtype=np.float64
         )
+
+        if root_only:
+            from pxr import UsdGeom as _UsdGeom, Usd as _Usd
+            self._Gf = Gf
+            # Robot root body = the one mapped to the character hip.
+            root_body = next(
+                (b for b in ("Hips", "Hip", "Pelvis") if b in self._body_index),
+                None,
+            ) or next(iter(joint_map))
+            self._root_bi = self._body_index[root_body]
+            # Motion-lib rotations are XYZW (poselib legacy), not wxyz —
+            # misreading them was the root of every "upside down" symptom:
+            # a yaw quat read in the wrong layout becomes a rotation about
+            # an axis that tilts with the clip's facing (hence upright on
+            # some clips, on-its-back on others). Read as xyzw, standing
+            # SOMA hips are a plain world-aligned yaw, so the rest baseline
+            # is simply identity.
+            self._q_rest_root = np.array([1.0, 0.0, 0.0, 0.0])
+            # Character hip position in prim space (ref prim is at identity
+            # when this runs): row 3 of bind(joint->skel) @ skel local-to-world.
+            hip_bone = joint_map.get(root_body, "Hip")
+            leaf = [j.split("/")[-1] for j in self._joints]
+            hip_ji = leaf.index(hip_bone)
+            l2w = _UsdGeom.Xformable(skel_prim).ComputeLocalToWorldTransform(
+                _Usd.TimeCode.Default()
+            )
+            m = np.array([[l2w[i][j] for j in range(4)] for i in range(4)])
+            self._hip0 = scale * (self._bind_world[hip_ji] @ m)[3, :3]
+
+            # Optional driven joints on top of the root-follow: each drive
+            # body's rotation RELATIVE TO THE HIPS (minus its standing-pose
+            # constant c_b from rest_rel) is applied to the character bone's
+            # bind orientation, in skeleton space. Undriven joints hold rest.
+            self._drive = []  # (joint_i, body_i, conj(c_b))
+            if drive_bodies:
+                rest_rel = rest_rel or {}
+                for b in drive_bodies:
+                    bi = self._body_index.get(b)
+                    ji2 = leaf.index(joint_map[b]) if joint_map.get(b) in leaf else None
+                    if bi is None or ji2 is None:
+                        log.warning("overlay: cannot drive '%s' (missing)", b)
+                        continue
+                    c = np.asarray(rest_rel.get(b, (1.0, 0, 0, 0)), dtype=np.float64)
+                    self._drive.append((ji2, bi, _quat_conj(c)))
+                self._hip_ji = hip_ji
+                # Bind-pose world (=skel-space) quats per joint, and rest
+                # locals for the undriven remainder.
+                self._bind_q = np.stack(
+                    [_mat_to_quat_wxyz(self._bind_world[j, :3, :3].T)
+                     for j in range(len(self._joints))]
+                )
+                self._rest_q = np.stack(
+                    [_mat_to_quat_wxyz(self._rest_local[j, :3, :3].T)
+                     for j in range(len(self._joints))]
+                )
+                anim_path = skel_prim.GetPath().AppendChild("OverlayAnim")
+                self._anim = UsdSkel.Animation.Define(stage, anim_path)
+                self._anim.GetJointsAttr().Set(self._joints)
+                for holder in (skel_prim, ):
+                    UsdSkel.BindingAPI.Apply(holder).GetAnimationSourceRel(
+                    ).SetTargets([anim_path])
+                skelroot = skel_prim.GetParent()
+                while skelroot and not skelroot.IsA(UsdSkel.Root):
+                    skelroot = skelroot.GetParent()
+                if skelroot and skelroot.IsA(UsdSkel.Root):
+                    UsdSkel.BindingAPI.Apply(skelroot).GetAnimationSourceRel(
+                    ).SetTargets([anim_path])
+                # Constant channels: rest translations, unit scales.
+                self._anim.GetTranslationsAttr().Set([
+                    Gf.Vec3f(*[float(v) for v in self._rest_local[j, 3, :3]])
+                    for j in range(len(self._joints))
+                ])
+                self._anim.GetScalesAttr().Set(
+                    [Gf.Vec3h(1.0, 1.0, 1.0)] * len(self._joints)
+                )
+            log.info(
+                "SkinnedOverlay(root_only): robot '%s' -> hip bone '%s', "
+                "hip0=%s, driving %d joints",
+                root_body, hip_bone, np.round(self._hip0, 3), len(self._drive),
+            )
+            return
 
         # Per-joint driver: index of the robot body driving it (-1 = hold).
         leaf = [j.split("/")[-1] for j in self._joints]
@@ -284,6 +389,59 @@ class SkinnedOverlay:
 
     def sync(self, body_pos: torch.Tensor, body_rot_wxyz: torch.Tensor) -> None:
         """Write one frame. body_pos [B,3], body_rot [B,4] world, wxyz."""
+        if self._root_only:
+            Gf = self._Gf
+            p = np.asarray(
+                body_pos[self._root_bi].detach().cpu().numpy(), dtype=np.float64
+            )
+            q = np.asarray(
+                body_rot_wxyz[self._root_bi].detach().cpu().numpy(),
+                dtype=np.float64,
+            )[[3, 0, 1, 2]]  # motion-lib rotations are xyzw -> reorder to wxyz
+            # Rotation relative to the robot's rest orientation: at rest the
+            # character shows its authored (upright) pose exactly.
+            q_rel = _quat_mul(q, _quat_conj(self._q_rest_root))
+            R = _quat_to_mat(q_rel)
+            # Pivot about the character hip: hip lands on the robot root.
+            t = p - R @ self._hip0
+            self._t_op.Set(Gf.Vec3d(float(t[0]), float(t[1]), float(t[2])))
+            self._o_op.Set(
+                Gf.Quatf(
+                    float(q_rel[0]),
+                    Gf.Vec3f(float(q_rel[1]), float(q_rel[2]), float(q_rel[3])),
+                )
+            )
+            if self._drive:
+                # Skeleton space == robot-hip-aligned world frame (the prim
+                # op above carries the hip rotation), so per-body deltas
+                # relative to the hips apply as skel-space pre-rotations of
+                # the bind pose. Chain: driven joints get absolute targets,
+                # undriven joints follow their parent at rest.
+                J = len(self._joints)
+                drive_at = {ji: (bi, cc) for ji, bi, cc in self._drive}
+                W = np.zeros((J, 4))
+                L = self._rest_q.copy()
+                for j in range(J):
+                    pi = self._parents[j]
+                    Wp = W[pi] if pi >= 0 else np.array([1.0, 0, 0, 0])
+                    if j in drive_at:
+                        bi, cc = drive_at[j]
+                        qb = np.asarray(
+                            body_rot_wxyz[bi].detach().cpu().numpy(),
+                            dtype=np.float64,
+                        )[[3, 0, 1, 2]]  # xyzw -> wxyz
+                        delta = _quat_mul(_quat_mul(_quat_conj(q), qb), cc)
+                        W[j] = _quat_mul(delta, self._bind_q[j])
+                        L[j] = _quat_mul(_quat_conj(Wp), W[j])
+                    else:
+                        W[j] = _quat_mul(Wp, self._rest_q[j])
+                self._anim.GetRotationsAttr().Set([
+                    Gf.Quatf(float(L[j][0]),
+                             Gf.Vec3f(float(L[j][1]), float(L[j][2]),
+                                      float(L[j][3])))
+                    for j in range(J)
+                ])
+            return
         import os
         mode = os.environ.get("OVERLAY_TEST", "")
         if mode:

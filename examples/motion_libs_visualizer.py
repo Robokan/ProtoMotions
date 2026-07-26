@@ -47,6 +47,27 @@ parser.add_argument(
     "validation: capsules + skinned character side by side).",
 )
 parser.add_argument(
+    "--overlay-root-only",
+    action="store_true",
+    help="Overlay phase 1: do not drive any character joints — the character "
+    "keeps its authored pose and rigidly follows the SOMA root (position + "
+    "orientation, pivoting about the character hip).",
+)
+parser.add_argument(
+    "--overlay-drive",
+    default="",
+    help="Comma-separated robot bodies to drive on the overlay character "
+    "(on top of --overlay-root-only), e.g. 'Spine1,LeftLeg,RightLeg'. "
+    "Undriven joints hold the bind pose.",
+)
+parser.add_argument(
+    "--overlay-offset",
+    type=float,
+    default=1.5,
+    help="World-Y separation between robot and overlay character in meters "
+    "(0 = character directly on the robot).",
+)
+parser.add_argument(
     "--weighted-random",
     action="store_true",
     help="Pick the next motion by weighted random draw using the library's "
@@ -970,6 +991,7 @@ class MotionVisualizerSmoothness:
                         )
                         from protomotions.simulator.isaaclab.overlay_map import (
                             SOMA23_TO_CC,
+                            SOMA23_REST_REL,
                         )
                         import numpy as _np
                         import omni.usd
@@ -981,19 +1003,46 @@ class MotionVisualizerSmoothness:
                         # body rotations, captured from the sim BEFORE any
                         # clip pose was applied this frame.
                         rest = self._overlay_rest_rot
-                        self._overlay = SkinnedOverlay(
-                            stage=omni.usd.get_context().get_stage(),
-                            character_usd=args.overlay_character,
-                            prim_root="/World/overlay0",
-                            body_names=self.motion_libs[0].kinematic_info.body_names
-                            if hasattr(self.motion_libs[0], "kinematic_info")
-                            else self.simulator.robot_config.kinematic_info.body_names,
-                            body_rest_rot_wxyz=rest,
-                            joint_map=SOMA23_TO_CC,
-                        )
-                    shift = rigid_body_pos[0].clone()
-                    shift[:, 1] += 1.5
-                    self._overlay.sync(shift, rigid_body_rot[0])
+                        try:
+                            self._overlay = SkinnedOverlay(
+                                stage=omni.usd.get_context().get_stage(),
+                                character_usd=args.overlay_character,
+                                prim_root="/World/overlay0",
+                                body_names=self.motion_libs[0].kinematic_info.body_names
+                                if hasattr(self.motion_libs[0], "kinematic_info")
+                                else self.simulator.robot_config.kinematic_info.body_names,
+                                body_rest_rot_wxyz=rest,
+                                joint_map=SOMA23_TO_CC,
+                                root_only=args.overlay_root_only,
+                                drive_bodies=(
+                                    [b for b in SOMA23_TO_CC if b != "Hips"]
+                                    if args.overlay_drive.strip() == "all"
+                                    else [
+                                        b.strip()
+                                        for b in args.overlay_drive.split(",")
+                                        if b.strip()
+                                    ]
+                                ),
+                                rest_rel=SOMA23_REST_REL,
+                            )
+                        except Exception:
+                            import traceback
+                            print("[overlay] INIT FAILED — overlay disabled, "
+                                  "playback continues:", flush=True)
+                            traceback.print_exc()
+                            args.overlay_character = None
+                            self._overlay = None
+                    if self._overlay is not None:
+                        shift = rigid_body_pos[0].clone()
+                        shift[:, 1] += args.overlay_offset
+                        try:
+                            self._overlay.sync(shift, rigid_body_rot[0])
+                        except Exception:
+                            import traceback
+                            print("[overlay] SYNC FAILED — overlay disabled, "
+                                  "playback continues:", flush=True)
+                            traceback.print_exc()
+                            args.overlay_character = None
                     self._ov_n = getattr(self, "_ov_n", 0) + 1
                     if self._ov_n in (1, 120, 600):
                         bn = (self.motion_libs[0].kinematic_info.body_names
@@ -1006,8 +1055,25 @@ class MotionVisualizerSmoothness:
                                       f"[{q[0]:+.3f} {q[1]:+.3f} {q[2]:+.3f} {q[3]:+.3f}]",
                                       flush=True)
 
-                # Advance frame with skip for fast playback
-                self.current_frame += frame_skip
+                # Advance frames on the WALL CLOCK: the renderer caps at
+                # ~20 fps, so fixed per-render increments flatten every clip
+                # to render speed (2x-dt clips looked identical). Advancing
+                # by elapsed_time/motion_dt keeps playback real-time — the
+                # renderer drops frames instead of stretching time.
+                try:
+                    _mdt = float(
+                        self.motion_libs[0].motion_dt[self.current_motion_idx]
+                    )
+                except Exception:
+                    _mdt = 1.0 / FPS
+                _now = time.perf_counter()
+                if (getattr(self, "_clip_t0", None) is None
+                        or getattr(self, "_clip_frame0_idx", None) != self.current_motion_idx):
+                    self._clip_t0 = _now
+                    self._clip_frame0_idx = self.current_motion_idx
+                self.current_frame = int(
+                    (_now - self._clip_t0) * self.playback_speed / max(_mdt, 1e-6)
+                )
 
                 # Motion finished: replay it loops_per_motion times, then
                 # AUTO-ADVANCE to the next motion in the library. (The old
@@ -1016,6 +1082,7 @@ class MotionVisualizerSmoothness:
                 # visualizer looped motion 0 forever.)
                 if self.current_frame >= self.current_motion_length:
                     self.current_frame = 0
+                    self._clip_t0 = None  # restart the wall-clock for the next loop/clip
                     self._loops_done = getattr(self, "_loops_done", 0) + 1
                     if self._loops_done >= max(1, int(args.loops_per_motion)):
                         self._loops_done = 0
@@ -1040,9 +1107,18 @@ class MotionVisualizerSmoothness:
 
             step_count += 1
 
-            # Throttle to real-time (adjusted by playback speed)
+            # Throttle to real-time (adjusted by playback speed), honoring the
+            # CURRENT MOTION's dt — time-scaled clips (e.g. 2x getups, whose
+            # motion_dt was halved) now actually play faster instead of being
+            # flattened to the global 30 fps frame rate.
+            try:
+                motion_dt = float(
+                    self.motion_libs[0].motion_dt[self.current_motion_idx]
+                )
+            except Exception:
+                motion_dt = target_dt
             elapsed = time.perf_counter() - frame_start
-            sleep_time = target_dt / max(self.playback_speed, 0.01) - elapsed
+            sleep_time = motion_dt / max(self.playback_speed, 0.01) - elapsed
             if sleep_time > 0:
                 time.sleep(sleep_time)
 

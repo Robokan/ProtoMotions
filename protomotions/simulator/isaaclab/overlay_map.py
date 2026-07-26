@@ -40,3 +40,12 @@ SOMA23_TO_CC = {
     "RightFoot": "R_Foot",
     "RightToeBase": "R_ToeBase",
 }
+
+# Per-body frame constants c_b (wxyz, rel to Hips at the correspondence
+# pose). Measured 2026-07-26 via MuJoCo FK: the soma23 MJCF zero pose is a
+# T-pose with EVERY body frame world-aligned (identity rel-to-hips), and it
+# matches the CC character's bind pose limb-for-limb (arms +-X, toes -Y,
+# character faces -Y). So all constants are identity — the overlay's
+# rest_rel.get(body, identity) fallback covers everything. (Motion-lib quats
+# are XYZW; the overlay reorders to wxyz internally.)
+SOMA23_REST_REL = {}
