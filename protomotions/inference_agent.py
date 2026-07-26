@@ -68,6 +68,13 @@ def create_parser():
     )
     # Optional arguments
     parser.add_argument(
+        "--experiment-path",
+        type=str,
+        default=None,
+        help="Experiment .py file whose apply_inference_overrides hook to "
+        "apply on top of the frozen training configs",
+    )
+    parser.add_argument(
         "--full-eval",
         action="store_true",
         default=False,
@@ -315,6 +322,35 @@ def main():
     if args.headless is not None:
         log.info(f"CLI override: headless = {args.headless}")
         simulator_config.headless = args.headless
+
+    # Apply the experiment's apply_inference_overrides hook (documented in the
+    # precedence list above but historically never invoked: frozen configs
+    # carry the hook's state from *training time*, so repo-side changes to the
+    # hook never reached existing checkpoints). --experiment-path names the
+    # experiment file; if omitted, checkpoints trained before the hook was
+    # wired in keep their frozen behavior.
+    if args.experiment_path is not None:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "experiment_module", args.experiment_path
+        )
+        experiment = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(experiment)
+        if hasattr(experiment, "apply_inference_overrides"):
+            log.info(
+                f"Applying apply_inference_overrides from {args.experiment_path}"
+            )
+            experiment.apply_inference_overrides(
+                robot_config,
+                simulator_config,
+                env_config,
+                agent_config,
+                terrain_config,
+                motion_lib_config,
+                scene_lib_config,
+                args,
+            )
 
     # Parse and apply general CLI overrides
     from protomotions.utils.config_utils import (

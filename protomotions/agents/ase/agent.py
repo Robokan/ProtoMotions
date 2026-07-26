@@ -161,7 +161,7 @@ class ASE(AMP):
         # At viewer scale, announce each skill switch on the console so
         # behavior changes can be correlated with latent resamples
         # (training-scale env counts stay silent).
-        if self.num_envs <= 4:
+        if self.num_envs <= 16:
             for k, e in enumerate(env_ids.tolist()):
                 z = latents[k]
                 print(

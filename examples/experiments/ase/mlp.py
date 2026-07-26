@@ -349,3 +349,12 @@ def apply_inference_overrides(
         "../amp/mlp.py"
     )
     apply_inference_overrides_fn(robot_cfg, simulator_cfg, env_cfg, agent_cfg, terrain_cfg, motion_lib_cfg, scene_lib_cfg, args)
+
+    # ASE viewing default (per Eric): spawn from a random time inside a random
+    # clip on every reset, not the clip's first frame (AMP's override above
+    # sets 1.0 = always initial pose; 0.0 = always random time).
+    if env_cfg is not None and hasattr(env_cfg, "motion_manager"):
+        if hasattr(env_cfg.motion_manager, "init_start_prob"):
+            env_cfg.motion_manager.init_start_prob = 0.0
+        if hasattr(env_cfg.motion_manager, "resample_on_reset"):
+            env_cfg.motion_manager.resample_on_reset = True
