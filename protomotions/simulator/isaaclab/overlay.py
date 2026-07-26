@@ -106,6 +106,11 @@ class SkinnedOverlay:
         root_only: bool = False,
         drive_bodies: Sequence[str] = (),
         rest_rel: Dict[str, Sequence[float]] = None,
+        tpose_pos: Dict[str, Sequence[float]] = None,
+        limb_match: bool = False,
+        body_parents: Dict[str, str] = None,
+        fists: bool = False,
+        head_shift: float = 0.0,
     ):
         from pxr import Usd, UsdGeom, UsdSkel, Sdf, Gf  # noqa: F401
 
@@ -185,6 +190,44 @@ class SkinnedOverlay:
             )
             m = np.array([[l2w[i][j] for j in range(4)] for i in range(4)])
             self._hip0 = scale * (self._bind_world[hip_ji] @ m)[3, :3]
+            # Auto scale+align: 1-D similarity fit of the character's bind
+            # joint positions (hip-relative, prim space) onto the robot's
+            # T-pose body positions (hip-relative). Both T-poses are the same
+            # configuration in the same frames, so no rotation is needed.
+            self._t_fit = -self._hip0  # fallback: raw hip glue
+            self._s_fit = scale
+            if tpose_pos:
+                C, Rt = [], []
+                for body, bone in joint_map.items():
+                    if body not in tpose_pos or bone not in leaf:
+                        continue
+                    if rest_rel and body in rest_rel:
+                        # body binds away from the robot's T-pose (A-pose
+                        # arms): its bind position is not a T-pose sample
+                        continue
+                    cj = (self._bind_world[leaf.index(bone)] @ m)[3, :3]
+                    C.append(cj)
+                    Rt.append(np.asarray(tpose_pos[body], dtype=np.float64))
+                if len(C) >= 4:
+                    C = np.stack(C); Rt = np.stack(Rt)
+                    cbar, rbar = C.mean(0), Rt.mean(0)
+                    Cc, Rc = C - cbar, Rt - rbar
+                    s = float((Cc * Rc).sum() / max((Cc * Cc).sum(), 1e-9))
+                    t = rbar - s * cbar
+                    rms = float(np.sqrt(((s * C + t - Rt) ** 2).sum(1).mean()))
+                    self._s_fit = s
+                    self._t_fit = t
+                    log.info(
+                        "overlay auto-fit over %d joints: scale %.4f, "
+                        "offset %s, rms %.3f m",
+                        len(C), s, np.round(t, 3), rms,
+                    )
+                    print(f"[overlay] auto-fit: scale {s:.4f} offset "
+                          f"{np.round(t,3)} rms {rms*100:.1f} cm", flush=True)
+            if self._s_fit != 1.0:
+                s_op = xf.AddScaleOp(opSuffix="overlayFit")
+                s_op.Set(Gf.Vec3f(self._s_fit, self._s_fit, self._s_fit))
+                xf.SetXformOpOrder([self._t_op, self._o_op, s_op] + existing)
 
             # Optional driven joints on top of the root-follow: each drive
             # body's rotation RELATIVE TO THE HIPS (minus its standing-pose
@@ -224,11 +267,189 @@ class SkinnedOverlay:
                 if skelroot and skelroot.IsA(UsdSkel.Root):
                     UsdSkel.BindingAPI.Apply(skelroot).GetAnimationSourceRel(
                     ).SetTargets([anim_path])
-                # Constant channels: rest translations, unit scales.
+                # Constant channels: rest translations (optionally rescaled
+                # per segment so joint-to-joint distances match the robot's),
+                # unit scales.
+                trans = [self._rest_local[j, 3, :3].copy()
+                         for j in range(len(self._joints))]
+                if limb_match and tpose_pos and body_parents:
+                    # Full congruence: place each mapped joint at the robot's
+                    # T-pose offset from its mapped parent (direction AND
+                    # length), expressed in the parent joint's bind frame.
+                    # This also fixes chain ANCHORS (e.g. the CC clavicle
+                    # sits cm's away from SOMA's shoulder), not just lengths.
+                    for body, pb in body_parents.items():
+                        bone = joint_map.get(body)
+                        pbone = joint_map.get(pb)
+                        if not bone or not pbone or bone not in leaf \
+                                or pbone not in leaf or body not in tpose_pos \
+                                or pb not in tpose_pos:
+                            continue
+                        j = leaf.index(bone)
+                        pj = leaf.index(pbone)
+                        d_world = (
+                            np.subtract(tpose_pos[body], tpose_pos[pb])
+                            / self._s_fit
+                        )
+                        if body == "Head" and head_shift:
+                            # cosmetic mesh alignment: character faces -Y in
+                            # bind, so forward = -Y (positive = forward).
+                            d_world = d_world + np.array(
+                                [0.0, -head_shift / self._s_fit, 0.0])
+                        dp = self._parents[j]
+                        if dp != pj:
+                            # Intermediate rig bones between the mapped pair
+                            # (e.g. Hip -> Pelvis -> Thigh): subtract their
+                            # bind offsets so the total offset from the
+                            # mapped parent still matches the robot.
+                            inter = (
+                                self._bind_world[dp, 3, :3]
+                                - self._bind_world[pj, 3, :3]
+                            )
+                            d_world = d_world - inter
+                        # If the PARENT binds away from robot T-pose (A-pose
+                        # arms), the runtime delta at robot-T is conj(c_pb):
+                        # pre-rotate the target offset by c_pb so the child
+                        # lands at the robot's T offset when the robot is in
+                        # T-pose.
+                        if rest_rel and pb in rest_rel:
+                            c_pb = np.asarray(rest_rel[pb], dtype=np.float64)
+                            d_world = _quat_to_mat(c_pb) @ d_world
+                        # skel-space offset -> direct parent joint local frame
+                        # (row-major bind rot: local = rows @ world)
+                        d_local = self._bind_world[dp, :3, :3] @ d_world
+                        moved = float(np.linalg.norm(d_local - trans[j]))
+                        trans[j] = d_local
+                        if moved > 0.01:
+                            log.info("overlay limb-match: %s (%s) moved "
+                                     "%.1f cm", body, bone, moved * 100)
                 self._anim.GetTranslationsAttr().Set([
-                    Gf.Vec3f(*[float(v) for v in self._rest_local[j, 3, :3]])
-                    for j in range(len(self._joints))
+                    Gf.Vec3f(*[float(v) for v in t3]) for t3 in trans
                 ])
+                # Static fist pose for the (unmapped) finger joints: curl
+                # each phalanx about finger_dir x palm_normal in its own
+                # bind frame. Palm normal = hand local X (faces down in
+                # bind), finger direction = joint local Y.
+                self._static_L = {}
+                if fists:
+                    # Rig-agnostic fists, derived from bind GEOMETRY (no
+                    # local-axis assumptions): finger directions come from
+                    # joint positions, the palm normal from the finger-spread
+                    # plane, and the palm side from where the thumb sits.
+                    curl = {1: 80.0, 2: 90.0, 3: 55.0}
+                    thumb = {1: 28.0, 2: 35.0, 3: 30.0}
+                    DIGITS = ("thumb", "index", "middle", "mid", "ring",
+                              "pinky")
+
+                    def _digit_joints(side_cc, side_ue):
+                        """{digit: {1: ji, 2: ji, 3: ji}} for either naming."""
+                        import re as _re
+                        out = {}
+                        for j, lf in enumerate(leaf):
+                            m = _re.match(
+                                rf"{side_cc}_(Thumb|Index|Mid|Ring|Pinky)"
+                                rf"(\d)$", lf)
+                            if not m:
+                                m = _re.match(
+                                    r"(thumb|index|middle|ring|pinky)_0(\d)_"
+                                    rf"{side_ue}$", lf)
+                            if not m:
+                                continue
+                            d = m.group(1).lower()
+                            d = "mid" if d in ("mid", "middle") else d
+                            out.setdefault(d, {})[int(m.group(2))] = j
+                        return out
+
+                    pos = self._bind_world[:, 3, :3]
+                    total = 0
+                    for side_cc, side_ue in (("L", "l"), ("R", "r")):
+                        digits = _digit_joints(side_cc, side_ue)
+                        if not digits or "mid" not in digits:
+                            continue
+                        mid = digits["mid"]
+                        fmid = pos[mid[2]] - pos[mid[1]]
+                        fmid /= max(np.linalg.norm(fmid), 1e-9)
+                        spread = None
+                        if "index" in digits and "pinky" in digits:
+                            spread = (pos[digits["index"][1]]
+                                      - pos[digits["pinky"][1]])
+                        if spread is None:
+                            continue
+                        palm = np.cross(fmid, spread)
+                        palm /= max(np.linalg.norm(palm), 1e-9)
+                        if "thumb" in digits:
+                            to_thumb = pos[digits["thumb"][1]] - pos[mid[1]]
+                            if np.dot(palm, to_thumb) < 0:
+                                palm = -palm
+                        # Canonical LOCAL flexion hinge from the index finger:
+                        # digits share local frame conventions on both rig
+                        # families, so this same local axis is the anatomical
+                        # hinge for the thumb's outer joints (they flex "like
+                        # fingers" but in the thumb's own plane). Deriving the
+                        # thumb axis from the palm normal instead bends it
+                        # backward/sideways.
+                        hinge_local = None
+                        if "index" in digits and 1 in digits["index"]:
+                            ij = digits["index"][1]
+                            fi = pos[digits["index"].get(2, ij)] - pos[ij]
+                            fi /= max(np.linalg.norm(fi), 1e-9)
+                            axw = np.cross(fi, palm)
+                            axw /= max(np.linalg.norm(axw), 1e-9)
+                            hinge_local = self._bind_world[ij, :3, :3] @ axw
+                        for d, chain in digits.items():
+                            tbl = thumb if d == "thumb" else curl
+                            for k, j in chain.items():
+                                nxt = chain.get(k + 1)
+                                if nxt is not None:
+                                    fdir = pos[nxt] - pos[j]
+                                else:
+                                    fdir = pos[j] - pos[chain[k - 1]] \
+                                        if (k - 1) in chain else fmid
+                                fdir = fdir / max(np.linalg.norm(fdir), 1e-9)
+                                if d == "thumb" and k == 1:
+                                    # CMC base: sweep across the palm toward
+                                    # the fingers, plus a light hinge flex.
+                                    axw = palm.copy()
+                                    if np.dot(np.cross(axw, fdir), fmid) < 0:
+                                        axw = -axw
+                                    ax_l = self._bind_world[j, :3, :3] @ axw
+                                    h1 = np.radians(tbl[1]) / 2.0
+                                    q_sw = np.array(
+                                        [np.cos(h1), *(np.sin(h1) * ax_l)])
+                                    hx_l = hinge_local
+                                    if hx_l is None:
+                                        hx = np.cross(fdir, palm)
+                                        hx /= max(np.linalg.norm(hx), 1e-9)
+                                        hx_l = (
+                                            self._bind_world[j, :3, :3] @ hx)
+                                    h2 = np.radians(12.0) / 2.0
+                                    q_fl = np.array(
+                                        [np.cos(h2), *(np.sin(h2) * hx_l)])
+                                    self._static_L[j] = _quat_mul(
+                                        self._rest_q[j],
+                                        _quat_mul(q_sw, q_fl))
+                                    total += 1
+                                    continue
+                                if d == "thumb" and hinge_local is not None:
+                                    # Outer thumb joints: pure hinge on the
+                                    # shared local flexion axis.
+                                    ax_l = hinge_local
+                                else:
+                                    axw = np.cross(fdir, palm)
+                                    n = np.linalg.norm(axw)
+                                    if n < 1e-6:
+                                        continue
+                                    ax_l = (
+                                        self._bind_world[j, :3, :3]
+                                        @ (axw / n))
+                                half = np.radians(tbl.get(k, 45.0)) / 2.0
+                                qrot = np.array(
+                                    [np.cos(half), *(np.sin(half) * ax_l)])
+                                self._static_L[j] = _quat_mul(
+                                    self._rest_q[j], qrot)
+                                total += 1
+                    log.info("overlay fists: curled %d finger joints",
+                             len(self._static_L))
                 self._anim.GetScalesAttr().Set(
                     [Gf.Vec3h(1.0, 1.0, 1.0)] * len(self._joints)
                 )
@@ -402,8 +623,9 @@ class SkinnedOverlay:
             # character shows its authored (upright) pose exactly.
             q_rel = _quat_mul(q, _quat_conj(self._q_rest_root))
             R = _quat_to_mat(q_rel)
-            # Pivot about the character hip: hip lands on the robot root.
-            t = p - R @ self._hip0
+            # Auto-fit offset (falls back to -hip0 = raw hip glue): places
+            # the whole scaled character least-squares onto the robot.
+            t = p + R @ self._t_fit
             self._t_op.Set(Gf.Vec3d(float(t[0]), float(t[1]), float(t[2])))
             self._o_op.Set(
                 Gf.Quatf(
@@ -434,6 +656,9 @@ class SkinnedOverlay:
                         W[j] = _quat_mul(delta, self._bind_q[j])
                         L[j] = _quat_mul(_quat_conj(Wp), W[j])
                     else:
+                        Lj = getattr(self, "_static_L", {}).get(j)
+                        if Lj is not None:
+                            L[j] = Lj
                         W[j] = _quat_mul(Wp, self._rest_q[j])
                 self._anim.GetRotationsAttr().Set([
                     Gf.Quatf(float(L[j][0]),

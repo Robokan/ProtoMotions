@@ -1,0 +1,81 @@
+# 2026-07-24 user review: root-height mapping broken (robot floats mid-air)
+walk_hands_on_back_start_R_don_t_know_no_hands_clap_forced_001__A475.motion
+stand_up_lying_R_002__A475_M.motion
+tiger_jump_to_shoulder_roll_R_003__A304.motion
+tiger_jump_to_shoulder_roll_R_002__A415_M.motion
+tiger_jump_to_shoulder_roll_R_003__A304_M.motion
+pels_air_punch_001__A494_M.motion
+pels_air_punch_001__A493.motion
+walk_hands_on_back_start_R_don_t_know_no_hands_clap_forced_001__A474.motion
+pels_air_punch_001__A495_M.motion
+stand_up_lying_R_002__A475.motion
+tiger_jump_to_shoulder_roll_R_002__A305_M.motion
+walk_hands_on_back_start_R_don_t_know_no_hands_clap_forced_001__A473_M.motion
+pels_air_punch_001__A494.motion
+pels_air_punch_001__A492_M.motion
+pels_air_punch_001__A493_M.motion
+tiger_jump_to_shoulder_roll_R_001__A416_M.motion
+tiger_jump_to_shoulder_roll_R_002__A304.motion
+tiger_jump_to_shoulder_roll_R_001__A305_M.motion
+walk_hands_on_back_start_R_don_t_know_no_hands_clap_forced_001__A472.motion
+tiger_jump_to_shoulder_roll_R_003__A415_M.motion
+tiger_jump_to_shoulder_roll_R_003__A305_M.motion
+tiger_jump_to_shoulder_roll_R_001__A304.motion
+tiger_jump_to_shoulder_roll_R_003__A415.motion
+walk_hands_on_back_start_R_don_t_know_no_hands_clap_forced_001__A475_M.motion
+pels_air_punch_001__A495.motion
+walk_hands_on_back_start_R_don_t_know_no_hands_clap_forced_001__A472_M.motion
+tiger_jump_to_shoulder_roll_R_003__A305.motion
+walk_hands_on_back_start_R_don_t_know_no_hands_clap_forced_001__A473.motion
+tiger_jump_to_shoulder_roll_R_003__A416.motion
+tiger_jump_to_shoulder_roll_R_001__A415.motion
+walk_hands_on_back_start_R_don_t_know_no_hands_clap_forced_001__A474_M.motion
+pels_air_punch_001__A492.motion
+tiger_jump_to_shoulder_roll_R_001__A305.motion
+tiger_jump_to_shoulder_roll_R_002__A415.motion
+tiger_jump_to_shoulder_roll_R_003__A416_M.motion
+tiger_jump_to_shoulder_roll_R_001__A416.motion
+tiger_jump_to_shoulder_roll_R_002__A305.motion
+side_roll_R_002__A415.motion
+side_roll_R_002__A415_M.motion
+side_roll_R_002__A305.motion
+side_roll_R_002__A304.motion
+side_roll_R_002__A416_M.motion
+side_roll_R_002__A416.motion
+stand_up_lying_R_002__A472.motion
+stand_up_lying_R_002__A472_M.motion
+# side_roll family: takes 002+004 float, sessions A304/A305 implicated
+side_roll_R_004__A415_M.motion
+side_roll_R_001__A304.motion
+side_roll_R_003__A304.motion
+side_roll_R_003__A305.motion
+side_roll_R_004__A416.motion
+side_roll_R_003__A416.motion
+side_roll_R_004__A415.motion
+side_roll_R_004__A416_M.motion
+side_roll_R_003__A415.motion
+side_roll_R_003__A415_M.motion
+side_roll_R_003__A305_M.motion
+side_roll_R_001__A305.motion
+# CORRECTION: only A472*/A475* of stand_up_lying_R_002 are condemned; A473/A474 takes restored (were removed in error)
+walk_ff_start_315_R_turn_jump_270_R_jog_arc_cw_start_R_002__A479_M.motion
+ib_combat_turn_jog_start_270_R_003__A437_M.motion
+walk_ff_start_315_R_turn_jump_270_R_jog_arc_cw_start_R_001__A478_M.motion
+walk_ff_loop_180_R_turn_walk_360_R_jog_arc_cw_loop_R_002__A486_M.motion
+# ATLAS (systematic, not per-clip): head gaze reads "staring at floor" on combat
+# clips, worst on shadow_boxing. Cause: boxers tuck the chin (skull pitches down,
+# p90 +10deg in shadow_boxing) but keep gaze on the opponent WITH THE EYES; robots
+# have no eyes, so faithful skull retargeting = looking at the ground. Atlas neck
+# cannot express pure pitch to fix in-data (Neck_2=roll, Head_Joint=oblique 82%
+# yaw / 56% pitch). Fix at retarget IK: gaze-aware head target -- bias head pitch
+# up ~10-15deg whenever the source skull pitches down (chin tuck), so the robot
+# "looks at the opponent chest" instead of the floor. Mild version (~5deg) also
+# wanted on stand_up_* endings. Applies to atlas; check t800 too (its head runs
+# +11deg UP at getup stands but +10deg DOWN median in shadow_boxing).
+# NEW-PIPELINE (post head-fix) atlas IK branch flips -- Arm_3 stuck at +pi:
+shadow_boxing_R_003__A362_M.motion
+# suspects (same signature, pending visual check):
+#   g2-getup-handstand-kip-up (Arm_3_R, 48% of frames)
+#   f1-attack-straight-punch01_M (Arm_3_L, 15%)
+#   f2-attack-straight-punch02_M (Arm_3_L, 10%)
+walk_ff_loop_180_R_turn_walk_360_R_jog_arc_cw_loop_R_002__A487_M.motion

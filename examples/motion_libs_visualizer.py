@@ -61,6 +61,32 @@ parser.add_argument(
     "Undriven joints hold the bind pose.",
 )
 parser.add_argument(
+    "--overlay-limb-match",
+    action="store_true",
+    help="Rescale each character bone's length so joint-to-joint distances "
+    "match the robot's T-pose skeleton (mesh stretches via skinning).",
+)
+parser.add_argument(
+    "--overlay-skeleton",
+    default="cc",
+    choices=["cc", "ue"],
+    help="Character rig family: 'cc' (Reallusion/CC, e.g. construction "
+    "worker) or 'ue' (Epic UE5 skeleton, e.g. red samurai).",
+)
+parser.add_argument(
+    "--overlay-head-shift",
+    type=float,
+    default=0.0,
+    help="Cosmetic forward(+)/backward(-) shift of the character head joint "
+    "in meters, to line the skull mesh up with the SOMA head capsule "
+    "(requires --overlay-limb-match).",
+)
+parser.add_argument(
+    "--overlay-fists",
+    action="store_true",
+    help="Curl the character's fingers into fists (static pose).",
+)
+parser.add_argument(
     "--overlay-offset",
     type=float,
     default=1.5,
@@ -463,6 +489,7 @@ class MotionVisualizerSmoothness:
             "3": self.increase_smoothness_threshold,  # Key 3: Increase smoothness threshold
             "4": self.decrease_smoothness_threshold,  # Key 4: Decrease smoothness threshold
             "R": self._request_next_motion,  # Key R: skip to next motion
+            "5": self._toggle_robot_visibility,  # Key 5: show/hide SOMA body
         }
 
         # Create checkerboard ground for visualization
@@ -509,6 +536,7 @@ class MotionVisualizerSmoothness:
         print("  '2' - Decrease playback speed by 150% (NumPad 2 for IsaacLab)")
         print("  '3' - Increase smoothness threshold by 1.5x (NumPad 3 for IsaacLab)")
         print("  '4' - Decrease smoothness threshold by 1.5x (NumPad 4 for IsaacLab)")
+        print("  '5' - Toggle SOMA capsule body visibility (NumPad 5 for IsaacLab)")
         print("Motion will play automatically and loop")
 
         # Do not force an immediate motion skip on startup (was skipping clip 0).
@@ -583,6 +611,27 @@ class MotionVisualizerSmoothness:
         """R-key handler: flag a skip; the play loop consumes it (keeps
         motion-state mutation on the loop thread)."""
         self._next_motion_requested = True
+
+    def _toggle_robot_visibility(self):
+        """5-key handler: show/hide the robot's capsule body (the skinned
+        overlay character, if any, is unaffected)."""
+        try:
+            import omni.usd
+            from pxr import UsdGeom
+
+            stage = omni.usd.get_context().get_stage()
+            prim = stage.GetPrimAtPath("/World/envs/env_0/Robot")
+            if not prim or not prim.IsValid():
+                print("[viewer] robot prim not found for toggle", flush=True)
+                return
+            img = UsdGeom.Imageable(prim)
+            hidden = img.ComputeVisibility() == UsdGeom.Tokens.invisible
+            img.GetVisibilityAttr().Set("inherited" if hidden else "invisible")
+            print(f"[viewer] SOMA body {'shown' if hidden else 'hidden'}",
+                  flush=True)
+        except Exception:
+            import traceback
+            traceback.print_exc()
 
     def _switch_to_next_motion(self):
         """Switch to the next motion: sequential, or a weighted random draw
@@ -992,7 +1041,18 @@ class MotionVisualizerSmoothness:
                         from protomotions.simulator.isaaclab.overlay_map import (
                             SOMA23_TO_CC,
                             SOMA23_REST_REL,
+                            SOMA23_TPOSE_POS,
+                            SOMA23_PARENT,
+                            SOMA23_TO_UE,
+                            UE_REST_REL,
+                            SOMA23_PARENT_UE,
                         )
+                        if args.overlay_skeleton == "ue":
+                            _map, _rel, _par = (
+                                SOMA23_TO_UE, UE_REST_REL, SOMA23_PARENT_UE)
+                        else:
+                            _map, _rel, _par = (
+                                SOMA23_TO_CC, SOMA23_REST_REL, SOMA23_PARENT)
                         import numpy as _np
                         import omni.usd
 
@@ -1012,10 +1072,10 @@ class MotionVisualizerSmoothness:
                                 if hasattr(self.motion_libs[0], "kinematic_info")
                                 else self.simulator.robot_config.kinematic_info.body_names,
                                 body_rest_rot_wxyz=rest,
-                                joint_map=SOMA23_TO_CC,
+                                joint_map=_map,
                                 root_only=args.overlay_root_only,
                                 drive_bodies=(
-                                    [b for b in SOMA23_TO_CC if b != "Hips"]
+                                    [b for b in _map if b != "Hips"]
                                     if args.overlay_drive.strip() == "all"
                                     else [
                                         b.strip()
@@ -1023,7 +1083,12 @@ class MotionVisualizerSmoothness:
                                         if b.strip()
                                     ]
                                 ),
-                                rest_rel=SOMA23_REST_REL,
+                                rest_rel=_rel,
+                                tpose_pos=SOMA23_TPOSE_POS,
+                                limb_match=args.overlay_limb_match,
+                                body_parents=_par,
+                                fists=args.overlay_fists,
+                                head_shift=args.overlay_head_shift,
                             )
                         except Exception:
                             import traceback
