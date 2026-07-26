@@ -666,6 +666,41 @@ class SkinnedOverlay:
                                       float(L[j][3])))
                     for j in range(J)
                 ])
+                # Diagnostic (once per ~4s): FK the skeleton we just wrote
+                # and report where the character's hand joints actually land
+                # vs the robot's hand bodies.
+                import os as _os
+                self._diag_n = getattr(self, "_diag_n", 0) + 1
+                if _os.environ.get("OVERLAY_DIAG") and self._diag_n % 120 == 1:
+                    tloc = getattr(self, "_trans_cache", None)
+                    if tloc is None:
+                        tloc = [np.array(v) for v in
+                                self._anim.GetTranslationsAttr().Get()]
+                        self._trans_cache = tloc
+                    Pj = np.zeros((J, 3))
+                    for j in range(J):
+                        pi = self._parents[j]
+                        if pi < 0:
+                            Pj[j] = tloc[j]
+                            continue
+                        Rw = _quat_to_mat(W[pi])
+                        Pj[j] = Pj[pi] + Rw @ tloc[j]
+                    q_prim = q  # root quat (wxyz) applied by the prim op
+                    Rp = _quat_to_mat(q_prim)
+                    for hb, bone in (("LeftHand", None), ("RightHand", None)):
+                        bi = self._body_index.get(hb)
+                        ji2 = next((jj for jj, b2, _ in self._drive
+                                    if b2 == bi), None)
+                        if bi is None or ji2 is None:
+                            continue
+                        char_w = (np.asarray(
+                            body_pos[self._root_bi].detach().cpu().numpy())
+                            + Rp @ (self._t_fit + self._s_fit * Pj[ji2]))
+                        rob_w = np.asarray(
+                            body_pos[bi].detach().cpu().numpy())
+                        print(f"[overlay-diag] {hb}: char-robot delta "
+                              f"{np.round((char_w - rob_w) * 100, 1)} cm",
+                              flush=True)
             return
         import os
         mode = os.environ.get("OVERLAY_TEST", "")

@@ -233,3 +233,26 @@ this week were cwd traps.
   viewer has one; simulator custom_key_handlers must be passed at
   construction — see motion_libs_visualizer.py:486 and
   isaaclab/simulator.py:349).
+
+## OPEN ISSUE (2026-07-26 end of session): skin hands vs robot hands
+Eric reports the samurai skin's hands don't line up with the robot's hand
+capsules (everything else aligns after SAMURAI_TPOSE_POS fit + head trim).
+Facts for the next session:
+- Chain math says positions should coincide (offset formulas identical on
+  both sides; rest==bind verified; scales match). So the mismatch is
+  probably ORIENTATION, not translation: UE_REST_REL sets
+  c(Hand) := c(ForeArm) (direction-derived, no wrist twist). If the
+  character's bind wrist carries roll relative to the forearm, the gauntlet
+  pivots around the wrist and its volume sits centimeters off the capsule
+  while the wrist joint itself is aligned. Fix candidate: derive c(Hand)
+  from the hand's BIND ORIENTATION (not the forearm segment direction) —
+  e.g. c_hand = rotation taking the robot-T hand frame to the char bind
+  hand frame projected to remove the arm-lowering component; or simplest:
+  calibrate visually with a small roll offset knob.
+- A runtime FK diagnostic exists in overlay.py sync (env OVERLAY_DIAG=1)
+  but ITS OWN FK IS WRONG (printed 100m deltas while the render is close):
+  fix its accumulation before trusting it (suspect: mixing skel-space bind
+  quats with local rest quats in W, or the translations cache).
+- Robot hand capsules are fist-sized (r=0.05) along +-X from the wrist;
+  the skin gauntlet is bigger — a few cm of visual mismatch is inherent;
+  ask Eric how large the offset actually looks before over-engineering.
