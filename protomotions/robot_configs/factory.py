@@ -45,6 +45,10 @@ def robot_config(robot_name: str, **updates) -> RobotConfig:
         from protomotions.robot_configs.soma23 import Soma23RobotConfig
 
         config = Soma23RobotConfig()
+    elif robot_name == "samurai":
+        from protomotions.robot_configs.samurai import SamuraiRobotConfig
+
+        config = SamuraiRobotConfig()
     elif robot_name == "atlas":
         from protomotions.robot_configs.atlas import AtlasRobotConfig
 

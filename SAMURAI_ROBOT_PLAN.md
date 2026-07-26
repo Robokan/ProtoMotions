@@ -50,22 +50,42 @@ this week were cwd traps.
             --rate_limit
       * Zero-channel BVH is NOT a T-pose for this convention (skeleton
         lies flat along +X) — useless for calibration.
-      * CURRENT open issue: with position-driven arms + calibrated torso
-        offsets, feet track to 3-4 cm and hands to 12 cm, but the torso
-        solves ~24 cm off in Y and ~14 cm low vs targets (head worse).
-        Suspects: torso orientation tasks fighting positions with
-        imperfect offsets; posture cost; hip task z-weight only 20;
-        possibly the calibrated Chest/Head offsets (27-35 deg spread) are
-        harmful — try zeroing ALL rot weights except Hips/feet, or retune
-        after visual inspection.
-- [ ] Retarget the 142-stem v6 corpus to samurai (fleet is trivial once the
-      sanity clip LOOKS right: filter ~/sparkpack/output/all_bvh.list to
-      the stems of data/atlas_pretrain_corpus_v6.pt, 16 shards,
-      --robot samurai)
-- [ ] ProtoMotions robot config (protomotions/robot_configs/samurai.py)
-- [ ] Convert npz -> .motion -> package data/samurai_pretrain_corpus_v6.pt
-- [ ] MJCF -> USD for IsaacLab rendering
-- [ ] ASE pretrain launch (samurai_ase_pretrain_v6)
+      * RESOLVED (2026-07-26): the garbled/tilted output was a wrong HIPS
+        rot offset (calibrated from the degenerate zero pose). Final
+        calibration recipe, now in the config: O_hips = mean over frames of
+        conj(q_loader(Hips,t)) x q_corpus(Hips,t) — this ALSO pins GMR's
+        output world to the corpus world (spread 12.7 deg = genuine
+        constant). All other bodies: O_b = conj(N_t) x O_hips x M_t with
+        N/M the hips-relative loader/corpus rotations. Arm-chain rot
+        weights stay 0 (position-driven). Rendered frames confirm clean
+        boxing poses (see scratchpad samurai_motion2_*.png).
+- [x] Mirror bug fixed (robot left followed human right): O_hips must be
+      calibrated in the LOADER world (insert Rz180 between loader and corpus
+      quats) so orientation targets agree with position targets. Spread
+      dropped to 0.0 deg. Eric visually approved the live retarget.
+- [x] 142-stem v6 corpus retargeted (list: ~/sparkpack/output/samurai_v6.list,
+      npz: ~/sparkpack/output/samurai_npz_v6, 142/142 ok).
+- [x] Robot config: protomotions/robot_configs/samurai.py (+factory entry).
+- [x] Converter: data/scripts/convert_gmr_npz_to_samurai.py. NOTE: uses a
+      continuity-aware euler_xyz decomposition (both branches per frame,
+      nearest-to-previous wins) — the library decomposer branch-flips at the
+      y~90deg singularity (lying getup poses), which showed up as 188-376
+      rad/s dof spikes. Also: joint_rot_mats includes the free root — skip
+      index 0 or you emit 69 dofs.
+- [x] Corpus: data/samurai_pretrain_corpus_v6.pt — 142 clips, v6 weights
+      copied per stem from atlas v6, 15 getups at 2x. Quality gates: 6/142
+      flagged, all the known genuinely-fast kicks (same set flags on
+      atlas/t800); zero wrap spikes, zero saturated joints.
+- [x] USD: protomotions/data/assets/usd/samurai/samurai.usda (IsaacLab
+      MjcfConverter, headless).
+- [ ] ASE pretrain launch (samurai_ase_pretrain_v6) — STAGED, awaiting
+      Eric's go + GPU assignment:
+      OMNI_KIT_ACCEPT_EULA=YES CUDA_VISIBLE_DEVICES=<0|2> nohup python \
+        protomotions/train_agent.py --robot-name samurai --simulator \
+        isaaclab --headless --experiment-path examples/experiments/ase/mlp.py \
+        --motion-file data/samurai_pretrain_corpus_v6.pt --num-envs 4096 \
+        --batch-size 8192 --experiment-name samurai_ase_pretrain_v6 \
+        >> results/samurai_ase_pretrain_v6.log 2>&1 &
 
 ## Inputs that already exist
 - Character: protomotions/data/assets/overlay/red_samurai.usd — 12 meshes,
