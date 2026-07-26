@@ -1012,7 +1012,9 @@ class IsaacLabSimulator(Simulator):
         self._cam_prev_char_pos = (
             self._get_simulator_root_state(0).root_pos.cpu().numpy()
         )
-        pos = self._cam_prev_char_pos + np.array([0, -5, 1])
+        # Spawn on the +Y side: the scene's distant light shines from +Y, so
+        # this puts the camera sun-at-back (characters lit, not silhouetted).
+        pos = self._cam_prev_char_pos + np.array([0, 5, 1])
         self._perspective_view.set_camera_view(
             pos, self._cam_prev_char_pos + np.array([0, 0, 0.2])
         )

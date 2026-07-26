@@ -75,6 +75,40 @@ def create_parser():
         "apply on top of the frozen training configs",
     )
     parser.add_argument(
+        "--overlay-character",
+        nargs="+",
+        default=None,
+        help="Rigged character USD(s) to skin fighters with (UsdSkel). With "
+        "multiple paths they cycle across envs (e.g. two fighters get two "
+        "different characters). IsaacLab viewer only.",
+    )
+    parser.add_argument(
+        "--overlay-skeleton",
+        default="cc",
+        choices=["cc", "ue"],
+        help="Overlay rig family: 'cc' (Reallusion) or 'ue' (Epic UE5, e.g. "
+        "red samurai).",
+    )
+    parser.add_argument(
+        "--overlay-fists",
+        action="store_true",
+        help="Curl overlay characters' fingers into fists.",
+    )
+    parser.add_argument(
+        "--overlay-hide-robot",
+        action="store_true",
+        help="Hide the robots' capsule bodies (show only the skinned "
+        "characters).",
+    )
+    parser.add_argument(
+        "--overlay-ambient",
+        type=float,
+        default=500.0,
+        help="Ambient fill lighting intensity when overlays are active: a "
+        "dome light plus a soft opposite-side fill so shadows aren't pure "
+        "black (default 500; 0 disables).",
+    )
+    parser.add_argument(
         "--full-eval",
         action="store_true",
         default=False,
@@ -447,6 +481,137 @@ def main():
     # (only needed for training) so the inference frame rate isn't
     # bottlenecked by training-only work.
     env.inference_mode = True
+
+    # Skinned character overlays: one per env, synced from live sim state
+    # after every simulator step (get_bodies_state returns common xyzw —
+    # the layout SkinnedOverlay expects). Battle exhibitions: pass two
+    # character USDs to skin the two fighters differently.
+    if args.overlay_character and args.simulator == "isaaclab" \
+            and not args.headless:
+        try:
+            import numpy as np
+            import omni.usd
+            from protomotions.simulator.isaaclab.overlay import SkinnedOverlay
+            from protomotions.simulator.isaaclab.overlay_map import (
+                SOMA23_TO_CC, SOMA23_REST_REL, SOMA23_TPOSE_POS,
+                SOMA23_PARENT, SOMA23_TO_UE, UE_REST_REL, SOMA23_PARENT_UE,
+            )
+
+            # Absolute character paths: a relative layer reference makes the
+            # asset's own relative texture paths (@./textures/...@) resolve
+            # against the wrong anchor -> untextured (black) characters.
+            args.overlay_character = [
+                str(Path(p).resolve()) for p in args.overlay_character
+            ]
+            if args.overlay_skeleton == "ue":
+                _map, _rel, _par = SOMA23_TO_UE, UE_REST_REL, SOMA23_PARENT_UE
+            else:
+                _map, _rel, _par = SOMA23_TO_CC, SOMA23_REST_REL, SOMA23_PARENT
+            _bn = list(robot_config.kinematic_info.body_names)
+            _stage = omni.usd.get_context().get_stage()
+            if args.overlay_ambient > 0:
+                from pxr import UsdLux, Gf as _Gf, UsdGeom as _UsdGeom
+                _dome = UsdLux.DomeLight.Define(
+                    _stage, "/World/overlayDomeLight")
+                _dome.GetIntensityAttr().Set(args.overlay_ambient)
+                # Soft fill from the opposite side of the sun (-Y, high
+                # angle) at ~40% key intensity so shaded sides read.
+                _fill = UsdLux.DistantLight.Define(
+                    _stage, "/World/overlayFillLight")
+                _fill.GetIntensityAttr().Set(0.4 * args.overlay_ambient)
+                _fill.GetAngleAttr().Set(5.0)
+                _xf = _UsdGeom.Xformable(_fill.GetPrim())
+                _xf.AddRotateXYZOp().Set(_Gf.Vec3f(-130.0, 0.0, 0.0))
+                log.info("overlay: dome %.0f + fill %.0f",
+                         args.overlay_ambient, 0.4 * args.overlay_ambient)
+                # Ring lights: sphere lights around the arena aimed inward,
+                # like arena floods — kills the hard single-sun shadows on
+                # the fighters from every camera angle.
+                _nring = 4
+
+                def _ring_centers(st):
+                    # Battle envs know their arena centers exactly (one
+                    # arena per match, shared by the env pair); otherwise
+                    # every env gets its own ring at its root position.
+                    bc = getattr(env, "battle_control", None)
+                    z = float(st.rigid_body_pos[:, 0, 2].mean())
+                    if bc is not None and hasattr(bc, "arena_centers"):
+                        cs = bc.arena_centers.unique(dim=0).cpu().numpy()
+                        return [(float(c[0]), float(c[1]), z) for c in cs]
+                    roots = st.rigid_body_pos[:, 0, :].cpu().numpy()
+                    return [(float(r[0]), float(r[1]), float(r[2]))
+                            for r in roots]
+
+                def _place_ring(st):
+                    # Fighters' true positions exist only after the first
+                    # step (init-time state predates terrain placement).
+                    centers = _ring_centers(st)
+                    for ci, c in enumerate(centers):
+                        for k in range(_nring):
+                            _sl = UsdLux.SphereLight.Define(
+                                _stage,
+                                f"/World/overlayRing{ci}Light{k}")
+                            _sl.GetRadiusAttr().Set(1.0)
+                            # Sphere falloff ~ (radius/dist)^2: a 1 m light
+                            # ~10 m out needs ~1e6 intensity to rival the
+                            # sun. 6000x ambient = 3M at the default 500.
+                            _sl.GetIntensityAttr().Set(
+                                6000.0 * args.overlay_ambient)
+                            _sl.GetNormalizeAttr().Set(True)
+                            ang = 2.0 * np.pi * k / _nring + 0.7854
+                            _UsdGeom.Xformable(
+                                _sl.GetPrim()).AddTranslateOp().Set(
+                                _Gf.Vec3d(
+                                    c[0] + 9.0 * np.cos(ang),
+                                    c[1] + 9.0 * np.sin(ang),
+                                    c[2] + 5.0))
+                    print(f"[overlay] ring lights: {len(centers)} arena(s) "
+                          f"x {_nring} lights", flush=True)
+            _n = simulator_config.num_envs
+            _overlays = []
+            for i in range(_n):
+                _overlays.append(SkinnedOverlay(
+                    stage=_stage,
+                    character_usd=args.overlay_character[
+                        i % len(args.overlay_character)],
+                    prim_root=f"/World/overlay{i}",
+                    body_names=_bn,
+                    body_rest_rot_wxyz=np.zeros((len(_bn), 4)),
+                    joint_map=_map,
+                    root_only=True,
+                    drive_bodies=[b for b in _map if b != "Hips"],
+                    rest_rel=_rel,
+                    tpose_pos=SOMA23_TPOSE_POS,
+                    body_parents=_par,
+                    fists=args.overlay_fists,
+                ))
+                if args.overlay_hide_robot:
+                    _overlays[-1].set_capsules_visible(
+                        f"/World/envs/env_{i}/Robot", False)
+            log.info("Skinned overlays active on %d envs", _n)
+
+            _orig_step = env.simulator.step
+
+            _ring_placed = [False]
+
+            def _step_with_overlays(*a, **kw):
+                out = _orig_step(*a, **kw)
+                st = env.simulator.get_bodies_state()
+                if not _ring_placed[0] and args.overlay_ambient > 0:
+                    _place_ring(st)
+                    _ring_placed[0] = True
+                for i, ov in enumerate(_overlays):
+                    try:
+                        ov.sync(st.rigid_body_pos[i], st.rigid_body_rot[i])
+                    except Exception:
+                        pass
+                return out
+
+            env.simulator.step = _step_with_overlays
+        except Exception:
+            import traceback
+            log.error("overlay setup failed — continuing without skins:")
+            traceback.print_exc()
 
     # Determine root_dir for agent based on checkpoint path
     agent_kwargs = {}
