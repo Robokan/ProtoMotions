@@ -34,7 +34,7 @@ parser.add_argument(
 parser.add_argument(
     "--robot",
     type=str,
-    choices=["g1", "rigv1", "h1_2", "smpl", "soma23", "atlas", "t800"],
+    choices=["g1", "rigv1", "h1_2", "smpl", "soma23", "atlas", "t800", "samurai"],
     default="g1",
     help="Robot to load (g1, rigv1, h1_2, smpl, soma23, atlas, or t800)",
 )
@@ -158,6 +158,17 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
+# The samurai robot IS the rigged character's skeleton: skin it by default
+# (identity mapping, character directly on the robot). Key 6 toggles it.
+if args.robot == "samurai" and args.overlay_character is None:
+    args.overlay_character = (
+        "protomotions/data/assets/overlay/red_samurai.usd")
+    args.overlay_skeleton = "ue"
+    args.overlay_root_only = True
+    if not args.overlay_drive:
+        args.overlay_drive = "all"
+    args.overlay_offset = 0.0
+
 # Import simulator before torch - isaacgym/isaaclab must be imported before torch
 # This also returns AppLauncher if using isaaclab, None otherwise
 from protomotions.utils.simulator_imports import import_simulator_before_torch  # noqa: E402
@@ -218,6 +229,9 @@ ROBOT_SPECS = {
         viz_bodies=[],
     ),
     "t800": RobotSpec(
+        viz_bodies=[],
+    ),
+    "samurai": RobotSpec(
         viz_bodies=[],
     ),
 }
@@ -490,6 +504,7 @@ class MotionVisualizerSmoothness:
             "4": self.decrease_smoothness_threshold,  # Key 4: Decrease smoothness threshold
             "R": self._request_next_motion,  # Key R: skip to next motion
             "5": self._toggle_robot_visibility,  # Key 5: show/hide SOMA body
+            "6": self._toggle_overlay_visibility,  # Key 6: show/hide overlay
         }
 
         # Create checkerboard ground for visualization
@@ -611,6 +626,25 @@ class MotionVisualizerSmoothness:
         """R-key handler: flag a skip; the play loop consumes it (keeps
         motion-state mutation on the loop thread)."""
         self._next_motion_requested = True
+
+    def _toggle_overlay_visibility(self):
+        """6-key handler: show/hide the skinned overlay character."""
+        try:
+            import omni.usd
+            from pxr import UsdGeom
+
+            stage = omni.usd.get_context().get_stage()
+            prim = stage.GetPrimAtPath("/World/overlay0")
+            if not prim or not prim.IsValid():
+                print("[viewer] no overlay character to toggle", flush=True)
+                return
+            img = UsdGeom.Imageable(prim)
+            hidden = img.ComputeVisibility() == UsdGeom.Tokens.invisible
+            img.GetVisibilityAttr().Set("inherited" if hidden else "invisible")
+            print(f"[viewer] overlay {'shown' if hidden else 'hidden'}",
+                  flush=True)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[viewer] overlay toggle failed: {exc}", flush=True)
 
     def _toggle_robot_visibility(self):
         """5-key handler: show/hide the robot's capsule body (the skinned

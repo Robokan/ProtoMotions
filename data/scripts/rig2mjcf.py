@@ -48,6 +48,17 @@ RADIUS_FLOOR = {"Chest": 0.10, "Spine1": 0.08, "Spine2": 0.08,
                 "Neck1": 0.04, "Neck2": 0.04}
 RADIUS_CAP = {"Head": 0.12, "Hips": 0.14, "LeftHand": 0.05,
               "RightHand": 0.05, "LeftFoot": 0.06, "RightFoot": 0.06}
+# Capsule AXIS overrides in the T-pose WORLD frame: leaf bodies have no
+# child to infer a direction from (Head defaulted horizontal), and the
+# Hips' mean-of-children axis is meaningless.
+AXIS_WORLD = {"Hips": (0, 0, 1), "Head": (0, 0, 1),
+              "LeftHand": (1, 0, 0), "RightHand": (-1, 0, 0),
+              "LeftToeBase": (0, -1, 0), "RightToeBase": (0, -1, 0)}
+# Extent clamps along the capsule axis (meters, from the joint origin, in
+# T-world units): the Hips otherwise swallow the skirt/torso vertex cloud
+# (capsule reached the ribcage and poked out the back when bending) and
+# the Head grabs helmet plume.
+EXTENT_CLAMP = {"Hips": (-0.10, 0.13), "Head": (-0.02, 0.20)}
 
 # Anatomical hinge ranges (degrees), mined from the SOMA v6 corpus dof
 # tracks (0.1/99.9 percentiles + 15% margin): same 66-dof layout and sign
@@ -242,7 +253,11 @@ def main():
         tb = bind[ji, 3, :3]
         vl = (v - tb) @ Rb               # world -> bone local (R^T = R^-1)
         kid = children.get(soma, [])
-        if kid:
+        if soma in AXIS_WORLD:
+            ax_w = np.asarray(AXIS_WORLD[soma], dtype=np.float64)
+            # give it a nominal length for the no-vertex fallback path
+            axis_l = rotT[soma].T @ (ax_w * 0.15 / s)
+        elif kid:
             ke = np.mean(
                 [(posT[k] - posT[soma]) for k in kid], axis=0)
             # express T-pose child direction in the T-posed bone frame
@@ -256,9 +271,12 @@ def main():
         else:
             t = vl @ axis_n
             lo, hi = np.percentile(t, 2), np.percentile(t, 98)
-            if kid:
+            if kid and soma not in AXIS_WORLD:
                 hi = max(hi, L)
                 lo = max(lo, -0.15 * L)
+            if soma in EXTENT_CLAMP:
+                clo, chi = EXTENT_CLAMP[soma]
+                lo, hi = max(lo, clo / s), min(hi, chi / s)
             radial = np.linalg.norm(
                 vl - np.outer(t, axis_n), axis=1)
             rad = np.percentile(radial, 80)
