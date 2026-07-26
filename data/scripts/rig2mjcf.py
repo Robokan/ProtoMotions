@@ -58,7 +58,7 @@ AXIS_WORLD = {"Hips": (0, 0, 1), "Head": (0, 0, 1),
 # T-world units): the Hips otherwise swallow the skirt/torso vertex cloud
 # (capsule reached the ribcage and poked out the back when bending) and
 # the Head grabs helmet plume.
-EXTENT_CLAMP = {"Hips": (-0.10, 0.13), "Head": (-0.02, 0.20)}
+EXTENT_CLAMP = {"Hips": (-0.10, 0.13), "Head": (-0.02, 0.16)}
 
 # Anatomical hinge ranges (degrees), mined from the SOMA v6 corpus dof
 # tracks (0.1/99.9 percentiles + 15% margin): same 66-dof layout and sign

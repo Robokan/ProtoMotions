@@ -45,7 +45,7 @@
                               <joint name='Head_x' type='hinge' pos='0 0 0' axis='1.0000 0.0000 0.0000' stiffness='200' damping='20' armature='0.02' range='-99.0000 73.0000'/>
                               <joint name='Head_y' type='hinge' pos='0 0 0' axis='0.0000 1.0000 0.0000' stiffness='200' damping='20' armature='0.02' range='-55.0000 55.0000'/>
                               <joint name='Head_z' type='hinge' pos='0 0 0' axis='0.0000 0.0000 1.0000' stiffness='200' damping='20' armature='0.02' range='-99.0000 100.0000'/>
-                              <geom type='capsule' size='0.1200' fromto='0.0000 -0.0000 0.0890 0.0000 -0.0000 0.0910' density='522' material='geom'/>
+                              <geom type='capsule' size='0.1200' fromto='0.0000 -0.0000 0.0690 0.0000 -0.0000 0.0710' density='522' material='geom'/>
                             </body>
                         </body>
                     </body>

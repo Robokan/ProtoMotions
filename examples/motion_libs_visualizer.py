@@ -1080,6 +1080,7 @@ class MotionVisualizerSmoothness:
                             SOMA23_TO_UE,
                             UE_REST_REL,
                             SOMA23_PARENT_UE,
+                            SAMURAI_TPOSE_POS,
                         )
                         if args.overlay_skeleton == "ue":
                             _map, _rel, _par = (
@@ -1118,7 +1119,9 @@ class MotionVisualizerSmoothness:
                                     ]
                                 ),
                                 rest_rel=_rel,
-                                tpose_pos=SOMA23_TPOSE_POS,
+                                tpose_pos=(SAMURAI_TPOSE_POS
+                                           if args.robot == "samurai"
+                                           else SOMA23_TPOSE_POS),
                                 limb_match=args.overlay_limb_match,
                                 body_parents=_par,
                                 fists=args.overlay_fists,

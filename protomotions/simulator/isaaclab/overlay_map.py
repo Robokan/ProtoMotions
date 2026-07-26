@@ -150,3 +150,34 @@ SOMA23_PARENT_UE = {
     "RightLeg": "Hips", "RightShin": "RightLeg",
     "RightFoot": "RightShin", "RightToeBase": "RightFoot",
 }
+
+# Samurai ROBOT T-pose body positions rel to Hips (mujoco FK of
+# mjcf/samurai.xml at zero). When the overlay character rides its own
+# generated robot, the auto-fit must target THESE, not the SOMA human's
+# positions — fitting against SOMA left the arms floating slightly above
+# the robot's.
+SAMURAI_TPOSE_POS = {
+    "Hips": (+0.0000, +0.0000, +0.0000),
+    "Spine1": (+0.0000, -0.0101, +0.0998),
+    "Spine2": (+0.0000, -0.0139, +0.2512),
+    "Chest": (+0.0000, +0.0169, +0.4362),
+    "Neck1": (+0.0000, +0.0371, +0.5491),
+    "Neck2": (+0.0000, +0.0474, +0.5973),
+    "Head": (+0.0000, +0.0448, +0.6446),
+    "RightShoulder": (-0.0138, +0.0388, +0.4864),
+    "RightArm": (-0.1835, +0.0467, +0.4602),
+    "RightForeArm": (-0.4515, +0.0467, +0.4602),
+    "RightHand": (-0.7145, +0.0467, +0.4602),
+    "LeftShoulder": (+0.0138, +0.0388, +0.4864),
+    "LeftArm": (+0.1835, +0.0467, +0.4602),
+    "LeftForeArm": (+0.4515, +0.0467, +0.4602),
+    "LeftHand": (+0.7145, +0.0467, +0.4602),
+    "RightLeg": (-0.0962, -0.0026, -0.0227),
+    "RightShin": (-0.1190, -0.0031, -0.4403),
+    "RightFoot": (-0.1359, +0.0315, -0.8458),
+    "RightToeBase": (-0.1522, -0.1125, -0.9180),
+    "LeftLeg": (+0.0962, -0.0025, -0.0227),
+    "LeftShin": (+0.1190, -0.0030, -0.4403),
+    "LeftFoot": (+0.1359, +0.0316, -0.8458),
+    "LeftToeBase": (+0.1522, -0.1124, -0.9180),
+}
