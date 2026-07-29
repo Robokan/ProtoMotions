@@ -79,3 +79,10 @@ class IsaacLabSimulatorConfig(SimulatorConfig):
             )
         },
     )
+    env_spacing: float = field(
+        default=2.0,
+        metadata={
+            "help": "Distance between environment origins in the IsaacLab scene grid.",
+            "min": 0.0,
+        },
+    )

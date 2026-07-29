@@ -166,7 +166,7 @@ class IsaacLabSimulator(Simulator):
             config=self.config,
             robot_config=self.robot_config,
             num_envs=self.config.num_envs,
-            env_spacing=2.0,
+            env_spacing=getattr(self.config, "env_spacing", 2.0),
             scene_cfgs=scene_cfgs,
             terrain=self.terrain,
             projectile_config=self._proj_config,

@@ -63,6 +63,7 @@ python protomotions/battle_tournament.py \
     --resolved-configs "$RESOLVED" \
     --exhibition "$A" "$B" \
     --record "$OUT" --bouts "$BOUTS" \
+    --overlay-ambient "${AMBIENT:-600}" \
     --num-envs 2 --no-fast-sampling
 
 echo "record_fight: done -> ${OUT}"

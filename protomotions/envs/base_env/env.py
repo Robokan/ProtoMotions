@@ -535,7 +535,9 @@ class BaseEnv:
         if non_scene_mask.any():
             num_non_scene = non_scene_mask.sum().item()
             respawn_position_xy = self.terrain.sample_valid_locations(
-                num_envs=num_non_scene, sample_flat=sample_flat
+                num_envs=num_non_scene,
+                sample_flat=sample_flat,
+                max_distance=getattr(self.config, "env_spacing", None),
             )
 
             if ref_state is None:

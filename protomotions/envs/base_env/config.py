@@ -51,6 +51,16 @@ class EnvConfig:
         default=0.05,
         metadata={"help": "Height offset for respawning relative to reference.", "min": 0.0}
     )
+    env_spacing: Optional[float] = field(
+        default=None,
+        metadata={
+            "help": (
+                "If set, random terrain spawns are limited to this maximum "
+                "distance (meters) from the walkable-terrain center."
+            ),
+            "min": 0.0,
+        },
+    )
     ref_object_respawn_offset: float = field(
         default=0.0,
         metadata={"help": "Height offset for object respawning."}

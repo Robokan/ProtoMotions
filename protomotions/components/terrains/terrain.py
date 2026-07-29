@@ -295,14 +295,30 @@ class Terrain:
 
         return h
 
-    def sample_valid_locations(self, num_envs, sample_flat=False):
-        if sample_flat:
-            return self.sample_flat_locations(num_envs)
+    def _coords_within_max_distance(self, x_coords, y_coords, max_distance):
+        """Filter spawn coords to those within max_distance of their centroid."""
+        if max_distance is None:
+            return x_coords, y_coords
+        center_x = x_coords.mean()
+        center_y = y_coords.mean()
+        dist_sq = (x_coords - center_x) ** 2 + (y_coords - center_y) ** 2
+        mask = dist_sq <= (float(max_distance) ** 2)
+        if not mask.any():
+            # Fall back to the single closest point if the radius is tiny.
+            nearest = torch.argmin(dist_sq)
+            mask = torch.zeros_like(mask, dtype=torch.bool)
+            mask[nearest] = True
+        return x_coords[mask], y_coords[mask]
 
-        idx = np.random.randint(0, self.walkable_x_coords.shape[0], size=num_envs)
-        valid_locs = torch.stack(
-            [self.walkable_x_coords[idx], self.walkable_y_coords[idx]], dim=-1
+    def sample_valid_locations(self, num_envs, sample_flat=False, max_distance=None):
+        if sample_flat:
+            return self.sample_flat_locations(num_envs, max_distance=max_distance)
+
+        x_coords, y_coords = self._coords_within_max_distance(
+            self.walkable_x_coords, self.walkable_y_coords, max_distance
         )
+        idx = np.random.randint(0, x_coords.shape[0], size=num_envs)
+        valid_locs = torch.stack([x_coords[idx], y_coords[idx]], dim=-1)
 
         # Raise an error if any position is invalid
         assert self.is_valid_spawn_location(
@@ -311,11 +327,12 @@ class Terrain:
 
         return valid_locs
 
-    def sample_flat_locations(self, num_envs):
-        idx = np.random.randint(0, self.flat_x_coords.shape[0], size=num_envs)
-        flat_locs = torch.stack(
-            [self.flat_x_coords[idx], self.flat_y_coords[idx]], dim=-1
+    def sample_flat_locations(self, num_envs, max_distance=None):
+        x_coords, y_coords = self._coords_within_max_distance(
+            self.flat_x_coords, self.flat_y_coords, max_distance
         )
+        idx = np.random.randint(0, x_coords.shape[0], size=num_envs)
+        flat_locs = torch.stack([x_coords[idx], y_coords[idx]], dim=-1)
 
         # Raise an error if any position is invalid
         assert self.is_valid_spawn_location(

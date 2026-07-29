@@ -130,6 +130,17 @@ def create_parser():
         "--num-envs", type=int, default=1, help="Number of parallel environments to run"
     )
     parser.add_argument(
+        "--env-spacing",
+        "--env_spacing",
+        type=float,
+        default=None,
+        help=(
+            "Max random spawn distance in meters from the walkable-terrain "
+            "center (keeps random sampling, but clamps how far apart robots "
+            "can be). Also sets IsaacLab cloner spacing."
+        ),
+    )
+    parser.add_argument(
         "--motion-file",
         type=str,
         required=False,
@@ -330,6 +341,11 @@ def main():
     if args.num_envs is not None:
         log.info(f"CLI override: num_envs = {args.num_envs}")
         simulator_config.num_envs = args.num_envs
+
+    if args.env_spacing is not None:
+        log.info(f"CLI override: env_spacing = {args.env_spacing}")
+        simulator_config.env_spacing = args.env_spacing
+        env_config.env_spacing = args.env_spacing
 
     if args.motion_file is not None:
         log.info(f"CLI override: motion_file = {args.motion_file}")
