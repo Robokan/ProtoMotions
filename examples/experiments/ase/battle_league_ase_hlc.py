@@ -25,8 +25,18 @@ Usage (LLC pretrain first, then this league — HLC trains from scratch):
         --motion-file data/atlas_pretrain_corpus_v6.pt \
         --experiment-path examples/experiments/ase/battle_league_ase_hlc.py \
         --llc-checkpoint results/atlas_ase_pretrain_v6/last.ckpt \
-        --num-envs 256 --batch-size 512 --training-max-steps 200000000 \
+        --num-envs 4096 --batch-size 16384 --training-max-steps 200000000 \
         --experiment-name atlas_ase_battle_hlc_v1
+
+Hyperparameters are ported from Eric's WORKING IsaacLabASE HRL battle league
+(~/eric/IsaacLabExtensionTemplate .../battle/config/sword_and_shield/agents/
+rl_games_hrl_cfg.yaml, trained at 4096 matches): HLC [1024, 512] logstd -2.3,
+gamma 0.95, horizon 32, 6 mini-epochs, bounds_loss 10, entropy 0.005,
+adaptive-KL LR (2e-5 -> max 9e-5, kl 0.003), llc_steps=5 decision cadence,
+reward mix 0.9 task + 0.1 frozen-LLC-discriminator style anchor, league pool
+16 gated at 80% win rate over 2048 games. NOTE --num-envs counts characters
+(2/match): 4096 = 2048 matches (Template parity would be 8192 — VRAM probe
+first). training_max_steps counts HLC decisions x envs; sim steps = 5x.
 """
 
 import argparse
@@ -45,6 +55,7 @@ from examples.experiments.battle.battle_league_prior_peft import (
 )
 
 LATENT_DIM = 64  # must match the LLC pretrain (ase/mlp.py)
+HISTORY_STEPS = 8  # frozen-discriminator reference window (matches ase/mlp.py)
 
 
 def additional_experiment_arguments(parser: argparse.ArgumentParser):
@@ -89,7 +100,10 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
         default_battle_reward_components,
     )
     from protomotions.envs.battle.robot_tables import battle_table_kwargs
-    from protomotions.envs.component_factories import max_coords_obs_factory
+    from protomotions.envs.component_factories import (
+        historical_max_coords_obs_factory,
+        max_coords_obs_factory,
+    )
     from protomotions.envs.motion_manager.config import MimicMotionManagerConfig
 
     observation_components = {
@@ -101,7 +115,11 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
         ),
         # Opponent/fight state for the HLC.
         "task_obs": battle_task_obs_factory(),
-        # No historical obs: stage 2 has no discriminator.
+        # Motion-history window for the FROZEN pretrain discriminator (style
+        # anchor only — no discriminator training in stage 2).
+        "historical_max_coords_obs": historical_max_coords_obs_factory(
+            local_obs=True, root_height_obs=True, observe_contacts=False
+        ),
     }
 
     dense = getattr(args, "dense_reward_scale", 1.0)
@@ -121,7 +139,7 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
 
     cfg = EnvConfig(
         ref_contact_smooth_window=7,
-        num_state_history_steps=1,
+        num_state_history_steps=HISTORY_STEPS,
         max_episode_length=750,  # 15 s at 50 Hz, same round length as GPC league
         reset_grace_period=5,
         ref_respawn_offset=0.05,
@@ -178,15 +196,13 @@ def agent_config(
         ),
     ]
 
-    # Small HLC trunk (paper-style): its 64-dim output IS the skill latent
-    # (projected to the hypersphere inside the agent before the LLC sees it).
+    # HLC trunk: Template's [1024, 512] with fixed logstd -2.3. Its 64-dim
+    # output IS the skill latent (projected to the hypersphere inside the
+    # agent before the LLC sees it).
     actor_config = PPOActorConfig(
         mu_key="actor_trunk_out",
         num_out=LATENT_DIM,
-        # Wider exploration than joint-space policies: the latent is
-        # direction-coded (unit sphere), so std ~0.2/dim perturbs the chosen
-        # skill without drowning it.
-        actor_logstd=-1.6,
+        actor_logstd=-2.3,
         in_keys=hlc_in_keys,
         mu_model=ModuleContainerConfig(
             in_keys=hlc_in_keys,
@@ -202,8 +218,7 @@ def agent_config(
                     out_keys=["actor_trunk_out"],
                     num_out=LATENT_DIM,
                     layers=[
-                        MLPLayerConfig(units=512, activation="relu"),
-                        MLPLayerConfig(units=512, activation="relu"),
+                        MLPLayerConfig(units=1024, activation="relu"),
                         MLPLayerConfig(units=512, activation="relu"),
                     ],
                 ),
@@ -222,38 +237,60 @@ def agent_config(
                 num_out=1,
                 layers=[
                     MLPLayerConfig(units=1024, activation="relu"),
-                    MLPLayerConfig(units=1024, activation="relu"),
                     MLPLayerConfig(units=512, activation="relu"),
                 ],
             ),
         ],
     )
 
+    from protomotions.agents.ppo.config import AdaptiveLRConfig
+
     return LeagueASEHLCAgentConfig(
-        # The frozen low-level controller: the pretrain checkpoint's actor.
+        # Frozen stage-1 modules from the pretrain checkpoint: the LLC actor
+        # and its discriminator (style anchor for the 0.1 reward mix).
         pretrained_modules={
             "llc": PretrainedModelConfig(
                 checkpoint_path=args.llc_checkpoint,
                 module_path="actor",
+            ),
+            "llc_disc": PretrainedModelConfig(
+                checkpoint_path=args.llc_checkpoint,
+                module_path="discriminator",
             ),
         },
         model=PPOModelConfig(
             in_keys=hlc_in_keys,
             actor=actor_config,
             critic=critic_config,
-            # HLC trains from scratch — faster LRs than the warm-started
-            # joint-space policies.
-            actor_optimizer=OptimizerConfig(_target_="torch.optim.Adam", lr=5e-5),
-            critic_optimizer=OptimizerConfig(_target_="torch.optim.Adam", lr=1e-4),
+            actor_optimizer=OptimizerConfig(_target_="torch.optim.Adam", lr=2e-5),
+            critic_optimizer=OptimizerConfig(_target_="torch.optim.Adam", lr=2e-5),
         ),
-        hlc=HLCParams(latent_dim=LATENT_DIM, llc_deterministic=True),
-        league=LeagueParams(role="main"),
+        hlc=HLCParams(
+            latent_dim=LATENT_DIM,
+            llc_deterministic=True,
+            decision_interval=5,  # Template llc_steps: one z per 5 sim steps
+            task_reward_w=0.9,
+            disc_reward_w=0.1,
+        ),
+        # Template league: pool 16, snapshot at 80% win rate over 2048 games.
+        league=LeagueParams(
+            role="main",
+            max_members=16,
+            gate_win_rate=0.8,
+            gate_min_games=2048,
+        ),
         batch_size=args.batch_size,
         training_max_steps=args.training_max_steps,
         e_clip=0.2,
+        gamma=0.95,
         tau=0.95,
-        num_steps=64,
-        num_mini_epochs=2,
+        num_steps=32,
+        num_mini_epochs=6,
+        entropy_coef=0.005,
+        bounds_loss_coef=10.0,
+        adaptive_lr=AdaptiveLRConfig(
+            enabled=True, desired_kl=0.003, min_lr=1e-5, max_lr=9e-5
+        ),
         normalize_rewards=True,
         gradient_clip_val=25.0,
         save_last_checkpoint_every=10,

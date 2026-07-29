@@ -59,15 +59,36 @@ class HLCSelfPlayEnvAdapter(SelfPlayEnvAdapter):
     output are latent vectors; a translator callback (the agent's frozen LLC)
     maps (obs, latents) -> joint actions for each half before the inner
     BattleEnv steps.
+
+    ``decision_interval`` (the Template's ``llc_steps``) makes one agent-side
+    step span k inner sim steps: both fighters' latents are held for the
+    window while the LLC re-runs every inner step with fresh proprioception.
+    Task (and optional style) rewards are averaged over the window and dones
+    are OR'd — the exact semantics of IsaacLabASE's ``hrl_sp_agent.env_step``.
     """
 
     def __init__(self, env):
         super().__init__(env)
         self._latent_translator = None
+        self._decision_interval = 1
+        # Optional style anchor: fn(ego_obs, ego_latents) -> [N] raw rewards.
+        self._style_reward_fn = None
+        self._task_reward_w = 1.0
+        self._style_reward_w = 0.0
 
     def set_latent_translator(self, translator) -> None:
         """translator(obs: dict[str, Tensor], latents: Tensor) -> joint actions."""
         self._latent_translator = translator
+
+    def set_decision_interval(self, k: int) -> None:
+        self._decision_interval = max(1, int(k))
+
+    def set_style_reward(self, fn, task_w: float, style_w: float) -> None:
+        """Blend a per-step style reward into the task stream (Template's
+        task_reward_w/disc_reward_w mix, applied before reward normalization)."""
+        self._style_reward_fn = fn
+        self._task_reward_w = float(task_w)
+        self._style_reward_w = float(style_w)
 
     def step(self, latent_action: Tensor):
         if self._opponent_policy is None:
@@ -78,12 +99,40 @@ class HLCSelfPlayEnvAdapter(SelfPlayEnvAdapter):
             raise RuntimeError(
                 "HLCSelfPlayEnvAdapter.step called before set_latent_translator()"
             )
+        k = self._decision_interval
         with torch.no_grad():
-            ego_action = self._latent_translator(self.get_obs(), latent_action)
-            opp_obs = self.opponent_obs()
-            opp_latents = self._opponent_policy(opp_obs)
-            opp_action = self._latent_translator(opp_obs, opp_latents)
-        return self._step_full(torch.cat([ego_action, opp_action], dim=0))
+            # Opponent latents chosen once per decision window, like the ego's.
+            opp_latents = self._opponent_policy(self.opponent_obs())
+
+        reward_sum = None
+        style_sum = None
+        dones_any = None
+        term_any = None
+        for _ in range(k):
+            with torch.no_grad():
+                ego_action = self._latent_translator(self.get_obs(), latent_action)
+                opp_obs = self.opponent_obs()
+                opp_action = self._latent_translator(opp_obs, opp_latents)
+            obs, rewards, dones, terminated, extras = self._step_full(
+                torch.cat([ego_action, opp_action], dim=0)
+            )
+            reward_sum = rewards if reward_sum is None else reward_sum + rewards
+            if self._style_reward_fn is not None:
+                with torch.no_grad():
+                    style = self._style_reward_fn(obs, latent_action)
+                style_sum = style if style_sum is None else style_sum + style
+            if dones_any is None:
+                dones_any, term_any = dones, terminated
+            else:
+                dones_any = torch.logical_or(dones_any, dones).to(dones.dtype)
+                term_any = torch.logical_or(term_any, terminated).to(terminated.dtype)
+
+        total = reward_sum / k
+        if style_sum is not None:
+            style_avg = style_sum / k
+            total = self._task_reward_w * total + self._style_reward_w * style_avg
+            extras["hlc_style_reward"] = style_avg
+        return obs, total, dones_any, term_any, extras
 
 
 @dataclass
@@ -92,6 +141,14 @@ class HLCParams:
 
     latent_dim: int = 64
     llc_deterministic: bool = True  # feed the LLC's mean action to the sim
+    # One HLC decision per k sim steps (Template llc_steps=5); the LLC still
+    # runs every sim step with fresh proprio. NOTE: training_max_steps counts
+    # HLC decisions x envs, so sim steps = k x that budget.
+    decision_interval: int = 1
+    # Reward mix (Template: 0.9 task + 0.1 style from the FROZEN LLC
+    # discriminator). style requires pretrained_modules["llc_disc"].
+    task_reward_w: float = 1.0
+    disc_reward_w: float = 0.0
 
 
 @dataclass
@@ -118,8 +175,16 @@ class LeagueASEHLCAgent(FullModelLeagueMixin, FineTuningAgent):
         super().__init__(fabric, adapter, config, root_dir=root_dir)
         self._init_league(adapter, config.league, root_dir)
         self._llc = None  # frozen PPOActor, captured in _post_create_model_hook
+        self._llc_disc = None  # frozen discriminator (style anchor), optional
 
         adapter.set_latent_translator(self._latents_to_joint_actions)
+        adapter.set_decision_interval(config.hlc.decision_interval)
+        if config.hlc.disc_reward_w > 0:
+            adapter.set_style_reward(
+                self._style_reward,
+                task_w=config.hlc.task_reward_w,
+                style_w=config.hlc.disc_reward_w,
+            )
         adapter.set_opponent_policy(self._opponent_policy)
         adapter.set_match_end_callback(self._on_matches_ended)
 
@@ -139,6 +204,13 @@ class LeagueASEHLCAgent(FullModelLeagueMixin, FineTuningAgent):
                 "module_path='actor')."
             )
         self._llc = llc  # frozen + eval via PretrainedModelConfig(freeze=True)
+        self._llc_disc = self.pretrained.get("llc_disc")
+        if self.config.hlc.disc_reward_w > 0 and self._llc_disc is None:
+            raise ValueError(
+                "hlc.disc_reward_w > 0 requires pretrained_modules['llc_disc'] "
+                "(the pretrain checkpoint's discriminator, "
+                "module_path='discriminator')."
+            )
 
     # ------------------------------------------------------------------
     # Latent -> joint action translation through the frozen LLC
@@ -157,6 +229,20 @@ class LeagueASEHLCAgent(FullModelLeagueMixin, FineTuningAgent):
         td = self._llc(td)
         key = "mean_action" if self.config.hlc.llc_deterministic else "action"
         return td[key]
+
+    @torch.no_grad()
+    def _style_reward(self, obs: Dict[str, Tensor], latents: Tensor) -> Tensor:
+        """Naturalness anchor: -log(1 - D) from the FROZEN pretrain
+        discriminator over the ego half's motion-history window (the
+        Template's disc_reward path, weights never updated in stage 2)."""
+        hist = obs["historical_max_coords_obs"]
+        z = torch.nn.functional.normalize(latents, dim=-1)
+        td = TensorDict(
+            {"historical_max_coords_obs": hist, "latents": z},
+            batch_size=hist.shape[0],
+        )
+        td = self._llc_disc(td)
+        return self._llc_disc.compute_disc_reward(td["disc_logits"]).view(-1)
 
     # ------------------------------------------------------------------
     # League mixin hooks
