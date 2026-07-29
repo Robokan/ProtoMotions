@@ -35,7 +35,9 @@ proprioception — which is precisely the paper's slow-HLC/fast-LLC split.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Dict
 
 import torch
@@ -159,6 +161,12 @@ class HLCParams:
     # discriminator). style requires pretrained_modules["llc_disc"].
     task_reward_w: float = 1.0
     disc_reward_w: float = 0.0
+    # Hot-reload the frozen LLC (+ its discriminator) between epochs whenever
+    # --llc-checkpoint's file changes on disk — lets a concurrent LLC pretrain
+    # on another GPU keep improving under this league (the Template's
+    # two-trainer workflow). Snapshots/lanes/ckpts are HLC-only, so a reload
+    # touches nothing else.
+    llc_hot_reload: bool = True
 
 
 @dataclass
@@ -186,6 +194,8 @@ class LeagueASEHLCAgent(FullModelLeagueMixin, FineTuningAgent):
         self._init_league(adapter, config.league, root_dir)
         self._llc = None  # frozen PPOActor, captured in _post_create_model_hook
         self._llc_disc = None  # frozen discriminator (style anchor), optional
+        self._llc_ckpt_mtime = None
+        self._llc_reloads = 0
 
         adapter.set_latent_translator(self._latents_to_joint_actions)
         adapter.set_decision_interval(config.hlc.decision_interval)
@@ -221,6 +231,66 @@ class LeagueASEHLCAgent(FullModelLeagueMixin, FineTuningAgent):
                 "(the pretrain checkpoint's discriminator, "
                 "module_path='discriminator')."
             )
+        self._llc_ckpt_mtime = self._llc_checkpoint_mtime()
+
+    # ------------------------------------------------------------------
+    # LLC hot-reload: pick up new pretrain checkpoints between epochs
+    # ------------------------------------------------------------------
+    def _llc_checkpoint_mtime(self):
+        cfg = self.config.pretrained_modules.get("llc")
+        if cfg is None or not cfg.checkpoint_path:
+            return None
+        try:
+            return Path(cfg.checkpoint_path).stat().st_mtime
+        except OSError:
+            return None
+
+    def _maybe_reload_llc(self) -> None:
+        # getattr: frozen configs from before this field existed default ON.
+        if not getattr(self.config.hlc, "llc_hot_reload", True):
+            return
+        mtime = self._llc_checkpoint_mtime()
+        if mtime is None or (
+            self._llc_ckpt_mtime is not None and mtime <= self._llc_ckpt_mtime
+        ):
+            return
+        # The pretrain may still be mid-save (torch.save is not atomic);
+        # wait until the file has been quiet for a few seconds.
+        if time.time() - mtime < 5.0:
+            return  # re-checked next epoch
+        try:
+            modules = self._load_pretrained_modules()
+        except Exception as exc:  # noqa: BLE001 - keep training on a bad read
+            log.warning("LLC hot-reload failed (%s); keeping current LLC", exc)
+            return
+        self._llc = modules["llc"]
+        if "llc_disc" in modules:
+            self._llc_disc = modules["llc_disc"]
+        self._llc_ckpt_mtime = mtime
+        self._llc_reloads += 1
+        # Pool members' HLCs now run over a different LLC than they were
+        # trained (and measured) against: their PFSP win-rate stats are
+        # stale, so re-measure. Ratings are kept — Elo re-converges on its
+        # own, and both sides of every match shifted together.
+        if self.pool.members:
+            self.pool.reset_stats()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        msg = (
+            f"[HLC] LLC checkpoint changed on disk — hot-reloaded frozen LLC "
+            f"(#{self._llc_reloads}) from "
+            f"{self.config.pretrained_modules['llc'].checkpoint_path} "
+            f"(epoch {self.current_epoch})"
+        )
+        # print() as well: Kit hijacks logging into /tmp/isaaclab/logs, and
+        # this must be visible on the training console.
+        print(msg, flush=True)
+        log.info(msg)
+
+    def post_epoch_logging(self, training_log_dict: dict):
+        self._maybe_reload_llc()
+        training_log_dict["hlc/llc_reloads"] = float(self._llc_reloads)
+        super().post_epoch_logging(training_log_dict)
 
     # ------------------------------------------------------------------
     # Latent -> joint action translation through the frozen LLC
