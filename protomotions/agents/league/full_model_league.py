@@ -275,19 +275,41 @@ class FullModelLeagueMixin:
     def _resample_opponents(self, ego_ids: Tensor) -> None:
         if not self.pool.members:
             return
-        for env in ego_ids.tolist():
-            live = self._live_members(
-                excluding_envs=torch.tensor([env], device=self.device)
-            )
+        ego_list = ego_ids.tolist()
+        if not ego_list:
+            return
+        # One GPU->CPU sync for the whole batch; the live-member set is then
+        # maintained incrementally in Python. (The old per-env
+        # env_member.unique().tolist() was ~18% of collection wall-clock at
+        # 4096 concurrent matches — a sync per ended match.)
+        assignments = self.env_member.tolist()
+        counts: Dict[int, int] = {}
+        for m in assignments:
+            if m >= 0:
+                counts[m] = counts.get(m, 0) + 1
+        for env in ego_list:
+            old = assignments[env]
+            if old >= 0:
+                counts[old] -= 1
+                if counts[old] <= 0:
+                    del counts[old]
+            live = set(counts.keys())
             member = self._sample_member_capped(live)
             if member is None:
+                assignments[env] = old  # unchanged
+                if old >= 0:
+                    counts[old] = counts.get(old, 0) + 1
                 continue
             self._lanes.assign(
                 member.member_id,
                 self._load_member_snapshot(member.member_id),
                 in_use=live,
             )
-            self.env_member[env] = member.member_id
+            assignments[env] = member.member_id
+            counts[member.member_id] = counts.get(member.member_id, 0) + 1
+        self.env_member = torch.tensor(
+            assignments, dtype=torch.long, device=self.device
+        )
         self._on_opponents_resampled(ego_ids)
 
     def _opponent_policy(self, opp_obs: Dict[str, Tensor]) -> Tensor:
@@ -313,13 +335,18 @@ class FullModelLeagueMixin:
         self.games_since_snapshot += len(ego_ids)
 
         if self.pool.members:
-            for i, env in enumerate(ego_ids.tolist()):
-                member_id = int(self.env_member[env])
-                member = self.pool.members.get(member_id)
+            # Batch every GPU->CPU transfer: per-element int(tensor[i]) was a
+            # device sync per ended match.
+            member_ids = self.env_member[ego_ids].tolist()
+            wins = win.tolist()
+            loses = lose.tolist()
+            draws = draw.tolist()
+            for member_id, w, l, d in zip(member_ids, wins, loses, draws):
+                member = self.pool.members.get(int(member_id))
                 if member is None:
                     continue
-                w, l, d = int(win[i]), int(lose[i]), int(draw[i])
-                self.pool.record_result(member_id, wins=w, losses=l, draws=d)
+                w, l, d = int(w), int(l), int(d)
+                self.pool.record_result(int(member_id), wins=w, losses=l, draws=d)
                 score = 1.0 if w else (0.5 if d else 0.0)
                 self.agent_rating, member.rating = elo_update(
                     self.agent_rating, member.rating, score, k=self.league_cfg.elo_k

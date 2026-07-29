@@ -103,24 +103,25 @@ class HLCSelfPlayEnvAdapter(SelfPlayEnvAdapter):
         with torch.no_grad():
             # Opponent latents chosen once per decision window, like the ego's.
             opp_latents = self._opponent_policy(self.opponent_obs())
+            # Both halves share the frozen LLC: run them as ONE batched
+            # forward per sim step (the full unsliced obs lives here anyway).
+            full_latents = torch.cat([latent_action, opp_latents], dim=0)
 
         reward_sum = None
-        style_sum = None
+        style_obs = []  # per-inner-step ego history windows (style anchor)
         dones_any = None
         term_any = None
         for _ in range(k):
+            if self._last_full_obs is None:
+                self._last_full_obs = self._inner.get_obs()
             with torch.no_grad():
-                ego_action = self._latent_translator(self.get_obs(), latent_action)
-                opp_obs = self.opponent_obs()
-                opp_action = self._latent_translator(opp_obs, opp_latents)
-            obs, rewards, dones, terminated, extras = self._step_full(
-                torch.cat([ego_action, opp_action], dim=0)
-            )
+                full_action = self._latent_translator(
+                    self._last_full_obs, full_latents
+                )
+            obs, rewards, dones, terminated, extras = self._step_full(full_action)
             reward_sum = rewards if reward_sum is None else reward_sum + rewards
             if self._style_reward_fn is not None:
-                with torch.no_grad():
-                    style = self._style_reward_fn(obs, latent_action)
-                style_sum = style if style_sum is None else style_sum + style
+                style_obs.append(obs["historical_max_coords_obs"])
             if dones_any is None:
                 dones_any, term_any = dones, terminated
             else:
@@ -128,8 +129,17 @@ class HLCSelfPlayEnvAdapter(SelfPlayEnvAdapter):
                 term_any = torch.logical_or(term_any, terminated).to(terminated.dtype)
 
         total = reward_sum / k
-        if style_sum is not None:
-            style_avg = style_sum / k
+        if style_obs:
+            # One stacked discriminator forward per decision window instead
+            # of k separate ones; averaging per env is identical math.
+            with torch.no_grad():
+                stacked = {"historical_max_coords_obs": torch.cat(style_obs, dim=0)}
+                z_rep = latent_action.repeat(k, 1)
+                style_avg = (
+                    self._style_reward_fn(stacked, z_rep)
+                    .view(k, -1)
+                    .mean(dim=0)
+                )
             total = self._task_reward_w * total + self._style_reward_w * style_avg
             extras["hlc_style_reward"] = style_avg
         return obs, total, dones_any, term_any, extras
