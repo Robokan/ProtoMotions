@@ -149,6 +149,9 @@ def _derive_generic(robot_config) -> dict:
         key_body_names=key_bodies,
         head_body_name=head[0],
         facing_target_body_name=torso[0],
+        # Kick-attempt bonus feet (BattleControlConfig defaults are SMPL names).
+        kick_bonus_left_foot_body=lf[0],
+        kick_bonus_right_foot_body=rf[0],
     )
 
 

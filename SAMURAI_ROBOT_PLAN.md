@@ -311,3 +311,15 @@ also mirrors the GPC league's frozen-prior structure.
 - Payoff: LLC pretraining can continue independently; a deeper LLC can be
   swapped under an existing HLC (works, degraded, retrainable) — Eric's
   requested workflow; and HLC league snapshots are tiny.
+
+### STATUS 2026-07-29: BUILT + SMOKE-PASSED
+Implemented as examples/experiments/ase/battle_league_ase_hlc.py +
+protomotions/agents/league/ase_hlc_agent.py (league orchestration shared via
+agents/league/full_model_league.py mixin; ase_agent.py refactored onto it,
+PEFT league untouched). Atlas smoke (64 envs, 19 epochs): frozen LLC loaded
+from atlas_ase_pretrain_v6, league seeded, 184 matches vs seed at ~50 % win
+rate, snapshots are HLC-only (~12 MB, architecture "ase_hlc"), clean exit +
+checkpoint resume verified. BattleTournament works unchanged (action_hold
+holds the latent while the LLC re-runs each step = the paper's slow-HLC
+cadence). Fixed in passing: robot_tables derives kick-bonus foot bodies for
+non-SMPL robots. Real run launch = the command in the file's docstring.

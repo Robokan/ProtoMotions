@@ -104,8 +104,10 @@ class SelfPlayEnvAdapter:
             )
         with torch.no_grad():
             opp_action = self._opponent_policy(self.opponent_obs())
-        full_action = torch.cat([action, opp_action], dim=0)
+        return self._step_full(torch.cat([action, opp_action], dim=0))
 
+    def _step_full(self, full_action: Tensor):
+        """Step the inner env with the full ``2N`` action tensor and slice."""
         obs, rewards, dones, terminated, extras = self._inner.step(full_action)
         self._last_full_obs = obs
 
