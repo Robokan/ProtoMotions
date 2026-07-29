@@ -274,3 +274,40 @@ Eric's design — implement in the battle env dense rewards:
   robot_config common naming all_left/right_foot_bodies.
 - Optional refinement if lifted-leg cheese appears: require foot speed
   > 2 m/s at event time so only dynamic lifts (actual kick attempts) pay.
+
+## NEXT TASK (Eric, priority): paper-faithful ASE battle league (frozen LLC + HLC)
+Decision: rebuild the ASE league to match the ASE paper (Peng 2022), which
+also mirrors the GPC league's frozen-prior structure.
+- Stage 1 (exists): examples/experiments/ase/mlp.py pretrains the
+  latent-conditioned low-level controller (LLC). atlas/t800 v6 pretrains
+  are these LLCs; they can keep training and be swapped under old HLCs.
+- Stage 2 (BUILD THIS): new experiment examples/experiments/ase/
+  battle_league_ase_hlc.py:
+  * Load LLC policy from --llc-checkpoint (PretrainedModelConfig, like
+    battle_league_prior_peft.py loads --prior-checkpoint). FREEZE it
+    (requires_grad False, eval mode, no optimizer params).
+  * High-level policy: small MLP (e.g. 3x512), inputs = battle task obs
+    (+ self obs), outputs = 64-dim latent ACTION (continuous, tanh or
+    normalized to the hypersphere like sample_latents does — check
+    protomotions/agents/ase/agent.py store_latents/sample_latents for the
+    latent normalization convention and reuse it).
+  * Each control step: HLC emits z (optionally at a slower rate, e.g.
+    every 2-5 steps like the paper); LLC(z, proprio) emits joint actions.
+  * League machinery: reuse agents/league/ase_agent.py lanes but
+    snapshot/restore ONLY the HLC weights (LLC shared+frozen across all
+    snapshots — that is what share_frozen_base_with was scaffolded for).
+  * Rewards: unchanged battle rewards (incl. kick_attempt_bonus).
+    AMP/discriminator terms NOT needed in stage 2 (style is guaranteed by
+    the frozen LLC) — matches both the paper and the GPC league.
+  * Warm start: none needed; HLC trains from scratch (small, fast).
+- Old full-weight league (battle_league_ase.py) stays for comparison.
+- Launch pattern once built:
+    python protomotions/train_agent.py --robot-name atlas ... \
+      --experiment-path examples/experiments/ase/battle_league_ase_hlc.py \
+      --motion-file data/atlas_pretrain_corpus_v6.pt \
+      --llc-checkpoint results/atlas_ase_pretrain_v6/last.ckpt \
+      --num-envs 256 --batch-size 512 \
+      --experiment-name atlas_ase_battle_hlc_v1
+- Payoff: LLC pretraining can continue independently; a deeper LLC can be
+  swapped under an existing HLC (works, degraded, retrainable) — Eric's
+  requested workflow; and HLC league snapshots are tiny.
