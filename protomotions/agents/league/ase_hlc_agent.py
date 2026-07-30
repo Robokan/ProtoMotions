@@ -167,6 +167,11 @@ class HLCParams:
     # two-trainer workflow). Snapshots/lanes/ckpts are HLC-only, so a reload
     # touches nothing else.
     llc_hot_reload: bool = True
+    # Minimum seconds between reloads (Eric, 2026-07-30: every 10 minutes).
+    # The v1 run reloaded every ~58s — the ground moved under ego AND pool
+    # every ~2 epochs and the PFSP gate stats were wiped as fast as they
+    # accumulated; the 80% gate never fired in 595 epochs.
+    llc_reload_min_seconds: float = 600.0
 
 
 @dataclass
@@ -196,6 +201,7 @@ class LeagueASEHLCAgent(FullModelLeagueMixin, FineTuningAgent):
         self._llc_disc = None  # frozen discriminator (style anchor), optional
         self._llc_ckpt_mtime = None
         self._llc_reloads = 0
+        self._last_llc_reload_time = time.time()
 
         adapter.set_latent_translator(self._latents_to_joint_actions)
         adapter.set_decision_interval(config.hlc.decision_interval)
@@ -246,8 +252,12 @@ class LeagueASEHLCAgent(FullModelLeagueMixin, FineTuningAgent):
             return None
 
     def _maybe_reload_llc(self) -> None:
-        # getattr: frozen configs from before this field existed default ON.
+        # getattr: frozen configs from before these fields existed get the
+        # current defaults.
         if not getattr(self.config.hlc, "llc_hot_reload", True):
+            return
+        min_gap = getattr(self.config.hlc, "llc_reload_min_seconds", 600.0)
+        if time.time() - self._last_llc_reload_time < min_gap:
             return
         mtime = self._llc_checkpoint_mtime()
         if mtime is None or (
@@ -268,6 +278,7 @@ class LeagueASEHLCAgent(FullModelLeagueMixin, FineTuningAgent):
             self._llc_disc = modules["llc_disc"]
         self._llc_ckpt_mtime = mtime
         self._llc_reloads += 1
+        self._last_llc_reload_time = time.time()
         # Pool members' HLCs now run over a different LLC than they were
         # trained (and measured) against: their PFSP win-rate stats are
         # stale, so re-measure. Ratings are kept — Elo re-converges on its

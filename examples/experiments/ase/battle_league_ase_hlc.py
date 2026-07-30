@@ -272,11 +272,13 @@ def agent_config(
             task_reward_w=0.9,
             disc_reward_w=0.1,
         ),
-        # Template league: pool 16, snapshot at 80% win rate over 2048 games.
+        # Template league: pool 16, gated over 2048 games. Gate at 0.7 (the
+        # SOMA league's value — Eric 2026-07-30; the Template's 0.8 never
+        # fired in 595 epochs under PFSP + LLC hot-reloads).
         league=LeagueParams(
             role="main",
             max_members=16,
-            gate_win_rate=0.8,
+            gate_win_rate=0.7,
             gate_min_games=2048,
         ),
         batch_size=args.batch_size,
