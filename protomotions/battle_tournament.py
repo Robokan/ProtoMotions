@@ -344,15 +344,34 @@ def main():
         elif args.exhibition is not None:
             ckpt_a, ckpt_b = args.exhibition
             log.info("Exhibition: %s vs %s", ckpt_a, ckpt_b)
-            result = tournament.run_pairing(
-                ckpt_a, ckpt_b, matches=args.matches_per_pairing
-            )
-            log.info(
-                "Exhibition result: %d-%d-%d (A wins - B wins - draws)",
-                result.wins_a,
-                result.wins_b,
-                result.draws,
-            )
+            if args.record is None and not headless:
+                # Live viewing: never quit. Play matches forever, printing a
+                # running tally every --matches-per-pairing bouts (Ctrl-C to
+                # stop). print() as well: Kit hijacks logging.
+                total_a = total_b = total_d = 0
+                while True:
+                    result = tournament.run_pairing(
+                        ckpt_a, ckpt_b, matches=args.matches_per_pairing
+                    )
+                    total_a += result.wins_a
+                    total_b += result.wins_b
+                    total_d += result.draws
+                    msg = (
+                        f"Exhibition tally: {total_a}-{total_b}-{total_d} "
+                        f"(A wins - B wins - draws)"
+                    )
+                    print(msg, flush=True)
+                    log.info(msg)
+            else:
+                result = tournament.run_pairing(
+                    ckpt_a, ckpt_b, matches=args.matches_per_pairing
+                )
+                log.info(
+                    "Exhibition result: %d-%d-%d (A wins - B wins - draws)",
+                    result.wins_a,
+                    result.wins_b,
+                    result.draws,
+                )
         elif args.gate is not None:
             if args.gate_against is None:
                 raise ValueError("--gate requires --gate-against")
