@@ -78,8 +78,19 @@ def create_parser():
         "--opponent-asset",
         default=None,
         help="Robot USD (relative to the asset root) for the OPPONENT half, "
-        "e.g. usd/atlas/atlas_flat_opponent.usda — makes the two fighters "
-        "visually distinct. Same skeleton/physics as the base asset required.",
+        "e.g. usd/atlas/atlas_flat_opponent.usda. NOTE: material overrides "
+        "inside instanceable assets do not render — prefer --opponent-tint.",
+    )
+    parser.add_argument(
+        "--opponent-tint",
+        nargs=3,
+        type=float,
+        metavar=("R", "G", "B"),
+        default=None,
+        help="Tint the OPPONENT half's robots this RGB color (0-1), e.g. "
+        "0.8 0.05 0.05 for red. Binds at the robot root with "
+        "strongerThanDescendants, so it works on instanceable assets. "
+        "Pass -1 -1 -1 to disable the default.",
     )
     parser.add_argument("--num-envs", type=int, default=None)
     parser.add_argument("--simulator", default="isaaclab")
@@ -299,6 +310,12 @@ def main():
             skeleton="ue", fists=True, hide_robot=True,
             ambient=args.overlay_ambient,
         )
+
+    if args.opponent_tint is not None and all(c >= 0 for c in args.opponent_tint):
+        from protomotions.simulator.isaaclab.tint import tint_env_robots
+
+        half = env.num_envs // 2
+        tint_env_robots(range(half, env.num_envs), args.opponent_tint)
 
     AgentClass = get_class(agent_config._target_)
     agent = AgentClass(
