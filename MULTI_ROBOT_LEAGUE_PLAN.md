@@ -74,11 +74,39 @@ snapshots of itself *and* of the other two robots.
 | 3 | Different robot morphologies fighting | simulator + env re-architecture | ~4–8 weeks |
 | G | "Ghost sparring" shortcut (no contact physics) | cheap partial alternative | ~1 week |
 
-Hardware note: only **2 of the 3 4090s** have been visible to `nvidia-smi`
-since 2026-07-16. Resolve the missing card before planning 3-way concurrency.
-(2026-07-30: both visible cards are in use — GPU 0 league + GPU 1 LLC
-pretrain; the old "GPU 1 is display-only" rule is no longer observed in
-practice, but a live viewer still needs VRAM carved out of one of them.)
+Hardware note (updated 2026-07-30, per Eric): plan for **2-3 4090s** — the
+third card has been invisible to `nvidia-smi` since 2026-07-16 but may
+return. **The display is driven by GPU 0 and training on it is fine** (no
+reserved card). Current allocation: GPU 0 league + GPU 1 LLC pretrain. A
+live viewer still needs a few GB carved out of whichever card it renders
+on, so plan viewer sessions around the ~20-23 GB training footprints.
+
+### Does any of this slow training down?
+
+The plan document itself: no — nothing changes until a phase is built. Per
+phase, the runtime cost to a training run that adopts it:
+
+- **Phase 0 (hygiene)**: ~zero. Atomic renames, provenance keys, and
+  load-time validation are all off the hot path (snapshot events happen
+  every few hundred epochs).
+- **Phase 1 (shared pool)**: negligible. A directory glob every M epochs +
+  occasional snapshot loads; the same cost the league already pays when its
+  own gate fires. No per-step cost.
+- **Phase 2 (foreign GPC priors as opponents)**: the real one. Each live
+  foreign GPC family costs ~1.6 GB VRAM and its own 8-step autoregressive
+  decode per opponent action — in the launch-bound regime that can multiply
+  opponent-inference time by the number of live foreign families. Mitigate
+  by capping live foreign members, fp16 foreign priors, or the
+  single-foreign-member exploiter mode. Foreign **ase/ase_hlc** families
+  (Phase 2b) are nearly free — tiny MLP forwards, negligible VRAM.
+- **Phase 3 (cross-morphology)**: moderate, structural. Two articulation
+  views + zero-padded state/action tensors + per-side table lookups add
+  per-step work; expect single-digit-percent overhead if done with padded
+  batched ops, worse if any per-side Python loops slip in (see the
+  2026-07-30 league profiling: Python-per-event costs dominate fast at
+  4096+ matches).
+- **Phase G (ghost sparring)**: ~free at runtime (replayed trajectories,
+  no second policy, no contact solve).
 
 ---
 
