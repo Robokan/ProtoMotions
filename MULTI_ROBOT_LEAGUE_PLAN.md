@@ -1,9 +1,61 @@
 # Multi-Robot Shared League — Design Plan
 
-**Status: PLAN ONLY — nothing here is implemented.** Investigated 2026-07-18 by
-a 4-way code survey (league/pool, battle env, simulator, model bundles); every
-claim below carries a file:line reference into the `battle` branch as of
-`e28746f`.
+**Status: PLAN + PARTIAL GROUNDWORK.** Investigated 2026-07-18 by a 4-way code
+survey (league/pool, battle env, simulator, model bundles); every claim below
+carries a file:line reference into the `battle` branch as of `e28746f` —
+line numbers predate the 2026-07-29 league refactor (see status update), but
+the behavioral claims were re-verified 2026-07-30 unless marked otherwise.
+
+## STATUS UPDATE 2026-07-30 (what has landed since the survey)
+
+Groundwork that changes this plan's baseline — none of it was planned here,
+but several phases got cheaper:
+
+- **League machinery is now shared code.** The ASE league's orchestration was
+  extracted into `agents/league/full_model_league.py`
+  (`FullModelLeagueMixin`): pool, full-model snapshots, lanes, Elo, ckpt
+  persistence, with subclass hooks. `LeagueASEAgent` and the new
+  `LeagueASEHLCAgent` both ride it; the PEFT league (`agents/league/agent.py`)
+  is untouched — so Phase 0/1 changes now have ONE extra home, not two.
+  (Opponent resampling/match accounting were also vectorized — one GPU sync
+  per batch instead of per ended match; matters at 4096 concurrent matches.)
+- **Phase 2b's ASE arm is BUILT and in production.** The paper-faithful
+  frozen-LLC + HLC league (`examples/experiments/ase/battle_league_ase_hlc.py`,
+  `agents/league/ase_hlc_agent.py`) is training atlas-vs-atlas at 8192 envs
+  as of 2026-07-30. Its snapshots are self-contained HLC weights (~12 MB) and
+  — partial Phase 0 item 3 — full-model-league snapshots now carry
+  `architecture` ("ase" / "ase_hlc") and `robot` provenance keys. PEFT
+  snapshots remain anonymous (re-verified 2026-07-30).
+- **LLC hot-reload exists** (`hlc.llc_hot_reload`): the HLC league re-loads
+  its frozen LLC when the pretrain saves a new checkpoint (PFSP stats reset
+  on reload). This is the live counterexample to "pools never refresh
+  mid-run" — the *base model* refreshes; the pool-file re-scan of Phase 1 is
+  still unimplemented. It also sharpens the Phase 2b bundle question: an
+  ASE-HLC bundle is {tiny HLC weights + LLC checkpoint ref}, and the LLC
+  under a bundle can move.
+- **Atlas is confirmed as robot #2 in practice** (open decision 3): per-robot
+  battle body tables exist (`envs/battle/robot_tables.py` — soma23 pinned,
+  t800/atlas derived from semantic naming; kick-bonus feet included as of
+  2026-07-29), atlas has a v6 corpus, a 2-day ASE LLC pretrain (still
+  improving), and the production HLC league. The Phase 3 "BattleBodyTables
+  per side" item now reduces to making the EXISTING per-robot tables
+  per-SIDE.
+- **Robot multi-asset spawning has a precedent**: the tournament's
+  `--opponent-asset` spawns the opponent half of paired envs from a variant
+  robot USD via `MultiAssetSpawnerCfg` with `replicate_physics=False`
+  (`simulator/isaaclab/utils/scene.py`). Same morphology (visual variant
+  only) — but it exercises the exact spawn path Phase 3's two-entity scene
+  needs, including the instancing pitfalls (material opinions inside
+  instances don't render; bind above or de-instance).
+- **Scale/hardware reality shifted**: leagues now run 8192 envs (4096
+  matches, ~20.6 GB, 18-25 s/epoch after profiling work) — Phase 2's VRAM
+  tax (~1.6 GB/foreign prior family) still fits, but the "decode latency"
+  cost model should be re-checked against the HLC league (tiny MLPs, no
+  autoregressive decode: foreign ASE/HLC families are nearly free; foreign
+  GPC priors remain the expensive case). GPU 1 currently runs the LLC
+  pretrain alongside GPU 0's league (the two-trainer workflow) — the
+  display-reservation note below is stale in practice; the third 4090 is
+  still missing.
 
 ## The idea
 
@@ -23,8 +75,10 @@ snapshots of itself *and* of the other two robots.
 | G | "Ghost sparring" shortcut (no contact physics) | cheap partial alternative | ~1 week |
 
 Hardware note: only **2 of the 3 4090s** have been visible to `nvidia-smi`
-since 2026-07-16, and GPU 1 drives the display. Resolve the missing card
-before planning 3-way concurrency.
+since 2026-07-16. Resolve the missing card before planning 3-way concurrency.
+(2026-07-30: both visible cards are in use — GPU 0 league + GPU 1 LLC
+pretrain; the old "GPU 1 is display-only" rule is no longer observed in
+practice, but a live viewer still needs VRAM carved out of one of them.)
 
 ---
 
@@ -209,6 +263,19 @@ all three. Bonus: mixed TRAINING leagues — an ASE snapshot in a GPC pool
 (or an ASE main-exploiter seat: ~10x cheaper per step, stylistically
 alien) is a natural hole-finder.
 
+*2026-07-30 amendment*: the ASE side now has TWO snapshot species —
+full-weight (`architecture: "ase"`, battle_league_ase.py) and HLC-only
+(`architecture: "ase_hlc"`, the production league). An ase_hlc bundle is
+{HLC weights + LLC checkpoint reference + latent contract (64-dim
+hypersphere, decision_interval)} — the frozen LLC plays the same role as
+the GPC prior in Phase 2's cost model but is ~2.3 M params (negligible
+VRAM, no autoregressive decode), so hosting foreign ase_hlc families is
+nearly free. One new wrinkle hot-reload introduces: an HLC snapshot's
+behavior depends on WHICH LLC checkpoint it executes under — bundles
+should pin the LLC by fingerprint, not by live path, or accept the drift
+(a snapshot replayed under a newer LLC of the same lineage degrades
+gracefully; see the pool-staleness discussion in the HLC league notes).
+
 ## Phase G — Ghost sparring (cheap cross-robot exposure, anytime)
 
 `VirtualOpponentControl` proves BattleContext can be fed an opponent that is
@@ -236,8 +303,17 @@ and standardizing K=5 key bodies makes it plug-compatible league-wide.
 
 1. Phase 1 gate semantics: own-family-only gating (recommended) vs. mixed?
 2. Shared Elo ladder: worth a sidecar store, or is per-run PFSP enough?
-3. Phase 3 second robot: Atlas (converters + rig already in-repo from the
-   Spark-side work) — confirm as the target morphology?
+3. ~~Phase 3 second robot: Atlas — confirm as the target morphology?~~
+   **Resolved in practice (2026-07-30)**: Atlas is robot #2 — battle tables,
+   v6 corpus, LLC pretrain, and a production HLC league all exist.
 4. Budget check: Phase 2 buys "my robot trains against differently-brained
    opponents of the same body"; Phase 3 buys true mixed-morphology fights.
    Decide whether Phase 2 alone captures enough of the value first.
+   *(2026-07-30 note: with the HLC league live, the cheapest high-value next
+   step is Phase 2b same-robot ASE-vs-GPC — for SOMA it needs a soma HLC/ASE
+   seat; for atlas it needs a GPC prior for atlas. The atlas-vs-atlas
+   HLC-vs-HLC case is already covered by the running league's own pool.)*
+5. NEW: rules-era stamp for the current game rules (KE damage + 1.5 m/s gate
+   + stun-gated KO + win-500 + kick bonus) — Phase 0 item 3 remains undone
+   for PEFT snapshots and un-fingerprinted everywhere; the v4/v5/v6 +
+   atlas-league pools now span at least three rule eras on disk.
