@@ -68,11 +68,19 @@ def create_parser():
     parser.add_argument("--matches-per-pairing", type=int, default=32)
     parser.add_argument(
         "--overlay-character", nargs="+",
-        default=["protomotions/data/assets/overlay/red_samurai.usd",
-                 "protomotions/data/assets/overlay/gray_samurai.usd"],
+        default=None,
         help="Skin fighters with these UsdSkel characters (cycled across "
-        "envs; champion seat env0 gets the first). Pass 'none' to disable.")
+        "envs; champion seat env0 gets the first). Pass 'none' to disable. "
+        "Default: the samurai skins for soma robots (their retarget map), "
+        "none for other robots.")
     parser.add_argument("--overlay-ambient", type=float, default=50.0)
+    parser.add_argument(
+        "--opponent-asset",
+        default=None,
+        help="Robot USD (relative to the asset root) for the OPPONENT half, "
+        "e.g. usd/atlas/atlas_flat_opponent.usda — makes the two fighters "
+        "visually distinct. Same skeleton/physics as the base asset required.",
+    )
     parser.add_argument("--num-envs", type=int, default=None)
     parser.add_argument("--simulator", default="isaaclab")
     parser.add_argument("--headless", action="store_true", default=None)
@@ -176,6 +184,27 @@ def main():
 
     robot_config = resolved["robot"]
     simulator_config = resolved["simulator"]
+
+    if args.opponent_asset:
+        # Opponent half spawns from a recolored USD variant; keep each USD's
+        # own materials (the uniform gray override would erase the difference).
+        robot_config.asset.opponent_usd_asset_file_name = args.opponent_asset
+        robot_config.asset.override_visual_material = False
+
+    if args.overlay_character is None:
+        # The samurai skins' joint map is soma-specific; other robots render
+        # their own USD unless characters are passed explicitly.
+        robot_name = str(
+            getattr(robot_config, "robot_type", None)
+            or getattr(robot_config, "name", "")
+        ).lower()
+        if "soma" in robot_name:
+            args.overlay_character = [
+                "protomotions/data/assets/overlay/red_samurai.usd",
+                "protomotions/data/assets/overlay/gray_samurai.usd",
+            ]
+        else:
+            args.overlay_character = ["none"]
     terrain_config = resolved.get("terrain")
     scene_lib_config = resolved["scene_lib"]
     motion_lib_config = resolved["motion_lib"]

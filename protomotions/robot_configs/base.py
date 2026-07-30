@@ -94,6 +94,11 @@ class RobotAssetConfig:
     # Optional fields
     asset_file_name: str = None
     usd_asset_file_name: str = None
+    # Viewer/exhibition: spawn the OPPONENT half of paired battle envs from a
+    # different USD (e.g. a recolored variant) so the fighters are visually
+    # distinguishable. Forces per-env spawning (replicate_physics off) — use
+    # for small-env viewing, not training. Same skeleton/physics required.
+    opponent_usd_asset_file_name: Optional[str] = None
     usd_bodies_root_prim_path: str = None
     replace_cylinder_with_capsule: Optional[bool] = None
     thickness: Optional[float] = None

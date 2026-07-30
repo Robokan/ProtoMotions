@@ -170,8 +170,15 @@ class IsaacLabSimulator(Simulator):
             scene_cfgs=scene_cfgs,
             terrain=self.terrain,
             projectile_config=self._proj_config,
-            replicate_physics=scene_cfgs
-            is None,  # When there are objects, disable physics replication
+            # Physics replication must be off when envs differ: scene objects,
+            # or a distinct opponent-half robot USD (viewer exhibitions).
+            replicate_physics=(
+                scene_cfgs is None
+                and getattr(
+                    self.robot_config.asset, "opponent_usd_asset_file_name", None
+                )
+                is None
+            ),
             filter_collisions=self.config.filter_env_collisions,
         )
         return scene_cfg

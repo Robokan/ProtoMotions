@@ -155,10 +155,9 @@ class SceneCfg(InteractiveSceneCfg):
             )
 
         # articulation
-        self.robot = ArticulationCfg(
-            prim_path="/World/envs/env_.*/Robot",
-            spawn=sim_utils.UsdFileCfg(
-                usd_path=f"{robot_config.asset.asset_root}/{robot_config.asset.usd_asset_file_name}",
+        def _robot_usd_cfg(usd_file_name, visual_material):
+            return sim_utils.UsdFileCfg(
+                usd_path=f"{robot_config.asset.asset_root}/{usd_file_name}",
                 activate_contact_sensors=activate_contact_sensors,
                 rigid_props=sim_utils.RigidBodyPropertiesCfg(
                     disable_gravity=robot_config.asset.disable_gravity,
@@ -178,14 +177,43 @@ class SceneCfg(InteractiveSceneCfg):
                     contact_offset=config.sim.physx.contact_offset,
                     rest_offset=config.sim.physx.rest_offset,
                 ),
-                visual_material=(
-                    sim_utils.PreviewSurfaceCfg(
-                        diffuse_color=(0.9, 0.9, 0.9), metallic=0.5
-                    )
-                    if getattr(robot_config.asset, "override_visual_material", True)
-                    else None
+                visual_material=visual_material,
+            )
+
+        override_material = (
+            sim_utils.PreviewSurfaceCfg(diffuse_color=(0.9, 0.9, 0.9), metallic=0.5)
+            if getattr(robot_config.asset, "override_visual_material", True)
+            else None
+        )
+        opponent_usd = getattr(
+            robot_config.asset, "opponent_usd_asset_file_name", None
+        )
+        if opponent_usd:
+            # Paired battle envs: ego half (envs 0..N/2-1) uses the base USD,
+            # opponent half uses the variant, so fighters are tellable apart.
+            # spawn_multi_asset assigns assets_cfg[index % len] per env, so a
+            # per-env list makes the split exact. Requires replicate_physics
+            # off (viewer-scale env counts only). No material override — the
+            # different USD colors are the whole point.
+            half = self.num_envs // 2
+            robot_spawn = sim_utils.MultiAssetSpawnerCfg(
+                assets_cfg=(
+                    [_robot_usd_cfg(robot_config.asset.usd_asset_file_name, None)]
+                    * half
+                    + [_robot_usd_cfg(opponent_usd, None)]
+                    * (self.num_envs - half)
                 ),
-            ),
+                random_choice=False,
+                activate_contact_sensors=activate_contact_sensors,
+            )
+        else:
+            robot_spawn = _robot_usd_cfg(
+                robot_config.asset.usd_asset_file_name, override_material
+            )
+
+        self.robot = ArticulationCfg(
+            prim_path="/World/envs/env_.*/Robot",
+            spawn=robot_spawn,
             init_state=ArticulationCfg.InitialStateCfg(
                 pos=(0.0, 0.0, robot_config.default_root_height),
                 joint_pos={".*": 0.0},
