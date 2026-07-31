@@ -73,9 +73,8 @@ _SOMA23 = dict(
 )
 
 # T800 (EngineAI): semantic map gives head/torso/hands/feet; strike surfaces
-# from LINK_* patterns. Gaze axis assumed +x (typical URDF-convention robot,
-# face along base +x) — CALIBRATE with a facing probe before trusting the
-# facing telemetry (a wrong axis trains ear-pointing; see rewards.py note).
+# from LINK_* patterns. Gaze axis +x CALIBRATED 2026-07-31 (corpus walking
+# frames measure head-local forward = [0.97, 0.11, -0.21] — +x confirmed).
 _T800_EXPLICIT = dict(
     head_body_name="LINK_HEAD_YAW",
     facing_target_body_name="LINK_TORSO_YAW",
@@ -83,7 +82,12 @@ _T800_EXPLICIT = dict(
 )
 
 _ATLAS_EXPLICIT = dict(
-    gaze_forward_axis=(1.0, 0.0, 0.0),  # CALIBRATE (see T800 note)
+    # CALIBRATED 2026-07-31 from corpus standing frames (head local axis
+    # aligned with hip facing): the Head frame's face direction is ~+Z with
+    # a -Y tilt — NOT +X. The prior assumed (1,0,0) trained overnight
+    # fighters that never faced each other (facing reward pointed the
+    # robot's SIDE at the opponent).
+    gaze_forward_axis=(0.012, -0.319, 0.948),
 )
 
 _EXPLICIT: Dict[str, dict] = {
