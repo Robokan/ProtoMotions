@@ -59,6 +59,29 @@ def create_parser():
         "--gate-threshold", type=float, default=0.55, help="Gate pass score"
     )
     parser.add_argument(
+        "--exhibition-pool",
+        action="store_true",
+        help="Pure pool-watching: BOTH fighters are pool-sampled every "
+        "match (ego side among the league robot's snapshots; opponent "
+        "side any hostable family, with per-arena morphology flips). "
+        "Pool dir from --pool (default: the run's shared_pool_dir).",
+    )
+    parser.add_argument(
+        "--exhibition-vs-pool",
+        default=None,
+        metavar="EGO_CKPT",
+        help="Endless exhibition: this checkpoint vs POOL-SAMPLED opponents "
+        "(any hostable family, re-sampled per match with per-arena "
+        "morphology flips). Pool dir from --pool (default: the run's "
+        "shared_pool_dir).",
+    )
+    parser.add_argument(
+        "--pool",
+        default=None,
+        help="Pool directory for --exhibition-vs-pool (default: the "
+        "league's configured shared_pool_dir).",
+    )
+    parser.add_argument(
         "--exhibition",
         nargs=2,
         default=None,
@@ -355,6 +378,52 @@ def main():
                 title=args.record_title,
                 bouts=args.bouts,
             )
+        elif args.exhibition_pool:
+            pool_dir = args.pool or getattr(
+                getattr(agent_config, "league", None), "shared_pool_dir", None
+            )
+            if not pool_dir:
+                raise ValueError(
+                    "--exhibition-pool needs --pool (no shared_pool_dir in "
+                    "the resolved league config)"
+                )
+            log.info("Pool showcase from %s", pool_dir)
+            while True:
+                tallies = tournament.run_pool_showcase(
+                    pool_dir, matches=args.matches_per_pairing
+                )
+                parts = [
+                    f"{a} vs {b}: {t[0]}-{t[1]}-{t[2]}"
+                    for (a, b), t in sorted(tallies.items())
+                ]
+                msg = "Pool showcase tally (W-L-D): " + "; ".join(parts)
+                print(msg, flush=True)
+                log.info(msg)
+                if headless:
+                    break
+        elif args.exhibition_vs_pool is not None:
+            pool_dir = args.pool or getattr(
+                getattr(agent_config, "league", None), "shared_pool_dir", None
+            )
+            if not pool_dir:
+                raise ValueError(
+                    "--exhibition-vs-pool needs --pool (no shared_pool_dir "
+                    "in the resolved league config)"
+                )
+            log.info("Exhibition vs pool: %s vs %s", args.exhibition_vs_pool, pool_dir)
+            while True:
+                tallies = tournament.run_vs_pool(
+                    args.exhibition_vs_pool, pool_dir,
+                    matches=args.matches_per_pairing,
+                )
+                parts = [
+                    f"{fam}: {t[0]}-{t[1]}-{t[2]}" for fam, t in sorted(tallies.items())
+                ]
+                msg = "Pool exhibition tally (W-L-D by family): " + "; ".join(parts)
+                print(msg, flush=True)
+                log.info(msg)
+                if headless:
+                    break
         elif args.exhibition is not None:
             ckpt_a, ckpt_b = args.exhibition
             log.info("Exhibition: %s vs %s", ckpt_a, ckpt_b)

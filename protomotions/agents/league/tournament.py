@@ -730,6 +730,184 @@ class BattleTournament:
         )
         return {"path": out_path, "results": results, "summary": summary}
 
+    @torch.no_grad()
+    def run_vs_pool(
+        self, ego_ckpt: str, pool_dir: str, matches: int, max_steps: int = 200000
+    ):
+        """Ego checkpoint vs THE POOL: every match's opponent is league-
+        sampled from ``pool_dir`` (any hostable family — own robot or an
+        arena body), with per-arena morphology flips, exactly as in
+        training. Returns {family_label: [wins, losses, draws]}."""
+        from pathlib import Path as _P
+
+        agent = self.agent
+        self._load_ego(ego_ckpt)
+
+        # Point the league machinery at the pool and let it engage: restore
+        # members, build family lanes, serve opponents per match. Ratings/
+        # stats evolve in RAM only (nothing checkpoints in eval).
+        agent.league_dir = _P(pool_dir)
+        agent._shared_pool = True
+        agent._league_initialized = False
+        self.env.set_opponent_policy(agent._opponent_policy)
+
+        tallies = {}
+
+        def on_end(ego_ids, win, lose, draw):
+            for i, env in enumerate(ego_ids.tolist()):
+                mid = int(agent.env_member[env])
+                member = agent.pool.members.get(mid)
+                fam = (member.family or "own") if member else "?"
+                fam = fam.split("/")[0] if "/" in fam else fam
+                t = tallies.setdefault(fam, [0, 0, 0])
+                if win[i] > 0.5:
+                    t[0] += 1
+                elif lose[i] > 0.5:
+                    t[1] += 1
+                else:
+                    t[2] += 1
+            agent._on_matches_ended(ego_ids, win, lose, draw)
+
+        self.env.set_match_end_callback(on_end)
+
+        obs, _ = self.env.reset()
+        model = agent.model
+        model.eval()
+        played = lambda: sum(sum(t) for t in tallies.values())  # noqa: E731
+        steps = 0
+        held_ego = None
+        while played() < matches and steps < max_steps:
+            obs = agent.add_agent_info_to_obs(obs)
+            if held_ego is None or self._frame % self.action_hold == 0:
+                obs_td = agent.obs_dict_to_tensordict(obs)
+                with self._autocast():
+                    out = model(obs_td)
+                key = (
+                    "mean_action"
+                    if self.deterministic and "mean_action" in out
+                    else "action"
+                )
+                held_ego = out[key].float()
+            obs, _, dones, _, _ = self.env.step(held_ego)
+            self._frame += 1
+            done_ids = dones.nonzero(as_tuple=False).flatten()
+            if len(done_ids) > 0:
+                obs, _ = self.env.reset(done_ids)
+            steps += 1
+        return tallies
+
+    @torch.no_grad()
+    def run_pool_showcase(
+        self, pool_dir: str, matches: int, max_steps: int = 200000
+    ):
+        """Pure pool-watching: BOTH fighters are drawn from the pool every
+        match. The ego half of each arena hosts the league's own robot, so
+        its fighter samples uniformly among own-family members; the
+        opponent side is league-served (any hostable family, per-arena
+        morphology flips). Returns {(ego_fam, opp_fam): [w, l, d]} keyed
+        by the ego side's result."""
+        import copy as _copy
+        import random as _random
+        from pathlib import Path as _P
+
+        from protomotions.agents.league.lanes import OpponentLanes
+
+        agent = self.agent
+        agent.league_dir = _P(pool_dir)
+        agent._shared_pool = True
+        agent._league_initialized = False
+        self.env.set_opponent_policy(agent._opponent_policy)
+
+        # Force league init now (restores the pool from disk) so we can
+        # sample ego-side members before the first step.
+        agent._ensure_league_initialized()
+        own_members = [
+            m for m in agent.pool.members.values()
+            if not m.family or m.family.split("/")[0]
+            == (getattr(agent.league_cfg, "robot_name", None) or "")
+        ]
+        if not own_members:
+            raise ValueError(
+                f"Pool {pool_dir} holds no snapshots of the league's own "
+                "robot — the ego half of every arena hosts that robot."
+            )
+
+        # Ego side gets its own lane bank (separate from the opponent
+        # lanes, so the two sides never evict each other's assignments).
+        base_model = agent._unwrapped_model()
+
+        def factory():
+            return _copy.deepcopy(base_model)
+
+        ego_lanes = OpponentLanes(
+            model_factory=factory,
+            num_lanes=agent.league_cfg.num_lanes,
+            share_frozen_base_with=None,
+            assign_fn=lambda model, state: model.load_state_dict(
+                state, strict=True
+            ),
+        )
+        n = self.env.num_matches
+        ego_member = torch.full((n,), -1, dtype=torch.long, device=self.device)
+
+        def sample_ego(match_ids):
+            live = {int(m) for m in ego_member.tolist() if m >= 0}
+            for env in match_ids.tolist():
+                member = _random.choice(own_members)
+                ego_lanes.assign(
+                    member.member_id,
+                    agent._load_member_snapshot(member.member_id),
+                    in_use=live,
+                )
+                ego_member[env] = member.member_id
+                live.add(member.member_id)
+
+        sample_ego(torch.arange(n, device=self.device))
+
+        def fam_of(mid: int) -> str:
+            member = agent.pool.members.get(int(mid))
+            fam = (member.family or "own") if member else "?"
+            return fam.split("/")[0] if "/" in fam else fam
+
+        tallies = {}
+
+        def on_end(ego_ids, win, lose, draw):
+            for i, env in enumerate(ego_ids.tolist()):
+                key = (fam_of(int(ego_member[env])),
+                       fam_of(int(agent.env_member[env])))
+                t = tallies.setdefault(key, [0, 0, 0])
+                if win[i] > 0.5:
+                    t[0] += 1
+                elif lose[i] > 0.5:
+                    t[1] += 1
+                else:
+                    t[2] += 1
+            agent._on_matches_ended(ego_ids, win, lose, draw)
+            sample_ego(ego_ids.to(self.device))
+
+        self.env.set_match_end_callback(on_end)
+
+        obs, _ = self.env.reset()
+        played = lambda: sum(sum(t) for t in tallies.values())  # noqa: E731
+        steps = 0
+        held_ego = None
+        latent_dim = agent.config.hlc.latent_dim
+        while played() < matches and steps < max_steps:
+            obs = agent.add_agent_info_to_obs(obs)
+            if held_ego is None or self._frame % self.action_hold == 0:
+                obs_td = agent.obs_dict_to_tensordict(obs)
+                with self._autocast():
+                    held_ego = ego_lanes.act(
+                        obs_td, ego_member, latent_dim
+                    ).float()
+            obs, _, dones, _, _ = self.env.step(held_ego)
+            self._frame += 1
+            done_ids = dones.nonzero(as_tuple=False).flatten()
+            if len(done_ids) > 0:
+                obs, _ = self.env.reset(done_ids)
+            steps += 1
+        return tallies
+
     def run_round_robin(
         self,
         adapters: List[str],
