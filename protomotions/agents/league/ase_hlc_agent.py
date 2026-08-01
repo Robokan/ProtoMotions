@@ -239,6 +239,19 @@ class LeagueASEHLCAgent(FullModelLeagueMixin, FineTuningAgent):
             )
         self._llc_ckpt_mtime = self._llc_checkpoint_mtime()
 
+    def _snapshot_extra_meta(self) -> dict:
+        """Pin the frozen LLC this HLC snapshot executes under (Phase 2b:
+        an ase_hlc bundle is HLC weights + an LLC reference; with hot-reload
+        the LLC under a snapshot can drift, so record path AND mtime)."""
+        cfg = self.config.pretrained_modules.get("llc")
+        return {
+            "llc_checkpoint": getattr(cfg, "checkpoint_path", None),
+            "llc_checkpoint_mtime": self._llc_ckpt_mtime,
+            "llc_reloads": self._llc_reloads,
+            "latent_dim": getattr(self.config.hlc, "latent_dim", 64),
+            "decision_interval": getattr(self.config.hlc, "decision_interval", 1),
+        }
+
     # ------------------------------------------------------------------
     # LLC hot-reload: pick up new pretrain checkpoints between epochs
     # ------------------------------------------------------------------

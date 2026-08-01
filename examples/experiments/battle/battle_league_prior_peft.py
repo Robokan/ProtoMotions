@@ -44,6 +44,11 @@ ARENA_SPACING = 16.0  # keeps neighboring matches out of contact range
 
 
 def additional_experiment_arguments(parser: argparse.ArgumentParser):
+    parser.add_argument(
+        "--shared-pool-dir",
+        default=None,
+        help="Shared league pool directory (MULTI_ROBOT_LEAGUE_PLAN Phase 1).",
+    )
     parser.add_argument("--prior-checkpoint", required=True)
     parser.add_argument(
         "--league-role",
@@ -225,6 +230,7 @@ def agent_config(
         league=LeagueParams(
             role=role,
             exploiter_opponent_dir=getattr(args, "league_opponent_dir", None),
+            shared_pool_dir=getattr(args, "shared_pool_dir", None),
         ),
         model=DiscretePriorPEFTRLFTModelConfig(
             actor=DiscretePriorPEFTActorConfig(

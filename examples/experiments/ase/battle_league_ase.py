@@ -53,6 +53,11 @@ HISTORY_STEPS = 8  # discriminator reference window (matches ase/mlp.py)
 
 def additional_experiment_arguments(parser: argparse.ArgumentParser):
     parser.add_argument(
+        "--shared-pool-dir",
+        default=None,
+        help="Shared league pool directory (MULTI_ROBOT_LEAGUE_PLAN Phase 1).",
+    )
+    parser.add_argument(
         "--dense-reward-scale",
         type=float,
         default=1.0,
@@ -398,7 +403,10 @@ def agent_config(
             discriminator_batch_size=args.batch_size,
         ),
         ase_parameters=ase_parameters,
-        league=LeagueParams(role="main"),
+        league=LeagueParams(
+            role="main",
+            shared_pool_dir=getattr(args, "shared_pool_dir", None),
+        ),
     )
 
 

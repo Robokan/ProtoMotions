@@ -96,6 +96,8 @@ class PoolMember:
     # Trailing EMA of this member's PFSP sampling weight (eviction signal)
     usage_ema: float = 0.0
     creation_order: int = 0
+    # Shared-pool family (robot/architecture/run provenance); "" = own run.
+    family: str = ""
 
 
 PFSP_WEIGHTINGS = {
@@ -133,20 +135,30 @@ class PFSPPool:
     # ------------------------------------------------------------------
     # Membership
     # ------------------------------------------------------------------
-    def add(self, checkpoint_path: str, label: str = "", rating: float = 1000.0) -> PoolMember:
+    def add(
+        self,
+        checkpoint_path: str,
+        label: str = "",
+        rating: float = 1000.0,
+        family: str = "",
+    ) -> PoolMember:
         """Add a snapshot; evicts the least informative member if full."""
         if len(self.members) >= self.max_members:
-            self._evict_one()
+            self._evict_one(incoming_family=family)
         member = PoolMember(
             member_id=self._creation_counter,
             checkpoint_path=checkpoint_path,
             label=label or f"policy_{self._creation_counter}",
             rating=rating,
             creation_order=self._creation_counter,
+            family=family,
         )
         self.members[member.member_id] = member
         self._creation_counter += 1
         return member
+
+    def family_size(self, family: str) -> int:
+        return sum(1 for m in self.members.values() if m.family == family)
 
     def _protected_ids(self) -> set:
         """Earliest snapshot (anti-cycling canary) + highest-rated member."""
@@ -156,13 +168,26 @@ class PFSPPool:
         strongest = max(self.members.values(), key=lambda m: m.rating)
         return {earliest.member_id, strongest.member_id}
 
-    def _evict_one(self) -> None:
+    def _evict_one(self, incoming_family: str = "") -> None:
         protected = self._protected_ids()
         candidates = [m for m in self.members.values() if m.member_id not in protected]
         if not candidates:
             # Degenerate small pool: fall back to evicting the oldest
             victim = min(self.members.values(), key=lambda m: m.creation_order)
         else:
+            # Shared-pool fairness: a fast-snapshotting family must not crowd
+            # out the others — evict from the largest family first (preferring
+            # the incoming member's own family on ties, so an over-quota
+            # family churns within itself).
+            families = {}
+            for m in candidates:
+                families.setdefault(m.family, []).append(m)
+            if len(families) > 1:
+                largest = max(
+                    families.values(),
+                    key=lambda ms: (len(ms), ms[0].family == incoming_family),
+                )
+                candidates = largest
             victim = min(candidates, key=lambda m: m.usage_ema)
         del self.members[victim.member_id]
 
@@ -213,17 +238,25 @@ class PFSPPool:
         if member is not None:
             member.stats.update(wins, losses, draws)
 
-    def average_win_rate(self) -> float:
-        """Current agent's mean win rate over the pool (gate signal)."""
-        if not self.members:
-            return 0.0
-        return sum(m.stats.win_rate(self.min_games) for m in self.members.values()) / len(
-            self.members
-        )
+    def average_win_rate(self, family: Optional[str] = None) -> float:
+        """Current agent's mean win rate over the pool (gate signal).
 
-    def reset_stats(self) -> None:
+        With ``family``, averages that family's members only — shared-pool
+        gating uses own-family so robot A's growth is never gated on
+        beating robot B (plan Phase 1 gate semantics).
+        """
+        members = [
+            m for m in self.members.values()
+            if family is None or m.family == family
+        ]
+        if not members:
+            return 0.0
+        return sum(m.stats.win_rate(self.min_games) for m in members) / len(members)
+
+    def reset_stats(self, family: Optional[str] = None) -> None:
         for m in self.members.values():
-            m.stats.reset()
+            if family is None or m.family == family:
+                m.stats.reset()
 
     def summary(self) -> List[dict]:
         return [
@@ -235,6 +268,7 @@ class PFSPPool:
                 "games": round(m.stats.games, 1),
                 "rating": round(m.rating, 1),
                 "usage": round(m.usage_ema, 4),
+                "family": m.family,
             }
             for m in sorted(self.members.values(), key=lambda m: -m.rating)
         ]

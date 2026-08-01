@@ -70,6 +70,13 @@ def additional_experiment_arguments(parser: argparse.ArgumentParser):
         default=1.0,
         help="Scale on all dense battle reward terms (win/lose unaffected).",
     )
+    parser.add_argument(
+        "--shared-pool-dir",
+        default=None,
+        help="Shared league pool directory (MULTI_ROBOT_LEAGUE_PLAN Phase 1): "
+        "publish snapshots here and ingest compatible snapshots from other "
+        "concurrent runs.",
+    )
 
 
 def configure_robot_and_simulator(
@@ -280,6 +287,7 @@ def agent_config(
             max_members=16,
             gate_win_rate=0.7,
             gate_min_games=2048,
+            shared_pool_dir=getattr(args, "shared_pool_dir", None),
         ),
         batch_size=args.batch_size,
         training_max_steps=args.training_max_steps,

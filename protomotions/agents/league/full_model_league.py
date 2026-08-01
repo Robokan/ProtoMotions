@@ -47,6 +47,7 @@ from protomotions.agents.league.agent import LeagueParams
 from protomotions.agents.league.lanes import OpponentLanes
 from protomotions.agents.league.elo import elo_update
 from protomotions.agents.league.pfsp import PFSPPool, PoolMember
+from protomotions.agents.league import pool_io
 
 log = logging.getLogger(__name__)
 
@@ -70,7 +71,18 @@ class FullModelLeagueMixin:
             )
         self.league_cfg = league_cfg
 
-        self.league_dir = Path(self._resolve_root_dir(root_dir)) / "league"
+        # Shared-pool mode (Phase 1): publish to and scan a common directory.
+        # getattr: resumed runs deserialize pre-Phase-1 LeagueParams pickles.
+        shared = getattr(league_cfg, "shared_pool_dir", None)
+        self._shared_pool = shared is not None
+        self.league_dir = (
+            Path(shared) if shared
+            else Path(self._resolve_root_dir(root_dir)) / "league"
+        )
+        self.run_id = pool_io.new_run_id()  # overwritten on checkpoint resume
+        self._own_fingerprint_cache: Optional[str] = None
+        self._known_snapshot_paths: set = set()
+        self._last_rescan_epoch = -(10**9)
         self.pool = PFSPPool(
             max_members=league_cfg.max_members,
             weighting=league_cfg.pfsp_weighting,
@@ -106,6 +118,27 @@ class FullModelLeagueMixin:
         """Width of the lane models' "action" output."""
         return self.env.robot_config.number_of_actions
 
+    def _snapshot_extra_meta(self) -> dict:
+        """Subclass hook: extra provenance keys for snapshots (e.g. the HLC
+        league pins its frozen LLC checkpoint here)."""
+        return {}
+
+    # ------------------------------------------------------------------
+    # Provenance identity of this run
+    # ------------------------------------------------------------------
+    def _own_robot(self) -> str:
+        return (
+            getattr(self.env.robot_config, "robot_type", None)
+            or getattr(self.env.robot_config, "name", "unknown")
+        )
+
+    def _own_fingerprint(self) -> str:
+        if self._own_fingerprint_cache is None:
+            self._own_fingerprint_cache = pool_io.state_fingerprint(
+                self._unwrapped_model().state_dict()
+            )
+        return self._own_fingerprint_cache
+
     def _pre_opponent_policy(self) -> None:
         """Per-step hook before opponent inference (e.g. advance latents)."""
 
@@ -127,8 +160,10 @@ class FullModelLeagueMixin:
 
         if not self.pool.members:  # not already restored from a checkpoint
             self._restore_league_from_disk()
-        if not self.pool.members:
-            # Seed with the warm-start weights so first opponents exist.
+        if not any(m.family == "" for m in self.pool.members.values()):
+            # Seed with the warm-start weights so first OWN opponents exist —
+            # a shared pool may already hold other runs' snapshots, but own-
+            # family gating needs an own seed to measure against.
             self._take_snapshot(reason="seed")
 
         self._build_lanes()
@@ -137,25 +172,65 @@ class FullModelLeagueMixin:
         )
         self._resample_opponents(all_matches)
 
+    def _family_quota(self) -> int:
+        quota = getattr(self.league_cfg, "family_quota", None)
+        return quota if quota else max(4, self.league_cfg.max_members // 3)
+
+    def _classify_snapshot(self, path: Path, meta: dict) -> Optional[str]:
+        """Family for a compatible snapshot; None if it must not be hosted.
+
+        Own family is "" — in a private league dir every compatible snapshot
+        is own lineage (legacy behavior); in a shared pool only files stamped
+        with this run's id are own, the rest join per-family quotas.
+        """
+        try:
+            pool_io.check_compatible(
+                meta,
+                robot=self._own_robot(),
+                architecture=self.snapshot_architecture,
+                fingerprint=self._own_fingerprint(),
+                accept_foreign_rules_era=getattr(
+                    self.league_cfg, "accept_foreign_rules_era", False
+                ),
+                path=path.name,
+            )
+        except pool_io.SnapshotIncompatible as exc:
+            log.info("League pool: not hosting %s (%s)", path.name, exc)
+            return None
+        if not self._shared_pool:
+            return ""
+        rid = meta.get("run_id") or pool_io.snapshot_run_id(path)
+        return "" if rid == self.run_id else pool_io.family_key(meta)
+
     def _restore_league_from_disk(self) -> None:
-        snapshots = sorted(
-            self.league_dir.glob("policy_*.ckpt"), key=lambda p: p.stat().st_mtime
-        )
-        if not snapshots:
+        entries = []
+        for path in self.league_dir.glob("policy_*.ckpt"):
+            meta = pool_io.load_snapshot_meta(path)
+            if meta is None:
+                log.warning("Could not read league snapshot %s", path)
+                continue
+            family = self._classify_snapshot(path, meta)
+            if family is None:
+                continue
+            entries.append((meta.get("time") or path.stat().st_mtime, path, meta, family))
+        if not entries:
             return
-        keep = snapshots[-self.league_cfg.max_members :]
-        for path in keep:
-            rating = self.league_cfg.initial_rating
-            try:
-                meta = torch.load(path, map_location="cpu", weights_only=False)
-                rating = float(meta.get("rating", rating))
-            except Exception as exc:  # noqa: BLE001 - resumability over strictness
-                log.warning("Could not read league snapshot metadata %s: %s", path, exc)
-            self.pool.add(str(path), label=path.stem, rating=rating)
-        self._snapshot_counter = len(snapshots)
+        entries.sort(key=lambda e: e[0])  # embedded time, not st_mtime
+
+        quota = self._family_quota()
+        kept_per_family: Dict[str, int] = {}
+        for _, path, meta, family in reversed(entries):  # newest first
+            cap = self.league_cfg.max_members if family == "" else quota
+            if kept_per_family.get(family, 0) >= cap:
+                continue
+            kept_per_family[family] = kept_per_family.get(family, 0) + 1
+            rating = float(meta.get("rating", self.league_cfg.initial_rating))
+            self.pool.add(str(path), label=path.stem, rating=rating, family=family)
+            self._known_snapshot_paths.add(str(path))
+        self._snapshot_counter = sum(1 for e in entries if e[3] == "")
         log.info(
-            "Restored league: %d/%d snapshots from %s",
-            len(keep), len(snapshots), self.league_dir,
+            "Restored league: %d snapshots (%d families) from %s",
+            len(self.pool.members), len(kept_per_family), self.league_dir,
         )
 
     def _unwrapped_model(self):
@@ -188,25 +263,34 @@ class FullModelLeagueMixin:
         }
 
     def _take_snapshot(self, reason: str) -> PoolMember:
-        path = self.league_dir / f"policy_{self._snapshot_counter}.ckpt"
-        torch.save(
-            {
-                "model": self._full_state_cpu(),
-                "epoch": self.current_epoch,
-                "rating": self.agent_rating,
-                "reason": reason,
-                "time": time.time(),
-                "architecture": self.snapshot_architecture,
-                "robot": getattr(self.env.robot_config, "robot_type", None)
-                or getattr(self.env.robot_config, "name", "unknown"),
-            },
-            path,
+        path = self.league_dir / f"policy_{self.run_id}_{self._snapshot_counter}.ckpt"
+        state = self._full_state_cpu()
+        payload = pool_io.build_snapshot_meta(
+            run_id=self.run_id,
+            robot=self._own_robot(),
+            architecture=self.snapshot_architecture,
+            fingerprint=pool_io.state_fingerprint(state),
+            action_dim=self._opponent_action_dim(),
+            epoch=self.current_epoch,
+            rating=self.agent_rating,
+            reason=reason,
+            extra=self._snapshot_extra_meta(),
         )
-        member = self.pool.add(str(path), label=path.stem, rating=self.agent_rating)
+        payload["model"] = state
+        pool_io.atomic_save(payload, path)
+        member = self.pool.add(
+            str(path), label=path.stem, rating=self.agent_rating, family=""
+        )
+        self._known_snapshot_paths.add(str(path))
         self._snapshot_counter += 1
         self.games_since_snapshot = 0
         self.last_snapshot_epoch = self.current_epoch
-        self.pool.reset_stats()
+        # Stats answer "how does the CURRENT agent fare" — a new own snapshot
+        # changes that reference point. Foreign-family stats survive (their
+        # reference point is the same current agent; wiping them re-triggers
+        # min_games warmup on every own snapshot — plan Phase 1).
+        self.pool.reset_stats(family="")
+        self._prune_snapshot_cache()
 
         if len(self.pool.members) >= self.league_cfg.mature_after_members:
             self.pool.weighting = self.league_cfg.pfsp_weighting_mature
@@ -226,10 +310,28 @@ class FullModelLeagueMixin:
         state = torch.load(
             member.checkpoint_path, map_location=self.device, weights_only=False
         )
+        if isinstance(state, dict) and "model" in state:
+            # Last-ditch Phase 0 guard: never assign silently-garbage weights.
+            pool_io.check_compatible(
+                state,
+                robot=self._own_robot(),
+                architecture=self.snapshot_architecture,
+                fingerprint=self._own_fingerprint(),
+                accept_foreign_rules_era=getattr(
+                    self.league_cfg, "accept_foreign_rules_era", False
+                ),
+                path=member.checkpoint_path,
+            )
         payload = state["model"] if "model" in state else state
         payload = {k: v.to(self.device) for k, v in payload.items()}
         self._snapshot_cache[member_id] = payload
         return payload
+
+    def _prune_snapshot_cache(self) -> None:
+        """Drop cached weights for evicted members (member ids only grow)."""
+        self._snapshot_cache = {
+            k: v for k, v in self._snapshot_cache.items() if k in self.pool.members
+        }
 
     # Tournament compatibility: full-weights "adapter" load into the ego.
     def load_adapter_checkpoint(self, checkpoint_path: str) -> None:
@@ -355,15 +457,64 @@ class FullModelLeagueMixin:
         self._resample_opponents(ego_ids)
 
     # ------------------------------------------------------------------
+    # Shared-pool re-scan (Phase 1): ingest other runs' snapshots mid-run
+    # ------------------------------------------------------------------
+    def _rescan_shared_pool(self) -> None:
+        rescan_epochs = getattr(self.league_cfg, "pool_rescan_epochs", 10)
+        if self.current_epoch - self._last_rescan_epoch < rescan_epochs:
+            return
+        self._last_rescan_epoch = self.current_epoch
+        quota = self._family_quota()
+        for path in sorted(self.league_dir.glob("policy_*.ckpt")):
+            key = str(path)
+            if key in self._known_snapshot_paths:
+                continue
+            rid = pool_io.snapshot_run_id(path)
+            if rid == self.run_id:
+                self._known_snapshot_paths.add(key)
+                continue  # own writes join the pool at snapshot time
+            meta = pool_io.load_snapshot_meta(path)
+            if meta is None:
+                continue  # possibly mid-write by another run; retry next scan
+            self._known_snapshot_paths.add(key)
+            family = self._classify_snapshot(path, meta)
+            if family is None or family == "":
+                continue
+            if self.pool.family_size(family) >= quota:
+                # Rolling window per family: newest replaces that family's
+                # oldest (informed eviction handles the global cap).
+                oldest = min(
+                    (m for m in self.pool.members.values() if m.family == family),
+                    key=lambda m: m.creation_order,
+                )
+                del self.pool.members[oldest.member_id]
+            self.pool.add(
+                key,
+                label=path.stem,
+                rating=float(meta.get("rating", self.league_cfg.initial_rating)),
+                family=family,
+            )
+            log.info(
+                "Shared pool: ingested foreign snapshot %s (family %s, pool=%d)",
+                path.name, family, len(self.pool.members),
+            )
+        self._prune_snapshot_cache()
+
+    # ------------------------------------------------------------------
     # Epoch hook: gating, staleness, logging
     # ------------------------------------------------------------------
     def post_epoch_logging(self, training_log_dict: dict):
         if self._league_initialized:
             cfg = self.league_cfg
+            if self._shared_pool:
+                self._rescan_shared_pool()
+            # Gate on OWN-family win rate only: in a shared pool, robot A's
+            # league growth must not be gated on beating run B (Phase 1).
+            own_avg = self.pool.average_win_rate(family="")
             pool_avg = self.pool.average_win_rate()
             gated = (
                 self.games_since_snapshot >= cfg.gate_min_games
-                and pool_avg >= cfg.gate_win_rate
+                and own_avg >= cfg.gate_win_rate
             )
             stale = (
                 self.current_epoch - self.last_snapshot_epoch >= cfg.staleness_epochs
@@ -375,10 +526,21 @@ class FullModelLeagueMixin:
 
             training_log_dict["league/pool_size"] = float(len(self.pool.members))
             training_log_dict["league/pool_avg_win_rate"] = pool_avg
+            training_log_dict["league/own_family_win_rate"] = own_avg
             training_log_dict["league/agent_elo"] = self.agent_rating
             training_log_dict["league/games_since_snapshot"] = float(
                 self.games_since_snapshot
             )
+            foreign = sum(1 for m in self.pool.members.values() if m.family != "")
+            if foreign:
+                training_log_dict["league/foreign_members"] = float(foreign)
+                foreign_rates = [
+                    m.stats.win_rate(self.pool.min_games)
+                    for m in self.pool.members.values() if m.family != ""
+                ]
+                training_log_dict["league/foreign_avg_win_rate"] = sum(
+                    foreign_rates
+                ) / len(foreign_rates)
             ratings = [m.rating for m in self.pool.members.values()]
             if ratings:
                 training_log_dict["league/top_member_elo"] = max(ratings)
@@ -392,6 +554,7 @@ class FullModelLeagueMixin:
         state_dict = super().get_state_dict(state_dict)
         state_dict["league"] = {
             "agent_rating": self.agent_rating,
+            "run_id": self.run_id,
             "snapshot_counter": self._snapshot_counter,
             "last_snapshot_epoch": self.last_snapshot_epoch,
             "games_since_snapshot": self.games_since_snapshot,
@@ -401,6 +564,7 @@ class FullModelLeagueMixin:
                     "label": m.label,
                     "rating": m.rating,
                     "creation_order": m.creation_order,
+                    "family": m.family,
                     "stats": vars(m.stats).copy(),
                 }
                 for mid, m in self.pool.members.items()
@@ -414,6 +578,7 @@ class FullModelLeagueMixin:
         if league is None or not load_training_state:
             return
         self.agent_rating = league.get("agent_rating", self.agent_rating)
+        self.run_id = league.get("run_id", self.run_id)
         self._snapshot_counter = league.get("snapshot_counter", 0)
         self.last_snapshot_epoch = league.get("last_snapshot_epoch", 0)
         self.games_since_snapshot = league.get("games_since_snapshot", 0)
@@ -424,11 +589,13 @@ class FullModelLeagueMixin:
                 )
                 continue
             member = self.pool.add(
-                m["checkpoint_path"], label=m["label"], rating=m["rating"]
+                m["checkpoint_path"], label=m["label"], rating=m["rating"],
+                family=m.get("family", ""),
             )
             member.creation_order = m.get("creation_order", member.creation_order)
             for key, value in m.get("stats", {}).items():
                 setattr(member.stats, key, value)
+            self._known_snapshot_paths.add(m["checkpoint_path"])
         if self.pool.members:
             self._league_initialized = False  # lanes rebuilt lazily with pool
 
