@@ -532,6 +532,14 @@ class FullModelLeagueMixin:
                 path.name, family, len(self.pool.members),
             )
         self._prune_snapshot_cache()
+        # A pool that JUST became non-empty flips _opponent_policy from the
+        # symmetric/mechanical fallback to lane serving — matches created
+        # before ingestion still hold member -1 and would crash lanes.act.
+        # Assign them now (mid-match opponent swap, one-time event).
+        if self.pool.members and self._lanes is not None:
+            unassigned = (self.env_member < 0).nonzero(as_tuple=False).flatten()
+            if len(unassigned) > 0:
+                self._resample_opponents(unassigned)
 
     # ------------------------------------------------------------------
     # Epoch hook: gating, staleness, logging
