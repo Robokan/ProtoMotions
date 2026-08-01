@@ -143,6 +143,8 @@ def check_compatible(
     for key, own in (("robot", robot), ("architecture", architecture),
                      ("fingerprint", fingerprint)):
         theirs = meta.get(key)
+        if key == "robot" and "unknown" in (theirs, own):
+            continue  # pre-robot_name snapshots stamped "unknown" — wildcard
         if theirs is not None and theirs != own:
             raise SnapshotIncompatible(
                 f"snapshot {path}: {key}={theirs!r} does not match hosting "

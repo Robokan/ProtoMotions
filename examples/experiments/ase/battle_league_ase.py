@@ -404,6 +404,7 @@ def agent_config(
         ),
         ase_parameters=ase_parameters,
         league=LeagueParams(
+            robot_name=args.robot_name,
             role="main",
             shared_pool_dir=getattr(args, "shared_pool_dir", None),
         ),

@@ -228,6 +228,7 @@ def agent_config(
         e_clip=0.2,
         tau=0.95,
         league=LeagueParams(
+            robot_name=args.robot_name,
             role=role,
             exploiter_opponent_dir=getattr(args, "league_opponent_dir", None),
             shared_pool_dir=getattr(args, "shared_pool_dir", None),

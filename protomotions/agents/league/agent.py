@@ -81,6 +81,10 @@ class LeagueParams:
     exploiter_opponent_dir: Optional[str] = None
     exploiter_refresh_epochs: int = 5
 
+    # Provenance: the CLI robot name (robot configs carry no name field);
+    # stamped into snapshots and used for shared-pool compatibility checks.
+    robot_name: Optional[str] = None
+
     # Shared pool (MULTI_ROBOT_LEAGUE_PLAN Phase 1). When set, snapshots are
     # published to this directory instead of the run's own league/ dir, and
     # the pool re-scans it every pool_rescan_epochs for compatible snapshots
@@ -195,8 +199,10 @@ class LeagueDiscretePriorPEFTRLFTAgent(DiscretePriorPEFTRLFTAgent):
     # ------------------------------------------------------------------
     def _own_robot(self) -> str:
         return (
-            getattr(self.env.robot_config, "robot_type", None)
-            or getattr(self.env.robot_config, "name", "unknown")
+            getattr(self.league_cfg, "robot_name", None)
+            or getattr(self.env.robot_config, "robot_type", None)
+            or getattr(self.env.robot_config, "name", None)
+            or "unknown"
         )
 
     def _own_fingerprint(self) -> str:

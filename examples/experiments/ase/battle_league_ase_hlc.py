@@ -78,6 +78,15 @@ def additional_experiment_arguments(parser: argparse.ArgumentParser):
         "concurrent runs.",
     )
     parser.add_argument(
+        "--opponent-llc-checkpoint",
+        type=str,
+        default=None,
+        help="The OPPONENT robot's frozen LLC pretrain checkpoint "
+        "(required with --opponent-robot for a real cross-morphology "
+        "league; without it the opponent block is mechanically driven "
+        "by the ego brain).",
+    )
+    parser.add_argument(
         "--opponent-robot",
         default=None,
         help="Robot name for the opponent block (MULTI_ROBOT_LEAGUE_PLAN "
@@ -117,6 +126,12 @@ def configure_robot_and_simulator(
             "protomotions.simulator.isaaclab.multi_robot_simulator."
             "MultiRobotIsaacLabSimulator"
         )
+
+
+def _opponent_robot_config(args: argparse.Namespace):
+    from protomotions.robot_configs.factory import robot_config as build_robot
+
+    return build_robot(args.opponent_robot)
 
 
 def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
@@ -285,16 +300,34 @@ def agent_config(
     return LeagueASEHLCAgentConfig(
         # Frozen stage-1 modules from the pretrain checkpoint: the LLC actor
         # and its discriminator (style anchor for the 0.1 reward mix).
-        pretrained_modules={
-            "llc": PretrainedModelConfig(
-                checkpoint_path=args.llc_checkpoint,
-                module_path="actor",
+        pretrained_modules=dict(
+            {
+                "llc": PretrainedModelConfig(
+                    checkpoint_path=args.llc_checkpoint,
+                    module_path="actor",
+                ),
+                "llc_disc": PretrainedModelConfig(
+                    checkpoint_path=args.llc_checkpoint,
+                    module_path="discriminator",
+                ),
+            },
+            **(
+                {
+                    "opp_llc": PretrainedModelConfig(
+                        checkpoint_path=args.opponent_llc_checkpoint,
+                        module_path="actor",
+                    )
+                }
+                if getattr(args, "opponent_llc_checkpoint", None)
+                else {}
             ),
-            "llc_disc": PretrainedModelConfig(
-                checkpoint_path=args.llc_checkpoint,
-                module_path="discriminator",
-            ),
-        },
+        ),
+        opponent_robot_name=getattr(args, "opponent_robot", None),
+        opponent_robot_config=(
+            _opponent_robot_config(args)
+            if getattr(args, "opponent_llc_checkpoint", None)
+            else None
+        ),
         model=PPOModelConfig(
             in_keys=hlc_in_keys,
             actor=actor_config,
@@ -313,6 +346,7 @@ def agent_config(
         # SOMA league's value — Eric 2026-07-30; the Template's 0.8 never
         # fired in 595 epochs under PFSP + LLC hot-reloads).
         league=LeagueParams(
+            robot_name=args.robot_name,
             role="main",
             max_members=16,
             gate_win_rate=0.7,

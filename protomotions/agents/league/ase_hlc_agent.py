@@ -184,6 +184,12 @@ class LeagueASEHLCAgentConfig(FineTuningAgentConfig):
     # cannot serve as a dataclass default factory).
     league: LeagueParams = field(default_factory=LeagueParams)
     hlc: HLCParams = field(default_factory=HLCParams)
+    # Cross-morphology (MULTI_ROBOT_LEAGUE_PLAN Phase 3): when the opponent
+    # block hosts a different robot, these carry its identity. The opponent's
+    # frozen LLC arrives via pretrained_modules["opp_llc"]; opponent HLC
+    # snapshots come from the shared pool (published by that robot's league).
+    opponent_robot_name: str = None
+    opponent_robot_config: object = None
 
 
 class LeagueASEHLCAgent(FullModelLeagueMixin, FineTuningAgent):
@@ -202,6 +208,12 @@ class LeagueASEHLCAgent(FullModelLeagueMixin, FineTuningAgent):
         self._llc_ckpt_mtime = None
         self._llc_reloads = 0
         self._last_llc_reload_time = time.time()
+        # Cross-morphology opponent side (Phase 3)
+        self._opp_rc = getattr(config, "opponent_robot_config", None)
+        self._opp_llc = None  # the opponent robot's frozen LLC
+        self._opp_llc_ckpt_mtime = None
+        self._opp_model_proto = None  # materialized opponent-HLC template
+        self._opp_fingerprint = None
 
         adapter.set_latent_translator(self._latents_to_joint_actions)
         adapter.set_decision_interval(config.hlc.decision_interval)
@@ -231,6 +243,15 @@ class LeagueASEHLCAgent(FullModelLeagueMixin, FineTuningAgent):
             )
         self._llc = llc  # frozen + eval via PretrainedModelConfig(freeze=True)
         self._llc_disc = self.pretrained.get("llc_disc")
+        self._opp_llc = self.pretrained.get("opp_llc")
+        if self._opp_rc is not None and self._opp_llc is None:
+            raise ValueError(
+                "opponent_robot_config is set (cross-morphology league) but "
+                "pretrained_modules['opp_llc'] is missing — the opponent "
+                "block needs ITS robot's frozen LLC "
+                "(--opponent-llc-checkpoint)."
+            )
+        self._opp_llc_ckpt_mtime = self._module_ckpt_mtime("opp_llc")
         if self.config.hlc.disc_reward_w > 0 and self._llc_disc is None:
             raise ValueError(
                 "hlc.disc_reward_w > 0 requires pretrained_modules['llc_disc'] "
@@ -255,14 +276,17 @@ class LeagueASEHLCAgent(FullModelLeagueMixin, FineTuningAgent):
     # ------------------------------------------------------------------
     # LLC hot-reload: pick up new pretrain checkpoints between epochs
     # ------------------------------------------------------------------
-    def _llc_checkpoint_mtime(self):
-        cfg = self.config.pretrained_modules.get("llc")
+    def _module_ckpt_mtime(self, name: str):
+        cfg = self.config.pretrained_modules.get(name)
         if cfg is None or not cfg.checkpoint_path:
             return None
         try:
             return Path(cfg.checkpoint_path).stat().st_mtime
         except OSError:
             return None
+
+    def _llc_checkpoint_mtime(self):
+        return self._module_ckpt_mtime("llc")
 
     def _maybe_reload_llc(self) -> None:
         # getattr: frozen configs from before these fields existed get the
@@ -273,13 +297,20 @@ class LeagueASEHLCAgent(FullModelLeagueMixin, FineTuningAgent):
         if time.time() - self._last_llc_reload_time < min_gap:
             return
         mtime = self._llc_checkpoint_mtime()
-        if mtime is None or (
-            self._llc_ckpt_mtime is not None and mtime <= self._llc_ckpt_mtime
-        ):
+        opp_mtime = self._module_ckpt_mtime("opp_llc")
+        llc_new = mtime is not None and (
+            self._llc_ckpt_mtime is None or mtime > self._llc_ckpt_mtime
+        )
+        opp_new = opp_mtime is not None and (
+            self._opp_llc_ckpt_mtime is None
+            or opp_mtime > self._opp_llc_ckpt_mtime
+        )
+        if not (llc_new or opp_new):
             return
         # The pretrain may still be mid-save (torch.save is not atomic);
         # wait until the file has been quiet for a few seconds.
-        if time.time() - mtime < 5.0:
+        newest = max(m for m in (mtime, opp_mtime) if m is not None)
+        if time.time() - newest < 5.0:
             return  # re-checked next epoch
         try:
             modules = self._load_pretrained_modules()
@@ -289,6 +320,9 @@ class LeagueASEHLCAgent(FullModelLeagueMixin, FineTuningAgent):
         self._llc = modules["llc"]
         if "llc_disc" in modules:
             self._llc_disc = modules["llc_disc"]
+        if "opp_llc" in modules:
+            self._opp_llc = modules["opp_llc"]
+            self._opp_llc_ckpt_mtime = opp_mtime
         self._llc_ckpt_mtime = mtime
         self._llc_reloads += 1
         self._last_llc_reload_time = time.time()
@@ -326,13 +360,160 @@ class LeagueASEHLCAgent(FullModelLeagueMixin, FineTuningAgent):
         # Project onto the unit hypersphere — the latent-space convention the
         # LLC was trained under (ASE.sample_latents).
         z = torch.nn.functional.normalize(latents, dim=-1)
-        td = TensorDict(
-            {"max_coords_obs": obs["max_coords_obs"], "latents": z},
-            batch_size=z.shape[0],
-        )
-        td = self._llc(td)
         key = "mean_action" if self.config.hlc.llc_deterministic else "action"
-        return td[key]
+        if self._opp_rc is None:
+            td = TensorDict(
+                {"max_coords_obs": obs["max_coords_obs"], "latents": z},
+                batch_size=z.shape[0],
+            )
+            td = self._llc(td)
+            return td[key]
+        # Cross-morphology: each block's latents decode through ITS robot's
+        # frozen LLC over ITS robot's self-observation. The env-computed
+        # max_coords_obs is ego-robot-shaped, so the opponent block's is
+        # recomputed from raw sim state with the opponent's body count.
+        n = self.env.num_matches
+        td_a = TensorDict(
+            {"max_coords_obs": obs["max_coords_obs"][:n], "latents": z[:n]},
+            batch_size=n,
+        )
+        act_a = self._llc(td_a)[key]
+        td_b = TensorDict(
+            {"max_coords_obs": self._opp_max_coords(), "latents": z[n:]},
+            batch_size=n,
+        )
+        act_b = self._opp_llc(td_b)[key]
+        # Assemble the padded [2N, max_dofs] action tensor the multi-robot
+        # simulator splits per block (extra columns are masked there).
+        width = max(act_a.shape[1], act_b.shape[1])
+        full = torch.zeros(2 * n, width, device=act_a.device, dtype=act_a.dtype)
+        full[:n, : act_a.shape[1]] = act_a
+        full[n:, : act_b.shape[1]] = act_b
+        return full
+
+    # ------------------------------------------------------------------
+    # Cross-morphology opponent side (Phase 3)
+    # ------------------------------------------------------------------
+    @torch.no_grad()
+    def _opp_max_coords(self) -> Tensor:
+        """The opponent block's self-observation, computed with ITS body
+        count from raw (padded) sim state. Settings MUST match the opponent
+        LLC's pretrain (ase/mlp.py: local_obs, root_height, no contacts) —
+        the same contract the ego max_coords_obs component documents."""
+        from protomotions.envs.obs import (
+            compute_humanoid_max_coords_observations,
+        )
+
+        n = self.env.num_matches
+        nb = self._opp_rc.kinematic_info.num_bodies
+        state = self.env.simulator.get_robot_state()
+        rows = slice(n, 2 * n)
+        body_pos = state.rigid_body_pos[rows, :nb]
+        ground = self.env.terrain.get_ground_heights(body_pos[:, 0]).view(-1)
+        return compute_humanoid_max_coords_observations(
+            body_pos=body_pos,
+            body_rot=state.rigid_body_rot[rows, :nb],
+            body_vel=state.rigid_body_vel[rows, :nb],
+            body_ang_vel=state.rigid_body_ang_vel[rows, :nb],
+            ground_height=ground,
+            body_contacts=torch.zeros_like(body_pos[..., 0]),
+            local_obs=True,
+            root_height_obs=True,
+            observe_contacts=False,
+            w_last=True,
+        )
+
+    def _opponent_obs_td(self, opp_obs: Dict[str, Tensor]):
+        if self._opp_rc is not None:
+            # Opponent HLC snapshots were trained on THEIR robot's obs:
+            # swap in the opponent-shaped self-observation (task_obs is
+            # shape-stable league-wide and already per-side via the battle
+            # tables).
+            opp_obs = dict(opp_obs)
+            opp_obs["max_coords_obs"] = self._opp_max_coords()
+        return super()._opponent_obs_td(opp_obs)
+
+    def _opp_proto_model(self):
+        """Materialized opponent-HLC template (built once, deep-copied per
+        lane). The HLC architecture is shared league-wide; only the input
+        widths differ, so the ego model CONFIG materializes the opponent
+        model when forwarded with opponent-shaped observations."""
+        if self._opp_model_proto is None:
+            from protomotions.utils.hydra_replacement import get_class
+
+            model_cls = get_class(self.config.model._target_)
+            proto = model_cls(config=self.config.model).to(self.device)
+            mc = self._opp_max_coords()
+            task = self.env.opponent_obs()["task_obs"]
+            td = TensorDict(
+                {"max_coords_obs": mc, "task_obs": task},
+                batch_size=mc.shape[0],
+            ).to(self.device)
+            with torch.no_grad():
+                proto(td)  # materialize lazy modules at opponent widths
+            proto.eval()
+            for p_ in proto.parameters():
+                p_.requires_grad_(False)
+            self._opp_model_proto = proto
+            from protomotions.agents.league import pool_io
+
+            self._opp_fingerprint = pool_io.state_fingerprint(
+                proto.state_dict()
+            )
+        return self._opp_model_proto
+
+    def _opponent_policy(self, opp_obs: Dict[str, Tensor]) -> Tensor:
+        if self._opp_rc is None:
+            return super()._opponent_policy(opp_obs)
+        self._ensure_league_initialized()
+        if self.pool.members and not self.league_cfg.force_symmetric_inference:
+            return super()._opponent_policy(opp_obs)
+        # Empty pool (the opponent robot's league hasn't published yet) or
+        # forced-symmetric debug: the EGO HLC picks the opponent's latents
+        # from the EGO-shaped obs slice — mechanical sparring through the
+        # opponent body's LLC, the rung-2 fallback. The ego model cannot
+        # consume opponent-shaped obs, so skip the cross-morph obs swap.
+        self._pre_opponent_policy()
+        obs_td = FullModelLeagueMixin._opponent_obs_td(self, opp_obs)
+        with torch.no_grad():
+            out = self.model(obs_td)
+        return out["action"]
+
+    # ---- League mixin overrides (cross-morphology pool identity) -------
+    def _pool_identity(self) -> dict:
+        if self._opp_rc is None:
+            return super()._pool_identity()
+        self._opp_proto_model()
+        return {
+            "robot": self.config.opponent_robot_name,
+            "architecture": self.snapshot_architecture,
+            "fingerprint": self._opp_fingerprint,
+        }
+
+    def _host_own_snapshots(self) -> bool:
+        return self._opp_rc is None
+
+    def _build_lanes(self) -> None:
+        if self._opp_rc is None:
+            return super()._build_lanes()
+        import copy as _copy
+
+        from protomotions.agents.league.lanes import OpponentLanes
+
+        proto = self._opp_proto_model()
+
+        def factory():
+            return _copy.deepcopy(proto)
+
+        def assign_full_state(model, state) -> None:
+            model.load_state_dict(state, strict=True)
+
+        self._lanes = OpponentLanes(
+            model_factory=factory,
+            num_lanes=self.league_cfg.num_lanes,
+            share_frozen_base_with=None,
+            assign_fn=assign_full_state,
+        )
 
     @torch.no_grad()
     def _style_reward(self, obs: Dict[str, Tensor], latents: Tensor) -> Tensor:

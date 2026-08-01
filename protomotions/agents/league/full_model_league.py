@@ -128,8 +128,10 @@ class FullModelLeagueMixin:
     # ------------------------------------------------------------------
     def _own_robot(self) -> str:
         return (
-            getattr(self.env.robot_config, "robot_type", None)
-            or getattr(self.env.robot_config, "name", "unknown")
+            getattr(self.league_cfg, "robot_name", None)
+            or getattr(self.env.robot_config, "robot_type", None)
+            or getattr(self.env.robot_config, "name", None)
+            or "unknown"
         )
 
     def _own_fingerprint(self) -> str:
@@ -138,6 +140,25 @@ class FullModelLeagueMixin:
                 self._unwrapped_model().state_dict()
             )
         return self._own_fingerprint_cache
+
+    def _pool_identity(self) -> dict:
+        """Provenance a snapshot must carry to be HOSTED in this run's lanes.
+
+        Default: this run's own robot/architecture/model shapes. A
+        cross-morphology league (Phase 3) overrides this — its opponent
+        block is a different robot, so the pool hosts THAT robot's
+        families and never its own."""
+        return {
+            "robot": self._own_robot(),
+            "architecture": self.snapshot_architecture,
+            "fingerprint": self._own_fingerprint(),
+        }
+
+    def _host_own_snapshots(self) -> bool:
+        """Whether this run's own snapshots join its own opponent pool.
+        False in cross-morphology leagues (own snapshots are still
+        PUBLISHED for other runs; they just can't fight themselves)."""
+        return True
 
     def _pre_opponent_policy(self) -> None:
         """Per-step hook before opponent inference (e.g. advance latents)."""
@@ -160,10 +181,16 @@ class FullModelLeagueMixin:
 
         if not self.pool.members:  # not already restored from a checkpoint
             self._restore_league_from_disk()
-        if not any(m.family == "" for m in self.pool.members.values()):
+        if (
+            not any(m.family == "" for m in self.pool.members.values())
+            and self._host_own_snapshots()
+        ):
             # Seed with the warm-start weights so first OWN opponents exist —
             # a shared pool may already hold other runs' snapshots, but own-
-            # family gating needs an own seed to measure against.
+            # family gating needs an own seed to measure against. A
+            # cross-morphology league cannot seed itself: until the opponent
+            # robot's runs publish, the symmetric fallback serves the live
+            # ego policy through the opponent body's LLC.
             self._take_snapshot(reason="seed")
 
         self._build_lanes()
@@ -186,13 +213,11 @@ class FullModelLeagueMixin:
         try:
             pool_io.check_compatible(
                 meta,
-                robot=self._own_robot(),
-                architecture=self.snapshot_architecture,
-                fingerprint=self._own_fingerprint(),
                 accept_foreign_rules_era=getattr(
                     self.league_cfg, "accept_foreign_rules_era", False
                 ),
                 path=path.name,
+                **self._pool_identity(),
             )
         except pool_io.SnapshotIncompatible as exc:
             log.info("League pool: not hosting %s (%s)", path.name, exc)
@@ -201,6 +226,14 @@ class FullModelLeagueMixin:
             return ""
         rid = meta.get("run_id") or pool_io.snapshot_run_id(path)
         return "" if rid == self.run_id else pool_io.family_key(meta)
+
+    def _gate_win_rate_signal(self) -> float:
+        """Win rate the snapshot gate compares against gate_win_rate.
+        Own-family when this run fights its own lineage; the whole pool in
+        a cross-morphology league (every member is the opponent robot)."""
+        if self._host_own_snapshots():
+            return self.pool.average_win_rate(family="")
+        return self.pool.average_win_rate()
 
     def _restore_league_from_disk(self) -> None:
         entries = []
@@ -278,9 +311,11 @@ class FullModelLeagueMixin:
         )
         payload["model"] = state
         pool_io.atomic_save(payload, path)
-        member = self.pool.add(
-            str(path), label=path.stem, rating=self.agent_rating, family=""
-        )
+        member = None
+        if self._host_own_snapshots():
+            member = self.pool.add(
+                str(path), label=path.stem, rating=self.agent_rating, family=""
+            )
         self._known_snapshot_paths.add(str(path))
         self._snapshot_counter += 1
         self.games_since_snapshot = 0
@@ -314,13 +349,11 @@ class FullModelLeagueMixin:
             # Last-ditch Phase 0 guard: never assign silently-garbage weights.
             pool_io.check_compatible(
                 state,
-                robot=self._own_robot(),
-                architecture=self.snapshot_architecture,
-                fingerprint=self._own_fingerprint(),
                 accept_foreign_rules_era=getattr(
                     self.league_cfg, "accept_foreign_rules_era", False
                 ),
                 path=member.checkpoint_path,
+                **self._pool_identity(),
             )
         payload = state["model"] if "model" in state else state
         payload = {k: v.to(self.device) for k, v in payload.items()}
@@ -510,7 +543,7 @@ class FullModelLeagueMixin:
                 self._rescan_shared_pool()
             # Gate on OWN-family win rate only: in a shared pool, robot A's
             # league growth must not be gated on beating run B (Phase 1).
-            own_avg = self.pool.average_win_rate(family="")
+            own_avg = self._gate_win_rate_signal()
             pool_avg = self.pool.average_win_rate()
             gated = (
                 self.games_since_snapshot >= cfg.gate_min_games
