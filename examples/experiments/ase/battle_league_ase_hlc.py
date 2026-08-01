@@ -77,6 +77,24 @@ def additional_experiment_arguments(parser: argparse.ArgumentParser):
         "publish snapshots here and ingest compatible snapshots from other "
         "concurrent runs.",
     )
+    parser.add_argument(
+        "--opponent-robot",
+        default=None,
+        help="Robot name for the opponent block (MULTI_ROBOT_LEAGUE_PLAN "
+        "Phase 3): spawns a second articulation per env via "
+        "MultiRobotIsaacLabSimulator. Same-robot values exercise the "
+        "two-entity scene (validation rung 1).",
+    )
+
+
+BATTLE_CONTACT_BODIES = [
+    "all_left_foot_bodies",
+    "all_right_foot_bodies",
+    "all_left_hand_bodies",
+    "all_right_hand_bodies",
+    "head_body_name",
+    "torso_body_name",
+]
 
 
 def configure_robot_and_simulator(
@@ -84,18 +102,21 @@ def configure_robot_and_simulator(
 ):
     # Contact sensors on strike/damage bodies (semantic names resolve
     # per robot). Same list as the GPC battle league.
-    robot_cfg.update_fields(
-        contact_bodies=[
-            "all_left_foot_bodies",
-            "all_right_foot_bodies",
-            "all_left_hand_bodies",
-            "all_right_hand_bodies",
-            "head_body_name",
-            "torso_body_name",
-        ],
-    )
+    robot_cfg.update_fields(contact_bodies=BATTLE_CONTACT_BODIES)
     if hasattr(simulator_cfg, "filter_env_collisions"):
         simulator_cfg.filter_env_collisions = False
+
+    if getattr(args, "opponent_robot", None):
+        # Phase 3: the opponent block hosts its own morphology through the
+        # two-articulation simulator.
+        from protomotions.robot_configs.factory import robot_config as build_robot
+        opp_cfg = build_robot(args.opponent_robot)
+        opp_cfg.update_fields(contact_bodies=BATTLE_CONTACT_BODIES)
+        simulator_cfg.opponent_robot_config = opp_cfg
+        simulator_cfg._target_ = (
+            "protomotions.simulator.isaaclab.multi_robot_simulator."
+            "MultiRobotIsaacLabSimulator"
+        )
 
 
 def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:

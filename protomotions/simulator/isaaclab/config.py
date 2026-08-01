@@ -4,7 +4,7 @@
 """Configuration classes for IsaacLab simulator."""
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Optional
 from protomotions.simulator.base_simulator.config import SimParams, SimulatorConfig
 from protomotions.simulator.isaacgym.config import IsaacGymPhysXParams
 import torch
@@ -84,5 +84,16 @@ class IsaacLabSimulatorConfig(SimulatorConfig):
         metadata={
             "help": "Distance between environment origins in the IsaacLab scene grid.",
             "min": 0.0,
+        },
+    )
+    opponent_robot_config: Optional[Any] = field(
+        default=None,
+        metadata={
+            "help": (
+                "RobotConfig for the opponent block of paired battle envs "
+                "(MULTI_ROBOT_LEAGUE_PLAN Phase 3). Setting this requires "
+                "_target_ to point at MultiRobotIsaacLabSimulator; envs "
+                "[N..2N) then host this robot instead of robot_config."
+            )
         },
     )
