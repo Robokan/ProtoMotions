@@ -1,10 +1,33 @@
 # Multi-Robot Shared League — Design Plan
 
-**Status: PLAN + PARTIAL GROUNDWORK.** Investigated 2026-07-18 by a 4-way code
-survey (league/pool, battle env, simulator, model bundles); every claim below
-carries a file:line reference into the `battle` branch as of `e28746f` —
-line numbers predate the 2026-07-29 league refactor (see status update), but
-the behavioral claims were re-verified 2026-07-30 unless marked otherwise.
+**Status: PHASES 0 + 1 SHIPPED (2026-08-01, commit 29fd807); Phases 2/2b/3/G
+remain.** Investigated 2026-07-18 by a 4-way code survey (league/pool, battle
+env, simulator, model bundles); every claim below carries a file:line
+reference into the `battle` branch as of `e28746f` — line numbers predate the
+2026-07-29 league refactor (see status update), but the behavioral claims
+were re-verified 2026-07-30 unless marked otherwise.
+
+## STATUS UPDATE 2026-08-01 (Phases 0 + 1 shipped)
+
+`agents/league/pool_io.py` + both league homes (`full_model_league.py`,
+`agent.py`) now implement everything in Phase 0 and Phase 1:
+atomic writes, `policy_{run_id}_{counter}.ckpt` names, full provenance
+(run_id/robot/architecture/weight-shape fingerprint/action_dim/
+`game_rules_version="ke1.5-stunko-win500-kick"`/schema v2), loud
+loader-side refusal (`SnapshotIncompatible`), embedded-time ordering,
+`league.shared_pool_dir` (CLI `--shared-pool-dir` on all three league
+experiments), mid-run re-scan every `pool_rescan_epochs`, own-family-only
+gating and stat resets, per-family quotas with family-aware eviction, and
+own-family-aware seeding. ase_hlc snapshots pin their frozen LLC
+(path + mtime + reload count) and the latent contract — the Phase 2b
+bundle wrinkle is pre-solved. Validated by a 22-check unit harness plus
+two concurrent live 128-env HLC leagues sharing one pool dir (both
+directions ingested mid-run; no collisions or torn reads).
+Open decision 1 → resolved as recommended (own-family gating). Open
+decision 5 → rules-era stamp exists; PEFT snapshots now stamped too.
+NOT built (deliberately): file GC for the shared dir (quotas govern pool
+membership, files accumulate), and the optional ratings.jsonl sidecar
+(open decision 2).
 
 ## STATUS UPDATE 2026-07-30 (what has landed since the survey)
 
