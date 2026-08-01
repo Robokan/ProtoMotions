@@ -53,7 +53,29 @@ def _quat_to_mat(q):
     return m
 
 
-def load_npy_frames(npy_path: Path):
+def _lowpass_motion(quats, root_t, fps, cutoff_hz):
+    """Zero-phase Butterworth low-pass on local quats (sign-continuous,
+    renormalized) and root translation. Reallusion mocap carries limb
+    jitter well above real motion frequencies."""
+    from scipy.signal import butter, filtfilt
+
+    nyq = fps / 2.0
+    if cutoff_hz >= nyq:
+        return quats, root_t
+    b, a = butter(2, cutoff_hz / nyq, btype="low")
+    padlen = 3 * (max(len(a), len(b)) - 1)
+    if quats.shape[0] <= padlen:
+        return quats, root_t
+    q = quats.copy()
+    flip = (q[1:] * q[:-1]).sum(-1) < 0.0
+    sign = np.cumprod(np.where(flip, -1.0, 1.0), axis=0)
+    q[1:] *= sign[..., None]
+    q = filtfilt(b, a, q, axis=0)
+    q /= np.linalg.norm(q, axis=-1, keepdims=True).clip(1e-8)
+    return q, filtfilt(b, a, root_t, axis=0)
+
+
+def load_npy_frames(npy_path: Path, lowpass_hz: float = 0.0):
     """poselib npy -> (world_rots {manny_bone: [T,3,3]} y-up, root_pos [T,3]
     y-up meters, fps). Mirrors load_fbx_frames' output conventions."""
     d = np.load(npy_path, allow_pickle=True).item()
@@ -64,6 +86,9 @@ def load_npy_frames(npy_path: Path):
     quats = _unwrap(d["rotation"]).astype(np.float64)              # local xyzw
     root_t = _unwrap(d["root_translation"]).astype(np.float64)     # cm
     fps = int(d.get("fps", 30))
+
+    if lowpass_hz > 0.0:
+        quats, root_t = _lowpass_motion(quats, root_t, fps, lowpass_hz)
 
     local = _quat_to_mat(quats)
     T, J = local.shape[:2]
@@ -98,6 +123,8 @@ def main():
     p.add_argument("--mirror", action="store_true")
     p.add_argument("--max-velocity", type=float, default=15.0)
     p.add_argument("--min-height", type=float, default=-0.05)
+    p.add_argument("--lowpass-hz", type=float, default=0.0,
+                   help="zero-phase Butterworth cutoff on source quats/root (0 = off)")
     p.add_argument("--ignore-filter", action="store_true")
     args = p.parse_args()
 
@@ -120,7 +147,7 @@ def main():
     converted, failed = 0, []
     for f in files:
         try:
-            world_rots, root_pos, fps = load_npy_frames(f)
+            world_rots, root_pos, fps = load_npy_frames(f, lowpass_hz=args.lowpass_hz)
         except Exception as exc:  # noqa: BLE001
             failed.append((f.name, str(exc)))
             continue

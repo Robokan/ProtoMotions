@@ -125,11 +125,33 @@ def gmr_pkl_to_qpos(pkl_path: Path):
     return torch.from_numpy(qpos).float(), float(d.get("fps", 30.0))
 
 
+def _rate_limit(x, dmax):
+    """Per-DOF rate limiter: each step's delta (vs the limited trajectory)
+    is clamped to +-dmax. Rejoins the source within a few frames."""
+    out = x.clone()
+    for t in range(1, x.shape[0]):
+        out[t] = out[t - 1] + (x[t] - out[t - 1]).clamp(-dmax, dmax)
+    return out
+
+
+def clamp_dof_velocities(dof, limits, fps, scale):
+    """Clamp |dof_vel| to scale*limits. Mean of a forward and a backward
+    rate-limit pass — both feasible, so their mean is too, and the
+    symmetric blend avoids the phase lag of a one-directional limiter."""
+    dmax = limits * scale / fps
+    fwd = _rate_limit(dof, dmax)
+    bwd = torch.flip(_rate_limit(torch.flip(dof, [0]), dmax), [0])
+    return 0.5 * (fwd + bwd)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--input-dir", type=Path, required=True)
     ap.add_argument("--output-dir", type=Path, required=True)
     ap.add_argument("--force-remake", action="store_true")
+    ap.add_argument("--clamp-dof-vel", type=float, default=0.0,
+                    help="clamp dof velocities to this fraction of the atlas "
+                         "actuator velocity_limit (0 = off)")
     args = ap.parse_args()
 
     from protomotions.components.pose_lib import (
@@ -140,6 +162,15 @@ def main():
     )
 
     kinematic_info = extract_kinematic_info("protomotions/data/assets/mjcf/atlas.xml")
+
+    vel_limits = None
+    if args.clamp_dof_vel > 0.0:
+        from protomotions.robot_configs.atlas import AtlasRobotConfig
+        info = AtlasRobotConfig().control.control_info
+        vel_limits = torch.tensor(
+            [info[n].velocity_limit for n in kinematic_info.dof_names],
+            dtype=torch.float32,
+        )
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     files = sorted(list(args.input_dir.glob("*.pkl")) + list(args.input_dir.glob("*.npz")))
@@ -166,6 +197,23 @@ def main():
                 kinematic_info, root_pos, joint_rot_mats,
                 multi_dof_decomposition_method="euler_xyz",
             )
+            if vel_limits is not None:
+                clamped = clamp_dof_velocities(
+                    q2[:, 7:], vel_limits, float(round(fps)), args.clamp_dof_vel
+                )
+                if not torch.allclose(clamped, q2[:, 7:]):
+                    q2 = torch.cat([q2[:, :7], clamped], dim=-1)
+                    root_pos, joint_rot_mats = extract_transforms_from_qpos(
+                        kinematic_info, q2
+                    )
+                    motion = fk_from_transforms_with_velocities(
+                        kinematic_info=kinematic_info,
+                        root_pos=root_pos,
+                        joint_rot_mats=joint_rot_mats,
+                        fps=int(round(fps)),
+                        compute_velocities=True,
+                        velocity_max_horizon=3,
+                    )
             motion.dof_pos = q2[:, 7:]
             dv = torch.zeros_like(motion.dof_pos)
             dv[1:] = (motion.dof_pos[1:] - motion.dof_pos[:-1]) * float(round(fps))
