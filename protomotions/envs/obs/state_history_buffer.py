@@ -433,6 +433,28 @@ class StateHistoryBuffer:
             body_contacts: Historical body contacts [len(env_ids), steps, num_contact_bodies].
             actions: Historical actions [len(env_ids), steps, action_dim] or None to zero.
         """
+        # Width tolerance: under a multi-robot simulator the buffer is padded
+        # to max(robot dims) while motion-lib reference states carry the ego
+        # robot's widths — pad bodies/dofs (identity quats for rotations; the
+        # padded slots are sliced off by the ego-width observation views).
+        def _pad_to(t, width, dim, identity_quat=False):
+            if t is None or t.shape[dim] >= width:
+                return t
+            pad_shape = list(t.shape)
+            pad_shape[dim] = width - t.shape[dim]
+            pad = t.new_zeros(pad_shape)
+            if identity_quat:
+                pad[..., 3] = 1.0
+            return torch.cat([t, pad], dim=dim)
+
+        nb, nd = self.rigid_body_pos.shape[2], self.dof_pos.shape[2]
+        rigid_body_pos = _pad_to(rigid_body_pos, nb, 2)
+        rigid_body_rot = _pad_to(rigid_body_rot, nb, 2, identity_quat=True)
+        rigid_body_vel = _pad_to(rigid_body_vel, nb, 2)
+        rigid_body_ang_vel = _pad_to(rigid_body_ang_vel, nb, 2)
+        dof_pos = _pad_to(dof_pos, nd, 2)
+        dof_vel = _pad_to(dof_vel, nd, 2)
+
         self.rigid_body_pos[env_ids] = rigid_body_pos
         self.rigid_body_rot[env_ids] = rigid_body_rot
         self.rigid_body_vel[env_ids] = rigid_body_vel

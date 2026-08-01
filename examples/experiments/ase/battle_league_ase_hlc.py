@@ -128,6 +128,16 @@ def configure_robot_and_simulator(
         )
 
 
+def _multi_robot_action_config(robot_cfg, args: argparse.Namespace):
+    from protomotions.envs.action.action_functions import (
+        make_multi_robot_pd_action_config,
+    )
+
+    return make_multi_robot_pd_action_config(
+        robot_cfg, _opponent_robot_config(args), num_envs=args.num_envs
+    )
+
+
 def _opponent_robot_config(args: argparse.Namespace):
     from protomotions.robot_configs.factory import robot_config as build_robot
 
@@ -198,7 +208,11 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
         control_components={"battle": battle_control},
         observation_components=observation_components,
         reward_components=default_battle_reward_components(dense_scale=dense),
-        action_config=make_pd_action_config(robot_cfg),
+        action_config=(
+            make_pd_action_config(robot_cfg)
+            if not getattr(args, "opponent_robot", None)
+            else _multi_robot_action_config(robot_cfg, args)
+        ),
         # Reference-state init from corpus clips (spawn mid-fight postures).
         motion_manager=MimicMotionManagerConfig(
             init_start_prob=0.2,

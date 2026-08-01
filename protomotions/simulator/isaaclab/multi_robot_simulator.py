@@ -160,6 +160,12 @@ class MultiRobotIsaacLabSimulator(IsaacLabSimulator):
         self._pad_bodies = max(self._nb_a, self._nb_b)
         self._pad_dofs = max(self._nd_a, self._nd_b)
         self._pad_actions = max(self._na_a, self._na_b)
+        # Env-facing state widths: envs allocating sim-state-shaped buffers
+        # (state history, contact forces) must use the PADDED dims, not the
+        # ego robot's (BaseEnv reads these via getattr with ego fallbacks).
+        self.state_num_bodies = self._pad_bodies
+        self.state_num_dofs = self._pad_dofs
+        self.state_action_dim = self._pad_actions
 
         if self._pad_actions != self._na_a:
             # Action buffers were allocated at side A's width; the padded

@@ -319,6 +319,49 @@ def make_pd_action_config(
     }
 
 
+def make_multi_robot_pd_action_config(
+    robot_config,
+    opponent_robot_config,
+    num_envs: int,
+    action_transform: ActionTransform = "tanh",
+    clamp_value: float = 1.0,
+    action_scale: float = 1.0,
+) -> Dict[str, Any]:
+    """Per-SIDE PD action config for cross-morphology battle envs.
+
+    Block A (envs [0..N)) is scaled with the ego robot's PD ranges, block B
+    with the opponent robot's, both zero-padded to max(num_actions) — the
+    padded columns are masked by the multi-robot simulator. Offset/scale
+    become per-env [2N, D] tensors (the action function broadcasts).
+    stiffness/damping stay 1-D at side A's values: BUILT_IN_PD control reads
+    gains from the per-articulation actuator configs, not from here.
+    """
+    cfg_a = make_pd_action_config(
+        robot_config, action_transform, clamp_value, action_scale
+    )
+    cfg_b = make_pd_action_config(
+        opponent_robot_config, action_transform, clamp_value, action_scale
+    )
+    width = max(cfg_a["pd_action_offset"].shape[0], cfg_b["pd_action_offset"].shape[0])
+    half = num_envs // 2
+
+    def per_env(key):
+        out = torch.zeros(num_envs, width, dtype=torch.float32)
+        a, b = cfg_a[key], cfg_b[key]
+        out[:half, : a.shape[0]] = a
+        out[half:, : b.shape[0]] = b
+        return out
+
+    pad_a = width - cfg_a["stiffness"].shape[0]
+    cfg_a.update(
+        pd_action_offset=per_env("pd_action_offset"),
+        pd_action_scale=per_env("pd_action_scale"),
+        stiffness=torch.nn.functional.pad(cfg_a["stiffness"], (0, pad_a)),
+        damping=torch.nn.functional.pad(cfg_a["damping"], (0, pad_a)),
+    )
+    return cfg_a
+
+
 def bm_pd_action(
     action: Tensor,
     pd_action_offset: Tensor,

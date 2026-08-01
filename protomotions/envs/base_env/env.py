@@ -196,8 +196,12 @@ class BaseEnv:
         # Initialized properly after simulator init when we know num_bodies
         self.prev_contact_force_magnitudes = None
 
-        # Action buffers (current step only; previous actions come from state_history)
-        num_actions = robot_config.number_of_actions
+        # Action buffers (current step only; previous actions come from
+        # state_history). A multi-robot simulator takes PADDED action tensors
+        # (max across its robots) — buffers must match its width.
+        num_actions = getattr(
+            self.simulator, "state_action_dim", robot_config.number_of_actions
+        )
         self._current_raw_action = torch.zeros(
             self.num_envs, num_actions, dtype=torch.float, device=self.device
         )
@@ -231,8 +235,14 @@ class BaseEnv:
         ):
             self.robot_config.kinematic_info.to(self.device)
 
-        # Initialize contact force buffer now that we know num_bodies
-        num_bodies = self.robot_config.kinematic_info.num_bodies
+        # Initialize contact force buffer now that we know num_bodies.
+        # A multi-robot simulator pads state tensors to max(num_bodies/
+        # num_dofs/actions) across its robots — state-shaped buffers must
+        # match ITS widths (single-robot sims don't declare them).
+        num_bodies = getattr(
+            self.simulator, "state_num_bodies",
+            self.robot_config.kinematic_info.num_bodies,
+        )
         self.prev_contact_force_magnitudes = torch.zeros(
             self.num_envs, num_bodies, dtype=torch.float, device=self.device
         )
@@ -249,8 +259,14 @@ class BaseEnv:
                 num_envs=self.num_envs,
                 num_history_steps=self.config.num_state_history_steps,
                 num_bodies=num_bodies,
-                num_dofs=self.robot_config.kinematic_info.num_dofs,
-                action_dim=self.robot_config.number_of_actions,
+                num_dofs=getattr(
+                    self.simulator, "state_num_dofs",
+                    self.robot_config.kinematic_info.num_dofs,
+                ),
+                action_dim=getattr(
+                    self.simulator, "state_action_dim",
+                    self.robot_config.number_of_actions,
+                ),
                 num_contact_bodies=len(self.contact_body_ids),
                 anchor_body_index=self.robot_config.anchor_body_index,
                 device=self.device,
@@ -933,16 +949,31 @@ class BaseEnv:
 
         scene_surface_context = self._build_scene_surface_context()
 
+        # Observation kernels must see the EGO robot's widths; a multi-robot
+        # simulator pads state to max(robot dims), so slice the views back.
+        ego_nb = self.robot_config.kinematic_info.num_bodies
+        ego_nd = self.robot_config.kinematic_info.num_dofs
+        mb = ego_nb if getattr(
+            self.simulator, "state_num_bodies", ego_nb) > ego_nb else None
+        md = ego_nd if getattr(
+            self.simulator, "state_num_dofs", ego_nd) > ego_nd else None
+
         # Build context with view wrappers
         ctx = EnvContext(
             # Core state views (wrap RobotState without copying)
-            current=CurrentStateView(current_state, anchor_idx),
-            noisy=CurrentStateView(noisy, anchor_idx),
+            current=CurrentStateView(
+                current_state, anchor_idx, max_bodies=mb, max_dofs=md
+            ),
+            noisy=CurrentStateView(noisy, anchor_idx, max_bodies=mb, max_dofs=md),
             # Historical views (wrap StateHistoryBuffer without copying)
-            historical=HistoricalView(self.state_history, use_noisy=False)
+            historical=HistoricalView(
+                self.state_history, use_noisy=False, max_bodies=mb, max_dofs=md
+            )
             if self.state_history
             else None,
-            noisy_historical=HistoricalView(self.state_history, use_noisy=True)
+            noisy_historical=HistoricalView(
+                self.state_history, use_noisy=True, max_bodies=mb, max_dofs=md
+            )
             if self.state_history
             else None,
             # Actions (historical)

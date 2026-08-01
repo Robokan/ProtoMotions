@@ -102,6 +102,25 @@ class BattleEnv(BaseEnv):
                 kwargs["force_default_mask"] = force_default
         return super().reset(env_ids, **kwargs)
 
+    def compute_ref_reset_state(self, env_ids, motion_ids, motion_times,
+                                sample_flat=False):
+        """Reference resets, DOF-padded to the multi-robot width.
+
+        In cross-morphology mode the sim's state tensors are padded to
+        max(num_dofs) across the two robots; the ego motion lib produces
+        ego-width states (ref resets only ever hit the ego block — the
+        opponent block is forced to default resets), so pad with zeros
+        (the simulator masks padded DOF columns per block)."""
+        states, obj_states = super().compute_ref_reset_state(
+            env_ids, motion_ids, motion_times, sample_flat
+        )
+        width = self.default_reset_state.dof_pos.shape[1]
+        if states.dof_pos is not None and states.dof_pos.shape[1] < width:
+            pad = width - states.dof_pos.shape[1]
+            states.dof_pos = torch.nn.functional.pad(states.dof_pos, (0, pad))
+            states.dof_vel = torch.nn.functional.pad(states.dof_vel, (0, pad))
+        return states, obj_states
+
     def compute_default_reset_state(self, env_ids, sample_flat=False):
         """Default reset, with fall-initialized envs tumbled instead of standing."""
         new_states, new_object_states = super().compute_default_reset_state(

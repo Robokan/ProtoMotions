@@ -112,24 +112,34 @@ class CurrentStateView:
     anchor_ang_vel: Tensor = FieldPath()
     anchor_local_ang_vel: Tensor = FieldPath()
 
-    def __init__(self, state: "RobotState", anchor_idx: int):
+    def __init__(self, state: "RobotState", anchor_idx: int,
+                 max_bodies: int = None, max_dofs: int = None):
         """Initialize CurrentStateView with precomputed derived values.
 
         Args:
             state: The underlying RobotState containing all body poses and velocities.
             anchor_idx: Index of anchor body (typically pelvis) for anchor properties.
+            max_bodies/max_dofs: Slice state tensors to these widths — a
+                multi-robot simulator pads state to max(robot dims), while
+                observation kernels must see the EGO robot's widths.
         """
+        def _b(t):
+            return t[:, :max_bodies] if (t is not None and max_bodies) else t
+
+        def _d(t):
+            return t[:, :max_dofs] if (t is not None and max_dofs) else t
+
         # Store direct values from state
         # Note: state may be RobotState (full) or NoisyObservations (subset),
         # so optional fields use getattr with None default.
-        self.rigid_body_pos = state.rigid_body_pos
-        self.rigid_body_rot = state.rigid_body_rot
-        self.rigid_body_vel = state.rigid_body_vel
-        self.rigid_body_ang_vel = state.rigid_body_ang_vel
-        self.rigid_body_contacts = getattr(state, "rigid_body_contacts", None)
-        self.dof_pos = state.dof_pos
-        self.dof_vel = state.dof_vel
-        self.dof_forces = getattr(state, "dof_forces", None)
+        self.rigid_body_pos = _b(state.rigid_body_pos)
+        self.rigid_body_rot = _b(state.rigid_body_rot)
+        self.rigid_body_vel = _b(state.rigid_body_vel)
+        self.rigid_body_ang_vel = _b(state.rigid_body_ang_vel)
+        self.rigid_body_contacts = _b(getattr(state, "rigid_body_contacts", None))
+        self.dof_pos = _d(state.dof_pos)
+        self.dof_vel = _d(state.dof_vel)
+        self.dof_forces = _d(getattr(state, "dof_forces", None))
         self.anchor_idx = anchor_idx
 
         # Precompute root properties
@@ -191,23 +201,32 @@ class HistoricalView:
     anchor_vel: Tensor = FieldPath()
     anchor_ang_vel: Tensor = FieldPath()
 
-    def __init__(self, buffer: "StateHistoryBuffer", use_noisy: bool = False):
+    def __init__(self, buffer: "StateHistoryBuffer", use_noisy: bool = False,
+                 max_bodies: int = None, max_dofs: int = None):
         """Initialize HistoricalView with precomputed derived values.
 
         Args:
             buffer: The underlying StateHistoryBuffer containing historical state.
             use_noisy: If True, use noisy historical data. If False, use clean data.
+            max_bodies/max_dofs: Slice buffer tensors ([N, steps, B, ...]) to
+                the EGO robot's widths under a padded multi-robot simulator.
         """
         # Determine prefix based on use_noisy
         prefix = "noisy_historical_" if use_noisy else "historical_"
 
+        def _b(t):
+            return t[:, :, :max_bodies] if (t is not None and max_bodies) else t
+
+        def _d(t):
+            return t[:, :, :max_dofs] if (t is not None and max_dofs) else t
+
         # Store direct values from buffer
-        self.rigid_body_pos = getattr(buffer, f"{prefix}rigid_body_pos")
-        self.rigid_body_rot = getattr(buffer, f"{prefix}rigid_body_rot")
-        self.rigid_body_vel = getattr(buffer, f"{prefix}rigid_body_vel")
-        self.rigid_body_ang_vel = getattr(buffer, f"{prefix}rigid_body_ang_vel")
-        self.dof_pos = getattr(buffer, f"{prefix}dof_pos")
-        self.dof_vel = getattr(buffer, f"{prefix}dof_vel")
+        self.rigid_body_pos = _b(getattr(buffer, f"{prefix}rigid_body_pos"))
+        self.rigid_body_rot = _b(getattr(buffer, f"{prefix}rigid_body_rot"))
+        self.rigid_body_vel = _b(getattr(buffer, f"{prefix}rigid_body_vel"))
+        self.rigid_body_ang_vel = _b(getattr(buffer, f"{prefix}rigid_body_ang_vel"))
+        self.dof_pos = _d(getattr(buffer, f"{prefix}dof_pos"))
+        self.dof_vel = _d(getattr(buffer, f"{prefix}dof_vel"))
         self.ground_heights = getattr(buffer, f"{prefix}ground_heights")
 
         # Clean-only fields (not available in noisy version)
