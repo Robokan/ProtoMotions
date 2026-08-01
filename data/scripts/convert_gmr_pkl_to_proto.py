@@ -221,8 +221,10 @@ def main():
             # Atlas: the Foot BODY origin sits 0.076m above the sole plane
             # (measured at rest, mujoco qpos0). Generic offsets sank the sole
             # ~2-3cm under ground.
-            motion.fix_height_per_frame(height_offset=0.056)
-            motion.fix_height(height_offset=0.076)
+            # Sole-plane offsets measured on the 1.68 m asset; the asset
+            # was rescaled x0.9048 to the real 1.52 m Atlas (2026-08-01).
+            motion.fix_height_per_frame(height_offset=0.0507)
+            motion.fix_height(height_offset=0.0688)
             from contact_detection import compute_contact_labels_from_pos_and_vel
             motion.rigid_body_contacts = compute_contact_labels_from_pos_and_vel(
                 motion.rigid_body_pos, motion.rigid_body_vel

@@ -55,7 +55,9 @@ class AtlasRobotConfig(RobotConfig):
         ]
     )
 
-    default_root_height: float = 1.05
+    # Real electric Atlas: 1.52 m tall, 89 kg (asset rescaled 2026-08-01,
+    # x0.9048 from the 1.68 m rig; see retune_atlas_mjcf.py --scale).
+    default_root_height: float = 0.95
 
     asset: RobotAssetConfig = field(
         default_factory=lambda: RobotAssetConfig(

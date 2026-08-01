@@ -28,7 +28,8 @@ import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-TARGET_MASS_KG = 68.04  # 150 lb
+# Real electric Atlas spec (Boston Dynamics 2024): 1.52 m, 89 kg.
+TARGET_MASS_KG = 89.0
 
 # Joint-name pattern -> (effort Nm, velocity rad/s, armature, frictionloss)
 # EngineAI-derived strength-to-weight at 68 kg; distal groups follow the
@@ -60,6 +61,11 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--input", type=Path, required=True)
     ap.add_argument("--output", type=Path, required=True)
+    ap.add_argument(
+        "--scale", type=float, default=1.0,
+        help="Uniform geometry scale (the rig stands 1.68 m; the real "
+        "electric Atlas is 1.52 m -> 0.905).",
+    )
     args = ap.parse_args()
 
     import mujoco
@@ -72,6 +78,43 @@ def main():
 
     tree = ET.parse(args.input)
     root = tree.getroot()
+
+    # 0. Uniform geometry scale: every local offset (body/joint/geom/site/
+    # inertial pos) and every mesh asset scale. Masses are handled by the
+    # density retarget below (computed AFTER scaling, so shrinking geometry
+    # doesn't shrink the mass budget). Quats are scale-invariant.
+    if args.scale != 1.0:
+        k = args.scale
+        for el in root.iter():
+            if el.tag in ("body", "geom", "site", "joint", "inertial", "camera"):
+                pos = el.get("pos")
+                if pos:
+                    el.set("pos", " ".join(
+                        f"{float(v) * k:.8g}" for v in pos.split()))
+            if el.tag == "geom" and el.get("size"):
+                el.set("size", " ".join(
+                    f"{float(v) * k:.8g}" for v in el.get("size").split()))
+            if el.tag == "geom" and el.get("fromto"):
+                el.set("fromto", " ".join(
+                    f"{float(v) * k:.8g}" for v in el.get("fromto").split()))
+            if el.tag == "mesh":
+                sc = el.get("scale") or "1 1 1"
+                el.set("scale", " ".join(
+                    f"{float(v) * k:.8g}" for v in sc.split()))
+        print(f"geometry scaled x{k}")
+        # re-measure the scaled model for the density retarget
+        import tempfile, os as _os
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".xml", dir=args.input.parent, delete=False
+        ) as fh:
+            tree.write(fh, encoding="unicode")
+            tmp = fh.name
+        base = mujoco.MjModel.from_xml_path(tmp)
+        _os.unlink(tmp)
+        base_mass = float(base.body_mass.sum())
+        density_scale = TARGET_MASS_KG / base_mass
+        print(f"scaled mass {base_mass:.1f} kg -> target {TARGET_MASS_KG} kg "
+              f"(density x{density_scale:.4f})")
 
     # 1. Mass: scale EXPLICIT nonzero density attributes only (the rig
     # declares exactly two: visual class density=0, collision default

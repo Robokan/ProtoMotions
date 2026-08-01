@@ -88,6 +88,11 @@ _ATLAS_EXPLICIT = dict(
     # fighters that never faced each other (facing reward pointed the
     # robot's SIDE at the opponent).
     gaze_forward_axis=(0.012, -0.319, 0.948),
+    # Stature-scaled kick shaping: the asset was rescaled to the real
+    # electric Atlas (1.52 m, x0.9048 of the original rig, 2026-08-01) —
+    # the default 0.75/0.40 thresholds assume a ~1.7 m fighter.
+    kick_bonus_height=0.68,
+    kick_bonus_rearm_height=0.36,
 )
 
 _EXPLICIT: Dict[str, dict] = {
