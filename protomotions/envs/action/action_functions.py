@@ -169,6 +169,20 @@ def normalized_pd_fixed_gains_action(
         action = torch.clamp(action, -clamp_value, clamp_value)
 
     batch_size = action.shape[0]
+
+    def _per_side(t):
+        # Side-pair form [2, D] (multi-robot config): row 0 scales the ego
+        # block [0..N), row 1 the opponent block [N..2N) — expanded here so
+        # the config stays num_envs-independent (tournaments/viewers resize).
+        if t.dim() == 2 and t.shape[0] == 2 and batch_size != 2:
+            half = batch_size // 2
+            return torch.cat(
+                [t[0:1].expand(half, -1), t[1:2].expand(batch_size - half, -1)]
+            )
+        return t
+
+    pd_action_offset = _per_side(pd_action_offset)
+    pd_action_scale = _per_side(pd_action_scale)
     processed_action = pd_action_offset + pd_action_scale * action
 
     # Clone outputs for CUDA graphs compatibility
@@ -345,17 +359,21 @@ def make_multi_robot_pd_action_config(
     width = max(cfg_a["pd_action_offset"].shape[0], cfg_b["pd_action_offset"].shape[0])
     half = num_envs // 2
 
-    def per_env(key):
-        out = torch.zeros(num_envs, width, dtype=torch.float32)
+    def per_side(key):
+        # [2, D]: row 0 = ego side, row 1 = opponent side. Expanded to the
+        # live batch inside the action function, so the config works at ANY
+        # num_envs (training resolved configs get reused by the tournament
+        # viewer at small env counts).
+        out = torch.zeros(2, width, dtype=torch.float32)
         a, b = cfg_a[key], cfg_b[key]
-        out[:half, : a.shape[0]] = a
-        out[half:, : b.shape[0]] = b
+        out[0, : a.shape[0]] = a
+        out[1, : b.shape[0]] = b
         return out
 
     pad_a = width - cfg_a["stiffness"].shape[0]
     cfg_a.update(
-        pd_action_offset=per_env("pd_action_offset"),
-        pd_action_scale=per_env("pd_action_scale"),
+        pd_action_offset=per_side("pd_action_offset"),
+        pd_action_scale=per_side("pd_action_scale"),
         stiffness=torch.nn.functional.pad(cfg_a["stiffness"], (0, pad_a)),
         damping=torch.nn.functional.pad(cfg_a["damping"], (0, pad_a)),
     )

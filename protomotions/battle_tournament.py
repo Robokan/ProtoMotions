@@ -231,7 +231,21 @@ def main():
     if args.num_envs is not None:
         if args.num_envs % 2 != 0:
             raise ValueError("--num-envs must be even (2 envs per match)")
+        old_envs = simulator_config.num_envs
         simulator_config.num_envs = args.num_envs
+        # Cross-morphology runs frozen before the side-pair [2, D] action
+        # config carried per-env [2N, D] PD tensors — resample rows
+        # [0, N] into the num_envs-independent side-pair form.
+        action_cfg = getattr(env_config, "action_config", None)
+        if isinstance(action_cfg, dict):
+            for key, value in list(action_cfg.items()):
+                if (
+                    torch.is_tensor(value)
+                    and value.dim() == 2
+                    and value.shape[0] == old_envs
+                    and old_envs > 2
+                ):
+                    action_cfg[key] = value[[0, old_envs // 2]].clone()
 
     # Evaluation never trains: neutralize league growth machinery
     if hasattr(agent_config, "league"):
