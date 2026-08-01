@@ -89,11 +89,12 @@ class BattleEnv(BaseEnv):
             force_default = kwargs.get("force_default_mask")
             fall_subset = self.battle_fall_init_mask[env_ids]
             if self.battle_control._cross_morph:
-                # Cross-morphology: the motion lib belongs to the EGO robot;
-                # reference poses would be garbage on the opponent block, so
-                # block B always resets to default/fall states (per-side
-                # motion libraries are the Phase 3 follow-up).
-                fall_subset = fall_subset | (env_ids >= self.num_matches)
+                # Mixed-morphology arenas: the motion lib belongs to the EGO
+                # robot; envs currently hosting a FOREIGN body reset to
+                # default/fall states (per-family motion libraries are the
+                # follow-up). Ego-family opponents keep reference-state init.
+                active_b = self.simulator.get_active_opponent_mask()
+                fall_subset = fall_subset | active_b[env_ids]
             if fall_subset.any():
                 if force_default is None:
                     force_default = fall_subset.clone()
@@ -101,6 +102,11 @@ class BattleEnv(BaseEnv):
                     force_default = force_default | fall_subset
                 kwargs["force_default_mask"] = force_default
         return super().reset(env_ids, **kwargs)
+
+    def refresh_default_reset_state(self) -> None:
+        """Bust the cached default reset state after a morphology swap
+        (the simulator's default poses are per-env by active family)."""
+        self.__dict__.pop("default_reset_state", None)
 
     def compute_ref_reset_state(self, env_ids, motion_ids, motion_times,
                                 sample_flat=False):

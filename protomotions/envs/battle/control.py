@@ -294,72 +294,67 @@ class BattleControl(ControlComponent):
         else:
             side_b = side_a
         self.strike_group_labels = side_a["group_labels"]
+        # Family table bank (rung 4): 0 = ego robot, 1 = the arena's foreign
+        # body. Every env boots family 0 (pure self-play) and flips per
+        # match via set_opponent_family when the league serves a foreign
+        # snapshot.
+        self._family_bank = [side_a, side_b]
+        self.opponent_family = torch.zeros(
+            self.num_matches, dtype=torch.long, device=device
+        )
 
         half = self.num_matches
+        widths = {
+            "strike": max(len(f["strike_ids"]) for f in self._family_bank),
+            "damage": max(len(f["damage_ids"]) for f in self._family_bank),
+        }
+        self._table_widths = widths
 
-        def per_env(vec_a, vec_b, dtype=torch.long, pad=0):
-            """[2N, max(len)] per-env tensor + validity mask from side rows."""
-            width = max(len(vec_a), len(vec_b))
+        def full_env(vec, width=None, dtype=torch.long, pad=0):
+            """[2N, width] all rows = vec (family-0 boot state) + mask."""
+            width = width or len(vec)
             out = torch.full((num_envs, width), pad, dtype=dtype, device=device)
             mask = torch.zeros(num_envs, width, dtype=torch.bool, device=device)
-            ta = torch.as_tensor(vec_a, dtype=dtype, device=device)
-            tb = torch.as_tensor(vec_b, dtype=dtype, device=device)
-            out[:half, : len(vec_a)] = ta
-            out[half:, : len(vec_b)] = tb
-            mask[:half, : len(vec_a)] = True
-            mask[half:, : len(vec_b)] = True
+            t = torch.as_tensor(vec, dtype=dtype, device=device)
+            out[:, : len(vec)] = t
+            mask[:, : len(vec)] = True
             return out, mask
 
-        # Own-side per-env tables
-        self.key_body_ids, _ = per_env(side_a["key_ids"], side_b["key_ids"])
-        self.head_body_id, _ = per_env([side_a["head_id"]], [side_b["head_id"]])
+        # Own-side per-env tables (family-0 everywhere at boot)
+        self.key_body_ids, _ = full_env(side_a["key_ids"])
+        self.head_body_id, _ = full_env([side_a["head_id"]])
         self.head_body_id = self.head_body_id.squeeze(-1)
-        self.facing_target_body_id, _ = per_env(
-            [side_a["facing_id"]], [side_b["facing_id"]]
-        )
+        self.facing_target_body_id, _ = full_env([side_a["facing_id"]])
         self.facing_target_body_id = self.facing_target_body_id.squeeze(-1)
-        self.kick_foot_body_ids, _ = per_env(side_a["kick_ids"], side_b["kick_ids"])
-        self.damage_body_ids, self._damage_mask = per_env(
-            side_a["damage_ids"], side_b["damage_ids"]
+        self.kick_foot_body_ids, _ = full_env(side_a["kick_ids"])
+        self.damage_body_ids, self._damage_mask = full_env(
+            side_a["damage_ids"], widths["damage"]
         )
-        # Partner-side strike tables: row i indexes the OPPONENT's bodies, so
-        # block A rows carry side B's strike ids and vice versa (the fix for
-        # the "opponent surfaces via ego indices" hole, hit_state.py).
-        self.strike_body_ids, self._strike_mask = per_env(
-            side_b["strike_ids"], side_a["strike_ids"]
+        # Partner-side strike tables: row i indexes the OPPONENT's bodies.
+        self.strike_body_ids, self._strike_mask = full_env(
+            side_a["strike_ids"], widths["strike"]
         )
-        strike_groups_pe, _ = per_env(side_b["groups"], side_a["groups"])
-        strike_mults_pe, _ = per_env(
-            side_b["strike_mults"], side_a["strike_mults"], dtype=torch.float
+        strike_groups_pe, _ = full_env(side_a["groups"], widths["strike"])
+        strike_mults_pe, _ = full_env(
+            side_a["strike_mults"], widths["strike"], dtype=torch.float
         )
-        damage_mults_pe, _ = per_env(
-            side_a["damage_mults"], side_b["damage_mults"], dtype=torch.float
+        damage_mults_pe, _ = full_env(
+            side_a["damage_mults"], widths["damage"], dtype=torch.float
         )
-        self._stun_region_weights, _ = per_env(
-            side_a["stun_weights"], side_b["stun_weights"], dtype=torch.float
+        self._stun_region_weights, _ = full_env(
+            side_a["stun_weights"], widths["damage"], dtype=torch.float
         )
-        # Per-side scalars broadcast per env (stature-dependent rules)
-        def scalar_pe(a, b):
-            t = torch.full((num_envs,), float(a), device=device)
-            t[half:] = float(b)
-            return t
-        self.knockdown_height_pe = scalar_pe(
-            side_a["knockdown_height"], side_b["knockdown_height"]
-        )
-        self.kick_bonus_height_pe = scalar_pe(
-            side_a["kick_bonus_height"], side_b["kick_bonus_height"]
-        )
-        self.kick_bonus_rearm_pe = scalar_pe(
-            side_a["kick_bonus_rearm_height"], side_b["kick_bonus_rearm_height"]
-        )
-        self.default_root_height_pe = scalar_pe(
-            side_a["default_root_height"], side_b["default_root_height"]
-        )
-        gaze_pe = torch.zeros(num_envs, 3, device=device)
-        gaze_pe[:half] = torch.tensor(side_a["gaze_axis"], device=device)
-        gaze_pe[half:] = torch.tensor(side_b["gaze_axis"], device=device)
-        self._gaze_axis_pe = gaze_pe
+        def scalar_pe(a):
+            return torch.full((num_envs,), float(a), device=device)
+        self.knockdown_height_pe = scalar_pe(side_a["knockdown_height"])
+        self.kick_bonus_height_pe = scalar_pe(side_a["kick_bonus_height"])
+        self.kick_bonus_rearm_pe = scalar_pe(side_a["kick_bonus_rearm_height"])
+        self.default_root_height_pe = scalar_pe(side_a["default_root_height"])
+        self._gaze_axis_pe = torch.tensor(
+            side_a["gaze_axis"], device=device, dtype=torch.float
+        ).expand(num_envs, 3).contiguous()
         self._side_strike_ids = (side_a["strike_ids"], side_b["strike_ids"])
+        self._family_strike_masses = [None] * len(self._family_bank)
 
         self.hit_state = BattleHitState(
             num_envs=num_envs,
@@ -377,8 +372,6 @@ class BattleControl(ControlComponent):
             reward_from_event_ke=config.raw_health_damage,
             damage_mask=self._damage_mask,
             strike_mask=self._strike_mask,
-            # Per-block reward scale only when the sides are different robots
-            e0_block_split=half if self._cross_morph else None,
         )
         self._stun_region_weights = self._stun_region_weights * self._damage_mask
 
@@ -429,6 +422,83 @@ class BattleControl(ControlComponent):
         self.facing = torch.zeros(num_envs, device=device)
         self.facing_delta = torch.zeros(num_envs, device=device)
         self._prev_facing = torch.full((num_envs,), -1.0, device=device)
+
+    def set_opponent_family(self, match_ids: Tensor, families: Tensor) -> None:
+        """Re-point per-env tables for matches whose opponent family changed.
+
+        Row j = N + match carries the OPPONENT's own-side tables; row i =
+        match carries the ego's partner-side (strike) tables — both flip
+        with the opponent's family. The ego row's own tables and the
+        opponent row's strike tables (its partner is always the ego robot)
+        never change."""
+        changed = self.opponent_family[match_ids] != families
+        if not changed.any():
+            return
+        match_ids = match_ids[changed]
+        families = families[changed]
+        self.opponent_family[match_ids] = families
+        device = self.env.device
+        hs = self.hit_state
+        for fam in families.unique().tolist():
+            bank = self._family_bank[fam]
+            rows_j = (match_ids[families == fam] + self.num_matches).to(device)
+            rows_i = match_ids[families == fam].to(device)
+
+            def fill(dst, vec, rows, mask=None, dtype=None):
+                t = torch.as_tensor(vec, device=device,
+                                    dtype=dtype or dst.dtype)
+                dst[rows] = 0 if dst.dtype != torch.bool else False
+                dst[rows.unsqueeze(-1),
+                    torch.arange(len(vec), device=device)] = t
+                if mask is not None:
+                    mask[rows] = False
+                    mask[rows.unsqueeze(-1),
+                         torch.arange(len(vec), device=device)] = True
+
+            # Opponent row: its own body tables
+            fill(self.key_body_ids, bank["key_ids"], rows_j)
+            self.head_body_id[rows_j] = int(bank["head_id"])
+            self.facing_target_body_id[rows_j] = int(bank["facing_id"])
+            fill(self.kick_foot_body_ids, bank["kick_ids"], rows_j)
+            fill(self.damage_body_ids, bank["damage_ids"], rows_j,
+                 self._damage_mask)
+            fill(hs.damage_body_ids, bank["damage_ids"], rows_j)
+            hs.damage_mask[rows_j] = self._damage_mask[rows_j]
+            fill(hs.damage_multipliers, bank["damage_mults"], rows_j)
+            fill(self._stun_region_weights, bank["stun_weights"], rows_j)
+            self.knockdown_height_pe[rows_j] = bank["knockdown_height"]
+            self.kick_bonus_height_pe[rows_j] = bank["kick_bonus_height"]
+            self.kick_bonus_rearm_pe[rows_j] = bank["kick_bonus_rearm_height"]
+            self.default_root_height_pe[rows_j] = bank["default_root_height"]
+            self._gaze_axis_pe[rows_j] = torch.tensor(
+                bank["gaze_axis"], device=device, dtype=torch.float
+            )
+            # Ego row: partner-side strike tables point at the new opponent
+            fill(self.strike_body_ids, bank["strike_ids"], rows_i,
+                 self._strike_mask)
+            fill(hs.strike_body_ids, bank["strike_ids"], rows_i)
+            hs.strike_mask[rows_i] = self._strike_mask[rows_i]
+            if hs.strike_body_groups is not None:
+                fill(hs.strike_body_groups, bank["groups"], rows_i)
+            if hs.strike_multipliers is not None:
+                fill(hs.strike_multipliers, bank["strike_mults"], rows_i)
+            if hs.strike_body_masses is not None:
+                masses = self._family_strike_mass(fam)
+                if masses is not None:
+                    fill(hs.strike_body_masses, masses, rows_i)
+
+    def _family_strike_mass(self, fam: int):
+        """Strike-limb masses (kg) for one family, from the simulator."""
+        if self._family_strike_masses[fam] is None:
+            get = getattr(self.env.simulator, "get_body_masses_for", None)
+            if get is not None:
+                body_masses = get(family_b=(fam == 1))
+                ids = torch.as_tensor(
+                    self._family_bank[fam]["strike_ids"],
+                    device=body_masses.device,
+                )
+                self._family_strike_masses[fam] = body_masses[ids]
+        return self._family_strike_masses[fam]
 
     @staticmethod
     def _gather_body(t: Tensor, ids: Tensor) -> Tensor:
@@ -645,26 +715,33 @@ class BattleControl(ControlComponent):
         # (masses are only available once the sim articulation is initialized).
         if cfg.raw_health_damage and self.hit_state.strike_body_masses is None:
             try:
-                masses = env.simulator.get_body_masses()  # [2N, B] common order
-                # Row i's strike columns index the PARTNER robot's bodies, so
-                # the mass vectors come from each block's own rows and swap
-                # sides (fixes the masses.mean(dim=0) single-morphology
-                # collapse for mixed pools).
+                # Row i's strike columns index the PARTNER robot's bodies:
+                # per-family mass vectors, laid out by the current opponent
+                # assignment (all-ego at boot; set_opponent_family refreshes
+                # rows when a foreign opponent moves in).
                 half = self.num_matches
-                ids_a, ids_b = self._side_strike_ids
-                mass_a = masses[:half].mean(dim=0)[ids_a.to(masses.device)]
-                mass_b = masses[half:].mean(dim=0)[ids_b.to(masses.device)]
                 width = self.strike_body_ids.shape[1]
-                mass_pe = torch.zeros(
-                    env.num_envs, width, device=masses.device
-                )
-                mass_pe[:half, : len(mass_b)] = mass_b  # partners of block A
-                mass_pe[half:, : len(mass_a)] = mass_a
+                if hasattr(env.simulator, "get_body_masses_for"):
+                    mass_ego = self._family_strike_mass(0)
+                else:
+                    masses = env.simulator.get_body_masses()
+                    ids = torch.as_tensor(
+                        self._family_bank[0]["strike_ids"], device=masses.device
+                    )
+                    mass_ego = masses.mean(dim=0)[ids]
+                    self._family_strike_masses[0] = mass_ego
+                mass_pe = torch.zeros(env.num_envs, width, device=env.device)
+                mass_pe[:, : len(mass_ego)] = mass_ego.to(env.device)
                 self.hit_state.set_strike_body_masses(mass_pe)
+                # Re-stamp any matches already hosting a foreign family.
+                foreign = (self.opponent_family != 0).nonzero(as_tuple=False).flatten()
+                if len(foreign) > 0:
+                    fams = self.opponent_family[foreign].clone()
+                    self.opponent_family[foreign] = 0  # force refresh
+                    self.set_opponent_family(foreign, fams)
                 log.info(
-                    "KE damage: strike-limb masses (kg) = A%s / B%s",
-                    [round(float(m), 2) for m in mass_a],
-                    [round(float(m), 2) for m in mass_b],
+                    "KE damage: ego strike-limb masses (kg) = %s",
+                    [round(float(m), 2) for m in mass_ego],
                 )
             except NotImplementedError:
                 log.warning(

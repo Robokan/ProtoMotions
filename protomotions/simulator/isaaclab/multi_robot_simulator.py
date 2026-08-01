@@ -148,8 +148,16 @@ class MultiRobotIsaacLabSimulator(IsaacLabSimulator):
         if self.num_envs % 2 != 0:
             raise ValueError("Multi-robot battle envs must come in pairs")
         half = self.num_envs // 2
-        self._block_a = torch.arange(0, half, device=self.device)
-        self._block_b = torch.arange(half, self.num_envs, device=self.device)
+        self._half = half
+        # Per-env active morphology (MULTI_ROBOT_LEAGUE_PLAN rung 4): robot B
+        # is active only where the league assigned an opponent of that
+        # family. Boot state: robot A everywhere (pure self-play) — the ego
+        # half [0..N) is A permanently; the opponent half flips per match
+        # via set_active_morphology().
+        self._active_b = torch.zeros(
+            self.num_envs, dtype=torch.bool, device=self.device
+        )
+        self._refresh_active_rows()
 
         ki_a = self.robot_config.kinematic_info
         ki_b = opp_config.kinematic_info
@@ -185,6 +193,42 @@ class MultiRobotIsaacLabSimulator(IsaacLabSimulator):
                 "Domain randomization is not supported by the multi-robot "
                 "simulator yet (single root_physx_view assumptions)"
             )
+
+    def _refresh_active_rows(self) -> None:
+        self._rows_a = (~self._active_b).nonzero(as_tuple=False).flatten()
+        self._rows_b = self._active_b.nonzero(as_tuple=False).flatten()
+
+    def set_active_morphology(self, env_ids: torch.Tensor, use_b: torch.Tensor) -> None:
+        """Flip which articulation is live in the given OPPONENT-half envs.
+
+        Called by the league when an arena's sampled opponent changes
+        family; the caller resets those envs immediately after, so only the
+        newly-INACTIVE twin needs parking here."""
+        if (env_ids < self._half).any():
+            raise ValueError("ego-half envs host the ego robot permanently")
+        changed = self._active_b[env_ids] != use_b
+        if not changed.any():
+            return
+        ids = env_ids[changed]
+        self._active_b[ids] = use_b[changed]
+        self._refresh_active_rows()
+        now_b = self._active_b[ids]
+        self._park_twin_rows(self._robot, ids[now_b], TWIN_PARK_Z)
+        self._park_twin_rows(self._robot_b, ids[~now_b], TWIN_PARK_Z - 10.0)
+
+    def get_active_opponent_mask(self) -> torch.Tensor:
+        """[num_envs] bool: True where robot B is the live articulation."""
+        return self._active_b.clone()
+
+    def get_body_masses_for(self, family_b: bool) -> torch.Tensor:
+        """Common-order body masses [nb] for one robot family."""
+        if family_b:
+            return self._robot_b.data.default_mass.to(self.device)[0][
+                self.data_conversion_b.body_convert_to_common
+            ]
+        return self._robot.data.default_mass.to(self.device)[0][
+            self.data_conversion.body_convert_to_common
+        ]
 
     # ------------------------------------------------------------------
     # Scene / views
@@ -225,8 +269,8 @@ class MultiRobotIsaacLabSimulator(IsaacLabSimulator):
         ego block never fight; they sit at TWIN_PARK_Z (staggered so the two
         parked shelves cannot interpenetrate) with zeroed velocities.
         """
-        self._park_twin_rows(self._robot, self._block_b, TWIN_PARK_Z)
-        self._park_twin_rows(self._robot_b, self._block_a, TWIN_PARK_Z - 10.0)
+        self._park_twin_rows(self._robot, self._rows_b, TWIN_PARK_Z)
+        self._park_twin_rows(self._robot_b, self._rows_a, TWIN_PARK_Z - 10.0)
 
     def _park_twin_rows(self, robot, rows: torch.Tensor, park_z: float) -> None:
         if rows.numel() == 0:
@@ -288,14 +332,24 @@ class MultiRobotIsaacLabSimulator(IsaacLabSimulator):
     # Padded per-block state getters
     # ------------------------------------------------------------------
     def _pad_cat(self, a: torch.Tensor, b: torch.Tensor, width: int) -> torch.Tensor:
-        """Cat block tensors along dim 0, zero-padding dim 1 to ``width``."""
+        """Scatter per-family tensors into env order, zero-padding dim 1.
+
+        ``a`` rows correspond to self._rows_a, ``b`` to self._rows_b (the
+        getters take rows in that order). With contiguous blocks this
+        reduces to the original block cat."""
         def pad(t):
             if t.shape[1] == width:
                 return t
             shape = list(t.shape)
             shape[1] = width - t.shape[1]
             return torch.cat([t, torch.zeros(shape, device=t.device, dtype=t.dtype)], dim=1)
-        return torch.cat([pad(a), pad(b)], dim=0)
+        a, b = pad(a), pad(b)
+        out = torch.zeros(
+            (self.num_envs,) + tuple(a.shape[1:]), device=a.device, dtype=a.dtype
+        )
+        out[self._rows_a] = a
+        out[self._rows_b] = b
+        return out
 
     @staticmethod
     def _rows(t: torch.Tensor, rows: torch.Tensor) -> torch.Tensor:
@@ -316,8 +370,8 @@ class MultiRobotIsaacLabSimulator(IsaacLabSimulator):
     def get_root_state(self, env_ids: Optional[torch.Tensor] = None) -> RootOnlyState:
         states = []
         for robot, rows, conv in (
-            (self._robot, self._block_a, self.data_conversion),
-            (self._robot_b, self._block_b, self.data_conversion_b),
+            (self._robot, self._rows_a, self.data_conversion),
+            (self._robot_b, self._rows_b, self.data_conversion_b),
         ):
             states.append(
                 RootOnlyState(
@@ -330,10 +384,10 @@ class MultiRobotIsaacLabSimulator(IsaacLabSimulator):
             )
         a, b = states
         merged = RootOnlyState(
-            root_pos=torch.cat([a.root_pos, b.root_pos]),
-            root_rot=torch.cat([a.root_rot, b.root_rot]),
-            root_vel=torch.cat([a.root_vel, b.root_vel]),
-            root_ang_vel=torch.cat([a.root_ang_vel, b.root_ang_vel]),
+            root_pos=self._pad_cat(a.root_pos, b.root_pos, 3),
+            root_rot=self._pad_cat(a.root_rot, b.root_rot, 4),
+            root_vel=self._pad_cat(a.root_vel, b.root_vel, 3),
+            root_ang_vel=self._pad_cat(a.root_ang_vel, b.root_ang_vel, 3),
             state_conversion=StateConversion.COMMON,
         )
         return merged[env_ids] if env_ids is not None else merged
@@ -341,8 +395,8 @@ class MultiRobotIsaacLabSimulator(IsaacLabSimulator):
     def get_bodies_state(self, env_ids: Optional[torch.Tensor] = None) -> RobotState:
         states = []
         for robot, rows, conv, nb in (
-            (self._robot, self._block_a, self.data_conversion, self._nb_a),
-            (self._robot_b, self._block_b, self.data_conversion_b, self._nb_b),
+            (self._robot, self._rows_a, self.data_conversion, self._nb_a),
+            (self._robot_b, self._rows_b, self.data_conversion_b, self._nb_b),
         ):
             states.append(
                 RobotState(
@@ -376,8 +430,8 @@ class MultiRobotIsaacLabSimulator(IsaacLabSimulator):
     def get_dof_state(self, env_ids: Optional[torch.Tensor] = None) -> RobotState:
         states = []
         for robot, rows, conv in (
-            (self._robot, self._block_a, self.data_conversion),
-            (self._robot_b, self._block_b, self.data_conversion_b),
+            (self._robot, self._rows_a, self.data_conversion),
+            (self._robot_b, self._rows_b, self.data_conversion_b),
         ):
             states.append(
                 RobotState(
@@ -397,8 +451,8 @@ class MultiRobotIsaacLabSimulator(IsaacLabSimulator):
     def get_dof_forces(self, env_ids: Optional[torch.Tensor] = None) -> RobotState:
         states = []
         for robot, rows, conv in (
-            (self._robot, self._block_a, self.data_conversion),
-            (self._robot_b, self._block_b, self.data_conversion_b),
+            (self._robot, self._rows_a, self.data_conversion),
+            (self._robot_b, self._rows_b, self.data_conversion_b),
         ):
             states.append(
                 RobotState(
@@ -416,9 +470,9 @@ class MultiRobotIsaacLabSimulator(IsaacLabSimulator):
     def get_bodies_contact_buf(self, env_ids: Optional[torch.Tensor] = None) -> RobotState:
         states = []
         for robot, rows, conv, nb, sensor_map in (
-            (self._robot, self._block_a, self.data_conversion, self._nb_a,
+            (self._robot, self._rows_a, self.data_conversion, self._nb_a,
              self._contact_sensor_map),
-            (self._robot_b, self._block_b, self.data_conversion_b, self._nb_b,
+            (self._robot_b, self._rows_b, self.data_conversion_b, self._nb_b,
              self._contact_sensor_map_b),
         ):
             forces = torch.zeros(self.num_envs, nb, 3, device=self.device)
@@ -444,10 +498,10 @@ class MultiRobotIsaacLabSimulator(IsaacLabSimulator):
         return merged[env_ids] if env_ids is not None else merged
 
     def get_body_masses(self) -> torch.Tensor:
-        a = self._robot.data.default_mass.to(self.device)[self._block_a][
+        a = self._robot.data.default_mass.to(self.device)[self._rows_a][
             :, self.data_conversion.body_convert_to_common
         ]
-        b = self._robot_b.data.default_mass.to(self.device)[self._block_b][
+        b = self._robot_b.data.default_mass.to(self.device)[self._rows_b][
             :, self.data_conversion_b.body_convert_to_common
         ]
         return self._pad_cat(a, b, self._pad_bodies)
@@ -458,14 +512,16 @@ class MultiRobotIsaacLabSimulator(IsaacLabSimulator):
     def get_default_robot_reset_state(self) -> ResetState:
         """Per-side default pose: block A rows carry robot A's default pose
         and stance height, block B rows robot B's (dof width padded)."""
-        state = super().get_default_robot_reset_state()  # side A everywhere
+        state = super().get_default_robot_reset_state()  # family A everywhere
         state.dof_pos = self._fit_width(state.dof_pos, self._pad_dofs)
         state.dof_vel = self._fit_width(state.dof_vel, self._pad_dofs)
-        opp = self.opp_robot_config
-        dof_b = opp.default_dof_pos.to(self.device)
-        state.dof_pos[self._block_b, : dof_b.shape[0]] = dof_b.unsqueeze(0)
-        state.dof_pos[self._block_b, dof_b.shape[0]:] = 0.0
-        state.root_pos[self._block_b, 2] = opp.default_root_height
+        rows_b = self._rows_b
+        if rows_b.numel() > 0:
+            opp = self.opp_robot_config
+            dof_b = opp.default_dof_pos.to(self.device)
+            state.dof_pos[rows_b, : dof_b.shape[0]] = dof_b.unsqueeze(0)
+            state.dof_pos[rows_b, dof_b.shape[0]:] = 0.0
+            state.root_pos[rows_b, 2] = opp.default_root_height
         return state
 
     # ------------------------------------------------------------------
@@ -474,18 +530,19 @@ class MultiRobotIsaacLabSimulator(IsaacLabSimulator):
     def _apply_control(self) -> None:
         if self.control_type == ControlType.BUILT_IN_PD:
             targets = self._common_actions
-            ta = targets[self._block_a][:, : self._nd_a][
+            ta = targets[self._rows_a][:, : self._nd_a][
                 :, self.data_conversion.dof_convert_to_sim
             ]
             self._robot.set_joint_position_target(
-                ta, joint_ids=None, env_ids=self._block_a
+                ta, joint_ids=None, env_ids=self._rows_a
             )
-            tb = targets[self._block_b][:, : self._nd_b][
-                :, self.data_conversion_b.dof_convert_to_sim
-            ]
-            self._robot_b.set_joint_position_target(
-                tb, joint_ids=None, env_ids=self._block_b
-            )
+            if self._rows_b.numel() > 0:
+                tb = targets[self._rows_b][:, : self._nd_b][
+                    :, self.data_conversion_b.dof_convert_to_sim
+                ]
+                self._robot_b.set_joint_position_target(
+                    tb, joint_ids=None, env_ids=self._rows_b
+                )
         else:
             raise NotImplementedError(
                 f"Multi-robot simulator supports BUILT_IN_PD only, got "
@@ -513,8 +570,7 @@ class MultiRobotIsaacLabSimulator(IsaacLabSimulator):
         self._prev_prev_actions[env_ids] = 0.0
         self._steps_since_reset[env_ids] = 0
 
-        half = self.num_envs // 2
-        in_a = env_ids < half
+        in_a = ~self._active_b[env_ids]
         for robot, conv, nd, ids, sel in (
             (self._robot, self.data_conversion, self._nd_a, env_ids[in_a], in_a),
             (self._robot_b, self.data_conversion_b, self._nd_b,
@@ -542,6 +598,8 @@ class MultiRobotIsaacLabSimulator(IsaacLabSimulator):
         # Re-park the reset envs' inactive twins: bounds free-fall drift.
         self._park_twin_rows(self._robot, env_ids[~in_a], TWIN_PARK_Z)
         self._park_twin_rows(self._robot_b, env_ids[in_a], TWIN_PARK_Z - 10.0)
+        # Newly reset root/dof states land on the ACTIVE twin; make sure the
+        # state caches see them this step.
 
         if self._push_enabled:
             self._simulation_time[env_ids] = 0.0

@@ -145,6 +145,8 @@ class BattleTournament:
         ):
             return self._held_opp
         obs_td = self.agent._opponent_obs_td(opp_obs)
+        if getattr(self, "_opponent_is_foreign", False):
+            obs_td["max_coords_obs"] = obs_td["max_coords_obs_foreign"]
         with torch.no_grad(), self._autocast():
             out = self._opponent_model(obs_td)
         key = "mean_action" if self.deterministic and "mean_action" in out else "action"
@@ -172,7 +174,34 @@ class BattleTournament:
         lanes = self.agent._lanes
         state = torch.load(adapter_path, map_location=self.device, weights_only=False)
         adapter_state = state["model"] if "model" in state else state
-        adapter_state = {k: v.to(self.device) for k, v in adapter_state.items()}
+        self._opponent_is_foreign = False
+        if hasattr(lanes, "own"):
+            # Mixed-morphology league (FamilyLanesRouter): route by the
+            # snapshot's robot provenance and flip every arena's opponent
+            # half to the matching body.
+            robot = state.get("robot") if isinstance(state, dict) else None
+            own_robot = getattr(self.agent.league_cfg, "robot_name", None)
+            foreign = (
+                robot is not None
+                and robot == getattr(
+                    self.agent.config, "opponent_robot_name", None
+                )
+                and robot != own_robot
+            )
+            self._opponent_is_foreign = foreign
+            lanes = lanes.foreign if foreign else lanes.own
+            env = self.agent.env
+            n = env.num_matches
+            opp_rows = torch.arange(n, 2 * n, device=self.device)
+            use_b = torch.full((n,), foreign, dtype=torch.bool, device=self.device)
+            env.simulator.set_active_morphology(opp_rows, use_b)
+            env.inner_env.battle_control.set_opponent_family(
+                torch.arange(n, device=self.device), use_b.long()
+            )
+            env.inner_env.refresh_default_reset_state()
+        adapter_state = {
+            k: v.to(self.device) for k, v in adapter_state.items()
+        }
         lanes.lane_member = [None] * lanes.num_lanes
         lanes.assign(0, adapter_state)
         self._opponent_model = lanes.lanes[lanes._lane_of(0)]

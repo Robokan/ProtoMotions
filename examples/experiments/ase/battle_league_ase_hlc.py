@@ -78,6 +78,16 @@ def additional_experiment_arguments(parser: argparse.ArgumentParser):
         "concurrent runs.",
     )
     parser.add_argument(
+        "--arena-bodies",
+        default=None,
+        help="Comma list of OTHER robot morphologies this league's arenas "
+        "can host (MULTI_ROBOT_LEAGUE_PLAN rung 4). The league always "
+        "trains --robot-name and self-plays into the pool; snapshots of "
+        "arena-body robots published by THEIR trainings are fought when "
+        "the shared pool serves them (their LLC resolves from snapshot "
+        "provenance). Currently at most ONE foreign body.",
+    )
+    parser.add_argument(
         "--opponent-llc-checkpoint",
         type=str,
         default=None,
@@ -115,11 +125,11 @@ def configure_robot_and_simulator(
     if hasattr(simulator_cfg, "filter_env_collisions"):
         simulator_cfg.filter_env_collisions = False
 
-    if getattr(args, "opponent_robot", None):
+    if _arena_body(args):
         # Phase 3: the opponent block hosts its own morphology through the
         # two-articulation simulator.
         from protomotions.robot_configs.factory import robot_config as build_robot
-        opp_cfg = build_robot(args.opponent_robot)
+        opp_cfg = build_robot(_arena_body(args))
         opp_cfg.update_fields(contact_bodies=BATTLE_CONTACT_BODIES)
         simulator_cfg.opponent_robot_config = opp_cfg
         simulator_cfg._target_ = (
@@ -138,10 +148,25 @@ def _multi_robot_action_config(robot_cfg, args: argparse.Namespace):
     )
 
 
+def _arena_body(args: argparse.Namespace):
+    """The single foreign morphology this run's arenas can host (or None).
+    --arena-bodies is the rung-4 spelling; --opponent-robot the legacy one."""
+    bodies = getattr(args, "arena_bodies", None)
+    if bodies:
+        names = [b.strip() for b in bodies.split(",") if b.strip()]
+        if len(names) > 1:
+            raise ValueError(
+                "Only one foreign arena body is supported so far "
+                f"(got {names}); run additional pairings as separate leagues."
+            )
+        return names[0]
+    return getattr(args, "opponent_robot", None)
+
+
 def _opponent_robot_config(args: argparse.Namespace):
     from protomotions.robot_configs.factory import robot_config as build_robot
 
-    return build_robot(args.opponent_robot)
+    return build_robot(_arena_body(args))
 
 
 def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
@@ -189,12 +214,12 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
         stun_gates_ko=True,
         **battle_table_kwargs(robot_cfg, args.robot_name),
     )
-    if getattr(args, "opponent_robot", None):
+    if _arena_body(args):
         # Phase 3: the opponent block's body tables come from ITS robot.
         from protomotions.robot_configs.factory import robot_config as build_robot
-        opp_cfg = build_robot(args.opponent_robot)
+        opp_cfg = build_robot(_arena_body(args))
         battle_control.opponent_tables = dict(
-            battle_table_kwargs(opp_cfg, args.opponent_robot),
+            battle_table_kwargs(opp_cfg, _arena_body(args)),
             body_names=list(opp_cfg.kinematic_info.body_names),
             default_root_height=opp_cfg.default_root_height,
         )
@@ -210,7 +235,7 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
         reward_components=default_battle_reward_components(dense_scale=dense),
         action_config=(
             make_pd_action_config(robot_cfg)
-            if not getattr(args, "opponent_robot", None)
+            if not _arena_body(args)
             else _multi_robot_action_config(robot_cfg, args)
         ),
         # Reference-state init from corpus clips (spawn mid-fight postures).
@@ -336,11 +361,9 @@ def agent_config(
                 else {}
             ),
         ),
-        opponent_robot_name=getattr(args, "opponent_robot", None),
+        opponent_robot_name=_arena_body(args),
         opponent_robot_config=(
-            _opponent_robot_config(args)
-            if getattr(args, "opponent_llc_checkpoint", None)
-            else None
+            _opponent_robot_config(args) if _arena_body(args) else None
         ),
         model=PPOModelConfig(
             in_keys=hlc_in_keys,

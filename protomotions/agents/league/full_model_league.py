@@ -154,11 +154,23 @@ class FullModelLeagueMixin:
             "fingerprint": self._own_fingerprint(),
         }
 
+    def _pool_identities(self) -> list:
+        """All snapshot identities this run's lanes can host. Index 0 is
+        the run's OWN identity; mixed-morphology leagues append the arena's
+        foreign bodies."""
+        return [self._pool_identity()]
+
     def _host_own_snapshots(self) -> bool:
         """Whether this run's own snapshots join its own opponent pool.
         False in cross-morphology leagues (own snapshots are still
         PUBLISHED for other runs; they just can't fight themselves)."""
         return True
+
+    def _on_snapshot_ingested(self, meta: dict) -> None:
+        """Hook: a compatible snapshot joined the pool (restore or rescan).
+        The cross-morphology league resolves its opponent LLC from the
+        snapshot's provenance pin here."""
+
 
     def _pre_opponent_policy(self) -> None:
         """Per-step hook before opponent inference (e.g. advance latents)."""
@@ -210,18 +222,27 @@ class FullModelLeagueMixin:
         is own lineage (legacy behavior); in a shared pool only files stamped
         with this run's id are own, the rest join per-family quotas.
         """
-        try:
-            pool_io.check_compatible(
-                meta,
-                accept_foreign_rules_era=getattr(
-                    self.league_cfg, "accept_foreign_rules_era", False
-                ),
-                path=path.name,
-                **self._pool_identity(),
-            )
-        except pool_io.SnapshotIncompatible as exc:
-            log.info("League pool: not hosting %s (%s)", path.name, exc)
+        matched = None
+        last_exc = None
+        for idx, identity in enumerate(self._pool_identities()):
+            try:
+                pool_io.check_compatible(
+                    meta,
+                    accept_foreign_rules_era=getattr(
+                        self.league_cfg, "accept_foreign_rules_era", False
+                    ),
+                    path=path.name,
+                    **identity,
+                )
+                matched = idx
+                break
+            except pool_io.SnapshotIncompatible as exc:
+                last_exc = exc
+        if matched is None:
+            log.info("League pool: not hosting %s (%s)", path.name, last_exc)
             return None
+        if matched > 0:
+            return pool_io.family_key(meta)  # foreign arena family
         if not self._shared_pool:
             return ""
         rid = meta.get("run_id") or pool_io.snapshot_run_id(path)
@@ -260,6 +281,7 @@ class FullModelLeagueMixin:
             rating = float(meta.get("rating", self.league_cfg.initial_rating))
             self.pool.add(str(path), label=path.stem, rating=rating, family=family)
             self._known_snapshot_paths.add(str(path))
+            self._on_snapshot_ingested(meta)
         self._snapshot_counter = sum(1 for e in entries if e[3] == "")
         log.info(
             "Restored league: %d snapshots (%d families) from %s",
@@ -347,14 +369,23 @@ class FullModelLeagueMixin:
         )
         if isinstance(state, dict) and "model" in state:
             # Last-ditch Phase 0 guard: never assign silently-garbage weights.
-            pool_io.check_compatible(
-                state,
-                accept_foreign_rules_era=getattr(
-                    self.league_cfg, "accept_foreign_rules_era", False
-                ),
-                path=member.checkpoint_path,
-                **self._pool_identity(),
-            )
+            last_exc = None
+            for identity in self._pool_identities():
+                try:
+                    pool_io.check_compatible(
+                        state,
+                        accept_foreign_rules_era=getattr(
+                            self.league_cfg, "accept_foreign_rules_era", False
+                        ),
+                        path=member.checkpoint_path,
+                        **identity,
+                    )
+                    last_exc = None
+                    break
+                except pool_io.SnapshotIncompatible as exc:
+                    last_exc = exc
+            if last_exc is not None:
+                raise last_exc
         payload = state["model"] if "model" in state else state
         payload = {k: v.to(self.device) for k, v in payload.items()}
         self._snapshot_cache[member_id] = payload
@@ -527,6 +558,7 @@ class FullModelLeagueMixin:
                 rating=float(meta.get("rating", self.league_cfg.initial_rating)),
                 family=family,
             )
+            self._on_snapshot_ingested(meta)
             log.info(
                 "Shared pool: ingested foreign snapshot %s (family %s, pool=%d)",
                 path.name, family, len(self.pool.members),

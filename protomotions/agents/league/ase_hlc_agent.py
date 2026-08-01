@@ -147,6 +147,68 @@ class HLCSelfPlayEnvAdapter(SelfPlayEnvAdapter):
         return obs, total, dones_any, term_any, extras
 
 
+class FamilyLanesRouter:
+    """Routes opponent-lane assignment/inference across robot families.
+
+    Own-family members run ego-model replicas on ego-shaped observations;
+    foreign-family members run foreign-width replicas fed the foreign
+    self-obs key. Presents the OpponentLanes interface the league mixin
+    already talks to."""
+
+    def __init__(self, own, foreign, is_foreign, foreign_obs_key):
+        self.own = own
+        self.foreign = foreign
+        self._is_foreign_fn = is_foreign
+        self._cache: Dict[int, bool] = {}
+        self.foreign_obs_key = foreign_obs_key
+
+    def _is_foreign(self, member_id: int) -> bool:
+        member_id = int(member_id)
+        if member_id not in self._cache:
+            self._cache[member_id] = bool(self._is_foreign_fn(member_id))
+        return self._cache[member_id]
+
+    @property
+    def num_lanes(self) -> int:
+        return self.own.num_lanes + self.foreign.num_lanes
+
+    def assign(self, member_id, payload, in_use=None):
+        foreign = self._is_foreign(member_id)
+        lanes = self.foreign if foreign else self.own
+        if in_use is not None:
+            in_use = {m for m in in_use if self._is_foreign(m) == foreign}
+        lanes.assign(member_id, payload, in_use=in_use)
+
+    @torch.no_grad()
+    def act(self, obs_td, env_member, action_dim: int):
+        members = env_member.tolist()
+        foreign_mask = torch.tensor(
+            [m >= 0 and self._is_foreign(m) for m in members],
+            dtype=torch.bool, device=env_member.device,
+        )
+        out = None
+        own_rows = (~foreign_mask).nonzero(as_tuple=False).flatten()
+        if own_rows.numel() > 0:
+            acts = self.own.act(obs_td[own_rows], env_member[own_rows], action_dim)
+            out = torch.zeros(
+                env_member.shape[0], action_dim,
+                device=acts.device, dtype=acts.dtype,
+            )
+            out[own_rows] = acts
+        f_rows = foreign_mask.nonzero(as_tuple=False).flatten()
+        if f_rows.numel() > 0:
+            td = obs_td[f_rows]
+            td["max_coords_obs"] = td[self.foreign_obs_key]
+            acts = self.foreign.act(td, env_member[f_rows], action_dim)
+            if out is None:
+                out = torch.zeros(
+                    env_member.shape[0], action_dim,
+                    device=acts.device, dtype=acts.dtype,
+                )
+            out[f_rows] = acts
+        return out
+
+
 @dataclass
 class HLCParams:
     """High-level controller parameters."""
@@ -245,11 +307,16 @@ class LeagueASEHLCAgent(FullModelLeagueMixin, FineTuningAgent):
         self._llc_disc = self.pretrained.get("llc_disc")
         self._opp_llc = self.pretrained.get("opp_llc")
         if self._opp_rc is not None and self._opp_llc is None:
-            raise ValueError(
-                "opponent_robot_config is set (cross-morphology league) but "
-                "pretrained_modules['opp_llc'] is missing — the opponent "
-                "block needs ITS robot's frozen LLC "
-                "(--opponent-llc-checkpoint)."
+            # No --opponent-llc-checkpoint: the LLC resolves from the first
+            # ingested pool snapshot's provenance pin (every ase_hlc snapshot
+            # records the LLC checkpoint it executes under). Until one
+            # arrives the opponent block holds its default pose.
+            print(
+                "[HLC] mixed-morphology arenas: the foreign body's LLC "
+                "resolves from the shared pool's snapshot provenance when "
+                "its first snapshot arrives; until then every match is "
+                "ego-family self-play.",
+                flush=True,
             )
         self._opp_llc_ckpt_mtime = self._module_ckpt_mtime("opp_llc")
         if self.config.hlc.disc_reward_w > 0 and self._llc_disc is None:
@@ -372,30 +439,47 @@ class LeagueASEHLCAgent(FullModelLeagueMixin, FineTuningAgent):
         # frozen LLC over ITS robot's self-observation. The env-computed
         # max_coords_obs is ego-robot-shaped, so the opponent block's is
         # recomputed from raw sim state with the opponent's body count.
-        n = self.env.num_matches
+        # Mixed-morphology arenas (rung 4): rows hosting the EGO family
+        # (the whole ego half + own-family opponents) decode through the ego
+        # LLC on the env-computed obs; rows hosting the foreign body decode
+        # through ITS LLC on foreign-shaped obs recomputed from sim state.
+        active_b = self.env.simulator.get_active_opponent_mask()
+        rows_a = (~active_b).nonzero(as_tuple=False).flatten()
+        rows_b = active_b.nonzero(as_tuple=False).flatten()
+        width = max(
+            self.env.robot_config.number_of_actions,
+            self._opp_rc.number_of_actions,
+        )
+        full = torch.zeros(active_b.shape[0], width, device=z.device, dtype=z.dtype)
         td_a = TensorDict(
-            {"max_coords_obs": obs["max_coords_obs"][:n], "latents": z[:n]},
-            batch_size=n,
+            {"max_coords_obs": obs["max_coords_obs"][rows_a], "latents": z[rows_a]},
+            batch_size=rows_a.shape[0],
         )
         act_a = self._llc(td_a)[key]
-        td_b = TensorDict(
-            {"max_coords_obs": self._opp_max_coords(), "latents": z[n:]},
-            batch_size=n,
-        )
-        act_b = self._opp_llc(td_b)[key]
-        # Assemble the padded [2N, max_dofs] action tensor the multi-robot
-        # simulator splits per block (extra columns are masked there).
-        width = max(act_a.shape[1], act_b.shape[1])
-        full = torch.zeros(2 * n, width, device=act_a.device, dtype=act_a.dtype)
-        full[:n, : act_a.shape[1]] = act_a
-        full[n:, : act_b.shape[1]] = act_b
+        full[rows_a.unsqueeze(-1), torch.arange(act_a.shape[1], device=z.device)] = act_a
+        if rows_b.numel() > 0:
+            if self._opp_llc is None:
+                pass  # default-pose hold until the foreign LLC resolves
+            else:
+                td_b = TensorDict(
+                    {
+                        "max_coords_obs": self._opp_max_coords(rows_b),
+                        "latents": z[rows_b],
+                    },
+                    batch_size=rows_b.shape[0],
+                )
+                act_b = self._opp_llc(td_b)[key]
+                full[
+                    rows_b.unsqueeze(-1),
+                    torch.arange(act_b.shape[1], device=z.device),
+                ] = act_b
         return full
 
     # ------------------------------------------------------------------
     # Cross-morphology opponent side (Phase 3)
     # ------------------------------------------------------------------
     @torch.no_grad()
-    def _opp_max_coords(self) -> Tensor:
+    def _opp_max_coords(self, rows: Tensor = None) -> Tensor:
         """The opponent block's self-observation, computed with ITS body
         count from raw (padded) sim state. Settings MUST match the opponent
         LLC's pretrain (ase/mlp.py: local_obs, root_height, no contacts) —
@@ -404,10 +488,11 @@ class LeagueASEHLCAgent(FullModelLeagueMixin, FineTuningAgent):
             compute_humanoid_max_coords_observations,
         )
 
-        n = self.env.num_matches
         nb = self._opp_rc.kinematic_info.num_bodies
         state = self.env.simulator.get_robot_state()
-        rows = slice(n, 2 * n)
+        if rows is None:
+            n = self.env.num_matches
+            rows = torch.arange(n, 2 * n, device=self.device)
         body_pos = state.rigid_body_pos[rows, :nb]
         ground = self.env.terrain.get_ground_heights(body_pos[:, 0]).view(-1)
         return compute_humanoid_max_coords_observations(
@@ -424,14 +509,41 @@ class LeagueASEHLCAgent(FullModelLeagueMixin, FineTuningAgent):
         )
 
     def _opponent_obs_td(self, opp_obs: Dict[str, Tensor]):
+        td = super()._opponent_obs_td(opp_obs)
         if self._opp_rc is not None:
-            # Opponent HLC snapshots were trained on THEIR robot's obs:
-            # swap in the opponent-shaped self-observation (task_obs is
-            # shape-stable league-wide and already per-side via the battle
-            # tables).
-            opp_obs = dict(opp_obs)
-            opp_obs["max_coords_obs"] = self._opp_max_coords()
-        return super()._opponent_obs_td(opp_obs)
+            # Own-family opponents read the ego-shaped max_coords already in
+            # the td; foreign-family lanes swap in this foreign-shaped
+            # self-obs (aligned by match index; rows hosting the ego family
+            # carry junk there and are never routed to foreign lanes).
+            td["max_coords_obs_foreign"] = self._opp_max_coords()
+        return td
+
+    def _on_snapshot_ingested(self, meta: dict) -> None:
+        if self._opp_rc is None or self._opp_llc is not None:
+            return
+        if meta.get("robot") != self.config.opponent_robot_name:
+            return  # own-family snapshots pin the EGO LLC, not the foreign one
+        llc_path = meta.get("llc_checkpoint")
+        if not llc_path or not Path(llc_path).exists():
+            log.warning(
+                "Ingested snapshot pins no loadable LLC (%s); opponent "
+                "block stays idle", llc_path,
+            )
+            return
+        from protomotions.agents.common.config import PretrainedModelConfig
+
+        self.config.pretrained_modules["opp_llc"] = PretrainedModelConfig(
+            checkpoint_path=llc_path, module_path="actor",
+        )
+        modules = self._load_pretrained_modules()
+        self._opp_llc = modules["opp_llc"]
+        self._opp_llc_ckpt_mtime = self._module_ckpt_mtime("opp_llc")
+        msg = (
+            f"[HLC] opponent LLC resolved from pool snapshot provenance: "
+            f"{llc_path}"
+        )
+        print(msg, flush=True)
+        log.info(msg)
 
     def _opp_proto_model(self):
         """Materialized opponent-HLC template (built once, deep-copied per
@@ -462,40 +574,35 @@ class LeagueASEHLCAgent(FullModelLeagueMixin, FineTuningAgent):
             )
         return self._opp_model_proto
 
-    def _opponent_policy(self, opp_obs: Dict[str, Tensor]) -> Tensor:
-        if self._opp_rc is None:
-            return super()._opponent_policy(opp_obs)
-        self._ensure_league_initialized()
-        if self.pool.members and not self.league_cfg.force_symmetric_inference:
-            return super()._opponent_policy(opp_obs)
-        # Empty pool (the opponent robot's league hasn't published yet) or
-        # forced-symmetric debug: the EGO HLC picks the opponent's latents
-        # from the EGO-shaped obs slice — mechanical sparring through the
-        # opponent body's LLC, the rung-2 fallback. The ego model cannot
-        # consume opponent-shaped obs, so skip the cross-morph obs swap.
-        self._pre_opponent_policy()
-        obs_td = FullModelLeagueMixin._opponent_obs_td(self, opp_obs)
-        with torch.no_grad():
-            out = self.model(obs_td)
-        return out["action"]
+    # ---- League mixin overrides (mixed-morphology pool, rung 4) --------
+    # A league always trains ITS robot and self-plays into the pool; when
+    # the arena declares a foreign body (--arena-bodies), snapshots of that
+    # robot are ALSO hosted, mixed per match. Own snapshots seed the pool
+    # like the classic league, so training never needs a foreign publisher.
+    def _pool_identities(self) -> list:
+        identities = [super()._pool_identity()]
+        if self._opp_rc is not None:
+            self._opp_proto_model()
+            identities.append({
+                "robot": self.config.opponent_robot_name,
+                "architecture": self.snapshot_architecture,
+                "fingerprint": self._opp_fingerprint,
+            })
+        return identities
 
-    # ---- League mixin overrides (cross-morphology pool identity) -------
-    def _pool_identity(self) -> dict:
-        if self._opp_rc is None:
-            return super()._pool_identity()
-        self._opp_proto_model()
-        return {
-            "robot": self.config.opponent_robot_name,
-            "architecture": self.snapshot_architecture,
-            "fingerprint": self._opp_fingerprint,
-        }
-
-    def _host_own_snapshots(self) -> bool:
-        return self._opp_rc is None
+    def _member_family_is_foreign(self, member_id: int) -> bool:
+        member = self.pool.members.get(int(member_id))
+        if member is None or not member.family:
+            return False
+        robot = member.family.split("/")[0]
+        return robot == self.config.opponent_robot_name and robot != (
+            getattr(self.league_cfg, "robot_name", None) or ""
+        )
 
     def _build_lanes(self) -> None:
+        super()._build_lanes()  # own-family lanes (ego model replicas)
         if self._opp_rc is None:
-            return super()._build_lanes()
+            return
         import copy as _copy
 
         from protomotions.agents.league.lanes import OpponentLanes
@@ -508,12 +615,38 @@ class LeagueASEHLCAgent(FullModelLeagueMixin, FineTuningAgent):
         def assign_full_state(model, state) -> None:
             model.load_state_dict(state, strict=True)
 
-        self._lanes = OpponentLanes(
+        foreign = OpponentLanes(
             model_factory=factory,
             num_lanes=self.league_cfg.num_lanes,
             share_frozen_base_with=None,
             assign_fn=assign_full_state,
         )
+        self._lanes = FamilyLanesRouter(
+            own=self._lanes,
+            foreign=foreign,
+            is_foreign=self._member_family_is_foreign,
+            foreign_obs_key="max_coords_obs_foreign",
+        )
+
+    def _on_opponents_resampled(self, ego_ids: Tensor) -> None:
+        super()._on_opponents_resampled(ego_ids)
+        if self._opp_rc is None or self._lanes is None:
+            return
+        # Sync each resampled match's arena morphology with its sampled
+        # opponent's family; the match resets right after, landing the new
+        # states on the newly-active twin.
+        members = self.env_member[ego_ids]
+        use_b = torch.tensor(
+            [self._member_family_is_foreign(int(m)) for m in members],
+            dtype=torch.bool, device=self.device,
+        )
+        sim = self.env.simulator
+        n = self.env.num_matches
+        sim.set_active_morphology(ego_ids.to(self.device) + n, use_b)
+        self.env.inner_env.battle_control.set_opponent_family(
+            ego_ids.to(self.device), use_b.long()
+        )
+        self.env.inner_env.refresh_default_reset_state()
 
     @torch.no_grad()
     def _style_reward(self, obs: Dict[str, Tensor], latents: Tensor) -> Tensor:
