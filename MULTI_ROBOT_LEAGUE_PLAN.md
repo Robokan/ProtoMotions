@@ -50,13 +50,17 @@ per-block _e0 reward EMAs, per-side default reset poses.
 `BattleControlConfig.opponent_tables` wired from `--opponent-robot`.
 Ladder item (2) PASSED (single-robot regression unchanged through the
 per-side code path); cross-morph fights are semantically correct
-end-to-end. REMAINING for items (3)-(4): serving real opponent-robot
-policies (morphology-partitioned opponent slots + per-robot lane
-factories + the opponent robot's LLC), per-side motion libraries for
-reference resets (opp block currently default/fall resets only),
-opp-action-width padding in the self-play adapters, per-robot KE/gate
-calibration probes, and the cross-robot exhibition path in
-battle_tournament.
+end-to-end. **Rung 3 shipped 2026-08-01 (09b9839, 7f93e79)**: cross leagues serve
+the opponent robot's ase_hlc snapshots from the shared pool through
+opponent-shaped lanes and the opponent's frozen LLC (both LLCs
+hot-reload); per-side PD action scaling; ego-width obs views over the
+padded simulator. Ladder item (3) reached in training form: two
+reciprocal cross leagues (atlas-vs-t800 / t800-vs-atlas) run
+concurrently against each other's published snapshots. REMAINING:
+per-side motion libraries for opponent-block reference resets (block B
+default/fall resets only), per-robot KE/gate calibration probes, and
+the cross-robot exhibition path in battle_tournament (per-side
+checkpoint loading + viewer).
 
 ## STATUS UPDATE 2026-07-30 (what has landed since the survey)
 
