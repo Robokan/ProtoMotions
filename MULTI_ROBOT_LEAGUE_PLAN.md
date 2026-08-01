@@ -29,6 +29,20 @@ NOT built (deliberately): file GC for the shared dir (quotas govern pool
 membership, files accumulate), and the optional ratings.jsonl sidecar
 (open decision 2).
 
+**Phase 3 rung 1 shipped same day (commit 1bed85c)**:
+`simulator/isaaclab/multi_robot_simulator.py` implements the two-entity
+scene + per-block simulator — both-robots-every-env with parked twins
+(the "simpler, 2x actors" spawn option), padded common-order state
+tensors, per-block action routing with per-side DataConversionMappings,
+per-side contact-sensor maps, block-split resets. Wired via
+`--opponent-robot` on the HLC league experiment
+(simulator_config.opponent_robot_config + _target_ swap). Validation
+ladder item (1) PASSED: same-robot two-entity == single-robot control
+over 25 epochs. Cross-morphology (atlas ego, t800 opponent) boots and
+trains mechanically; items (2)-(4) — per-side BattleBodyTables, hit FSM,
+motion libs, reward norm, calibration — remain (the env layer still
+resolves ONE table set from the ego config).
+
 ## STATUS UPDATE 2026-07-30 (what has landed since the survey)
 
 Groundwork that changes this plan's baseline — none of it was planned here,
