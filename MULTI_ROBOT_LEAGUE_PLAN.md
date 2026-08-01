@@ -38,10 +38,25 @@ per-side contact-sensor maps, block-split resets. Wired via
 `--opponent-robot` on the HLC league experiment
 (simulator_config.opponent_robot_config + _target_ swap). Validation
 ladder item (1) PASSED: same-robot two-entity == single-robot control
-over 25 epochs. Cross-morphology (atlas ego, t800 opponent) boots and
-trains mechanically; items (2)-(4) — per-side BattleBodyTables, hit FSM,
-motion libs, reward norm, calibration — remain (the env layer still
-resolves ONE table set from the ego config).
+over 25 epochs.
+
+**Phase 3 rung 2 shipped same day (commit 54e6fa2)**: per-side battle
+semantics — BattleHitState in per-env id form (masks for padded columns;
+1-D inputs stay numerically exact), partner-side strike ids (the
+hit_state "opponent surfaces via ego indices" hole), per-side
+damage/stun/key/head/facing/kick tables, gaze axes, knockdown/kick
+heights, stature, strike-limb masses (the masses.mean(dim=0) collapse),
+per-block _e0 reward EMAs, per-side default reset poses.
+`BattleControlConfig.opponent_tables` wired from `--opponent-robot`.
+Ladder item (2) PASSED (single-robot regression unchanged through the
+per-side code path); cross-morph fights are semantically correct
+end-to-end. REMAINING for items (3)-(4): serving real opponent-robot
+policies (morphology-partitioned opponent slots + per-robot lane
+factories + the opponent robot's LLC), per-side motion libraries for
+reference resets (opp block currently default/fall resets only),
+opp-action-width padding in the self-play adapters, per-robot KE/gate
+calibration probes, and the cross-robot exhibition path in
+battle_tournament.
 
 ## STATUS UPDATE 2026-07-30 (what has landed since the survey)
 
