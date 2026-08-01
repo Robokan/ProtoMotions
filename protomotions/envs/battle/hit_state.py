@@ -81,6 +81,9 @@ class BattleHitState:
         strike_multipliers: Tensor = None,
         strike_body_masses: Tensor = None,
         reward_from_event_ke: bool = False,
+        damage_mask: Tensor = None,
+        strike_mask: Tensor = None,
+        e0_block_split: int = None,
     ):
         """
         Args:
@@ -102,27 +105,54 @@ class BattleHitState:
         self.config = config
         self.dt = dt
         self.device = device
-        self.damage_body_ids = damage_body_ids
-        self.strike_body_ids = strike_body_ids
-        self.damage_multipliers = damage_multipliers.to(device)
+        # Per-side tables (MULTI_ROBOT_LEAGUE_PLAN Phase 3): every id/weight
+        # tensor may be 1-D (one morphology, applied to all envs — the
+        # legacy contract) or 2-D per-env [2N, D]/[2N, S] with optional bool
+        # masks marking real columns (zero-padded when the two sides have
+        # different body counts). 1-D inputs are expanded so step() has one
+        # code path; gather(expanded) is numerically identical to indexing.
+        def _pe(t, cols):
+            t = t.to(device)
+            return t if t.dim() == 2 else t.unsqueeze(0).expand(num_envs, cols)
+
+        num_damage = damage_body_ids.shape[-1]
+        num_strike = strike_body_ids.shape[-1]
+        self.damage_body_ids = _pe(damage_body_ids, num_damage)
+        self.strike_body_ids = _pe(strike_body_ids, num_strike)
+        self.damage_mask = (
+            damage_mask.to(device) if damage_mask is not None
+            else torch.ones(num_envs, num_damage, dtype=torch.bool, device=device)
+        )
+        self.strike_mask = (
+            strike_mask.to(device) if strike_mask is not None
+            else torch.ones(num_envs, num_strike, dtype=torch.bool, device=device)
+        )
+        self.damage_multipliers = _pe(damage_multipliers, num_damage)
         self.strike_body_groups = (
-            strike_body_groups.to(device) if strike_body_groups is not None else None
+            _pe(strike_body_groups, num_strike)
+            if strike_body_groups is not None else None
         )
         self.num_strike_groups = num_strike_groups
         self.strike_multipliers = (
-            strike_multipliers.to(device) if strike_multipliers is not None else None
+            _pe(strike_multipliers, num_strike)
+            if strike_multipliers is not None else None
         )
-        # Per-strike-body masses [S] (kg) for the kinetic-energy damage model.
+        # Per-strike-body masses (kg) for the kinetic-energy damage model.
         # None -> unit masses (pure speed^2); the caller may set this lazily
         # once the simulator exposes real masses (see set_strike_body_masses).
         self.strike_body_masses = (
-            strike_body_masses.to(device) if strike_body_masses is not None else None
+            _pe(strike_body_masses, num_strike)
+            if strike_body_masses is not None else None
         )
         # True: reward = log1p(per-event KE / ke_reward_ref), continuous and
         # ungated, replacing the accumulated-F*v log-delta stream.
         self.reward_from_event_ke = reward_from_event_ke
-
-        num_damage = len(damage_body_ids)
+        # Per-block e0 EMAs when the two sides are different robots (a heavier
+        # robot's energies would compress the lighter one's log scale). None
+        # keeps the single global EMA (exact legacy numerics).
+        self.e0_block_split = e0_block_split
+        self._e0_b = 1.0
+        self._num_envs = num_envs
         self._active = torch.zeros(num_envs, num_damage, dtype=torch.bool, device=device)
         self._e_accum = torch.zeros(num_envs, num_damage, device=device)
         self._e_prev = torch.zeros(num_envs, num_damage, device=device)
@@ -140,8 +170,15 @@ class BattleHitState:
         )
 
     def set_strike_body_masses(self, masses: Tensor) -> None:
-        """Set per-strike-body masses [S] (kg) for KE damage (lazy wiring)."""
-        self.strike_body_masses = masses.to(self.device)
+        """Set per-strike-body masses (kg) for KE damage (lazy wiring).
+
+        Accepts [S] (one morphology) or per-env [2N, S]."""
+        masses = masses.to(self.device)
+        if masses.dim() == 1:
+            masses = masses.unsqueeze(0).expand(
+                self._num_envs, masses.shape[0]
+            )
+        self.strike_body_masses = masses
 
     def reset(self, env_ids: Tensor) -> None:
         self._active[env_ids] = False
@@ -181,24 +218,26 @@ class BattleHitState:
               (drives the per-part hit-flash visualization).
         """
         cfg = self.config
-        d_ids = self.damage_body_ids
-        s_ids = self.strike_body_ids
+        d_ids3 = self.damage_body_ids.unsqueeze(-1).expand(-1, -1, 3)
+        s_ids3 = self.strike_body_ids.unsqueeze(-1).expand(-1, -1, 3)
 
         # Force magnitude and unit normal on each damage body
-        force = contact_forces[:, d_ids, :]  # [2N, D, 3]
-        f_mag = torch.norm(force, dim=-1)  # [2N, D]
+        force = contact_forces.gather(1, d_ids3)  # [2N, D, 3]
+        f_mag = torch.norm(force, dim=-1) * self.damage_mask  # [2N, D]
         n_hat = force / f_mag.clamp_min(1e-8).unsqueeze(-1)
 
-        d_pos = body_pos[:, d_ids, :]  # [2N, D, 3]
-        d_vel = body_vel[:, d_ids, :]
-        s_pos = opp_body_pos[:, s_ids, :]  # [2N, S, 3]
-        s_vel = opp_body_vel[:, s_ids, :]
+        d_pos = body_pos.gather(1, d_ids3)  # [2N, D, 3]
+        d_vel = body_vel.gather(1, d_ids3)
+        s_pos = opp_body_pos.gather(1, s_ids3)  # [2N, S, 3]
+        s_vel = opp_body_vel.gather(1, s_ids3)
 
         # Attribution: nearest opponent strike body per damage body
-        # dist[e, d, s] = ||d_pos[e,d] - s_pos[e,s]||
+        # dist[e, d, s] = ||d_pos[e,d] - s_pos[e,s]||; padded strike columns
+        # (mixed-morphology pools) can never be the nearest striker.
         dist = torch.cdist(d_pos, s_pos)  # [2N, D, S]
+        dist = dist.masked_fill(~self.strike_mask.unsqueeze(1), float("inf"))
         min_dist, nearest_s = dist.min(dim=-1)  # [2N, D]
-        include = min_dist <= cfg.proximity_radius  # [2N, D]
+        include = (min_dist <= cfg.proximity_radius) & self.damage_mask  # [2N, D]
 
         # Closing speed along the contact normal, using the attributed striker
         striker_vel = torch.gather(
@@ -215,7 +254,7 @@ class BattleHitState:
         # away by the global log scale (see BattleControlConfig
         # .strike_group_multipliers).
         if self.strike_multipliers is not None:
-            d_energy = d_energy * self.strike_multipliers[nearest_s]
+            d_energy = d_energy * self.strike_multipliers.gather(1, nearest_s)
 
         # Bout FSM with hysteresis (force_on/force_off) + cooldown
         can_start = self._cooldown <= 0.5
@@ -225,16 +264,35 @@ class BattleHitState:
 
         self._e_accum = self._e_accum + d_energy * self._active
 
-        # Global scale: EMA of the batch percentile of accumulated energy
-        flat = self._e_accum.flatten()
-        if flat.numel() > 0:
-            e_cap = torch.quantile(flat, self.config.e0_percentile).item()
-            if e_cap > 0.0:
-                self._e0 = cfg.e0_ema * self._e0 + (1.0 - cfg.e0_ema) * e_cap
+        # Global scale: EMA of the batch percentile of accumulated energy.
+        # With per-side tables the EMA splits per block, so the heavier
+        # robot's energies don't compress the lighter one's reward scale.
+        if self.e0_block_split is None:
+            flat = self._e_accum.flatten()
+            if flat.numel() > 0:
+                e_cap = torch.quantile(flat, self.config.e0_percentile).item()
+                if e_cap > 0.0:
+                    self._e0 = cfg.e0_ema * self._e0 + (1.0 - cfg.e0_ema) * e_cap
+            e0_pe = max(self._e0, 1e-6)
+        else:
+            split = self.e0_block_split
+            for attr, rows in (("_e0", slice(None, split)), ("_e0_b", slice(split, None))):
+                e_cap = torch.quantile(
+                    self._e_accum[rows].flatten(), self.config.e0_percentile
+                ).item()
+                if e_cap > 0.0:
+                    setattr(
+                        self, attr,
+                        cfg.e0_ema * getattr(self, attr) + (1.0 - cfg.e0_ema) * e_cap,
+                    )
+            e0_pe = torch.full(
+                (self._num_envs, 1), max(self._e0, 1e-6), device=self.device
+            )
+            e0_pe[split:] = max(self._e0_b, 1e-6)
 
         # Per-step reward per body: positive delta of log1p-normalized energy
-        phi_now = torch.log1p(self._e_accum / max(self._e0, 1e-6))
-        phi_prev = torch.log1p(self._e_prev / max(self._e0, 1e-6))
+        phi_now = torch.log1p(self._e_accum / e0_pe)
+        phi_prev = torch.log1p(self._e_prev / e0_pe)
         r_per_body = (phi_now - phi_prev).clamp_min(0.0) * include
         self._e_prev = self._e_accum.clone()
 
@@ -256,7 +314,7 @@ class BattleHitState:
         # noise). A sustained push/lean/grind arrives at ~0 m/s and scores
         # ~nothing; lingering contact after a hit never re-scores.
         if self.strike_body_masses is not None:
-            striker_mass = self.strike_body_masses[nearest_s]  # [2N, D]
+            striker_mass = self.strike_body_masses.gather(1, nearest_s)  # [2N, D]
         else:
             striker_mass = torch.ones_like(v_rel)
         ke = 0.5 * striker_mass * v_rel * v_rel  # [2N, D] joules
@@ -281,7 +339,7 @@ class BattleHitState:
             r_per_body = torch.log1p((ke * event) / max(cfg.ke_reward_ref, 1e-6))
 
         # Region multipliers, warm-up gating, reduce over bodies
-        r_weighted = r_per_body * self.damage_multipliers.unsqueeze(0)  # [2N, D]
+        r_weighted = r_per_body * self.damage_multipliers  # [2N, D]
         r_taken = r_weighted.sum(dim=-1)
         if self.reward_from_event_ke:
             hit_flat = float(getattr(cfg, "hit_flat", 0.0) or 0.0)
@@ -295,7 +353,7 @@ class BattleHitState:
         # Split by the attributed striker's group (hands vs legs for
         # kickboxing diversity accounting)
         if self.strike_body_groups is not None and self.num_strike_groups > 0:
-            groups = self.strike_body_groups[nearest_s]  # [2N, D]
+            groups = self.strike_body_groups.gather(1, nearest_s)  # [2N, D]
             taken_by_group = torch.zeros(
                 r_weighted.shape[0], self.num_strike_groups, device=self.device
             )

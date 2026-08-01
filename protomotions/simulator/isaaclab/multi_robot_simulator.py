@@ -449,6 +449,19 @@ class MultiRobotIsaacLabSimulator(IsaacLabSimulator):
     def get_num_actors_per_env(self) -> int:
         return 2
 
+    def get_default_robot_reset_state(self) -> ResetState:
+        """Per-side default pose: block A rows carry robot A's default pose
+        and stance height, block B rows robot B's (dof width padded)."""
+        state = super().get_default_robot_reset_state()  # side A everywhere
+        state.dof_pos = self._fit_width(state.dof_pos, self._pad_dofs)
+        state.dof_vel = self._fit_width(state.dof_vel, self._pad_dofs)
+        opp = self.opp_robot_config
+        dof_b = opp.default_dof_pos.to(self.device)
+        state.dof_pos[self._block_b, : dof_b.shape[0]] = dof_b.unsqueeze(0)
+        state.dof_pos[self._block_b, dof_b.shape[0]:] = 0.0
+        state.root_pos[self._block_b, 2] = opp.default_root_height
+        return state
+
     # ------------------------------------------------------------------
     # Actions: per-block routing
     # ------------------------------------------------------------------

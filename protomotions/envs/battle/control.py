@@ -215,6 +215,15 @@ class BattleControlConfig(ControlComponentConfig):
     # Hit FSM constants
     hit_state: HitStateConfig = field(default_factory=HitStateConfig)
 
+    # Cross-morphology (MULTI_ROBOT_LEAGUE_PLAN Phase 3): body tables for the
+    # OPPONENT block (envs [N..2N)) when it hosts a different robot. A dict of
+    # battle_table_kwargs(opp_robot) entries PLUS "body_names" (the opponent
+    # robot's kinematic body list) and optionally per-stature scalar
+    # overrides: "knockdown_height", "kick_bonus_height",
+    # "kick_bonus_rearm_height", "default_root_height". None = both sides use
+    # the primary tables (single-morphology, exact legacy behavior).
+    opponent_tables: Dict = None
+
 
 class BattleControl(ControlComponent):
     """Stateful fight manager for paired-env battles."""
@@ -240,74 +249,138 @@ class BattleControl(ControlComponent):
         # both sides of the pair.
         self.arena_centers = self._build_arena_centers()  # [2N, 2]
 
-        body_names = env.robot_config.kinematic_info.body_names
-        self.strike_body_ids = resolve_body_ids(
-            config.strike_body_names, body_names
-        ).to(device)
-        self.damage_body_ids = resolve_body_ids(
-            config.damage_body_names, body_names
-        ).to(device)
-        self.key_body_ids = resolve_body_ids(config.key_body_names, body_names).to(
-            device
+        # ---- Per-side body tables (MULTI_ROBOT_LEAGUE_PLAN Phase 3) -------
+        # Side A = ego block [0..N), side B = opponent block [N..2N). With
+        # config.opponent_tables unset, side B duplicates side A and every
+        # per-env tensor is a constant row — numerically identical to the
+        # legacy single-table path (gather == index).
+        side_a = self._resolve_side_tables(
+            {
+                "strike_body_names": config.strike_body_names,
+                "strike_body_group_names": config.strike_body_group_names,
+                "strike_group_multipliers": config.strike_group_multipliers,
+                "damage_body_names": config.damage_body_names,
+                "damage_multipliers": config.damage_multipliers,
+                "stun_region_weights": config.stun_region_weights,
+                "key_body_names": config.key_body_names,
+                "head_body_name": config.head_body_name,
+                "facing_target_body_name": config.facing_target_body_name,
+                "gaze_forward_axis": config.gaze_forward_axis,
+                "kick_bonus_left_foot_body": config.kick_bonus_left_foot_body,
+                "kick_bonus_right_foot_body": config.kick_bonus_right_foot_body,
+                "knockdown_height": config.knockdown_height,
+                "kick_bonus_height": config.kick_bonus_height,
+                "kick_bonus_rearm_height": config.kick_bonus_rearm_height,
+                "default_root_height": env.robot_config.default_root_height,
+            },
+            env.robot_config.kinematic_info.body_names,
         )
-        self.head_body_id = int(
-            resolve_body_ids([config.head_body_name], body_names)[0]
-        )
-        self.facing_target_body_id = int(
-            resolve_body_ids([config.facing_target_body_name], body_names)[0]
-        )
-        self.kick_foot_body_ids = resolve_body_ids(
-            [config.kick_bonus_left_foot_body,
-             config.kick_bonus_right_foot_body],
-            body_names,
-        ).to(device)
-
-        # Map each strike body to its group id (declaration order of
-        # strike_body_group_names). Ungrouped strike bodies go to group 0.
-        self.strike_group_labels = list(config.strike_body_group_names.keys())
-        group_of = {}
-        for group_idx, (_label, names) in enumerate(
-            config.strike_body_group_names.items()
-        ):
-            for name in names:
-                group_of[name] = group_idx
-        strike_groups = torch.tensor(
-            [group_of.get(name, 0) for name in config.strike_body_names],
-            dtype=torch.long,
-        )
-        # Per-strike-body raw-energy multiplier from the group weights.
-        strike_multipliers = torch.tensor(
-            [
-                config.strike_group_multipliers.get(
-                    self.strike_group_labels[group_of.get(name, 0)], 1.0
+        opp_tables = getattr(config, "opponent_tables", None)
+        self._cross_morph = opp_tables is not None
+        if self._cross_morph:
+            merged = dict(side_a["raw"])
+            merged.update({k: v for k, v in opp_tables.items() if k != "body_names"})
+            side_b = self._resolve_side_tables(merged, opp_tables["body_names"])
+            if side_a["group_labels"] != side_b["group_labels"]:
+                raise ValueError(
+                    "Strike group labels must match across sides "
+                    f"({side_a['group_labels']} vs {side_b['group_labels']})"
                 )
-                for name in config.strike_body_names
-            ],
-            dtype=torch.float,
+            if len(side_a["key_ids"]) != len(side_b["key_ids"]):
+                raise ValueError(
+                    "Key body count (K) must match across sides — the "
+                    "opponent obs kernel width is 20 + 6K league-wide"
+                )
+        else:
+            side_b = side_a
+        self.strike_group_labels = side_a["group_labels"]
+
+        half = self.num_matches
+
+        def per_env(vec_a, vec_b, dtype=torch.long, pad=0):
+            """[2N, max(len)] per-env tensor + validity mask from side rows."""
+            width = max(len(vec_a), len(vec_b))
+            out = torch.full((num_envs, width), pad, dtype=dtype, device=device)
+            mask = torch.zeros(num_envs, width, dtype=torch.bool, device=device)
+            ta = torch.as_tensor(vec_a, dtype=dtype, device=device)
+            tb = torch.as_tensor(vec_b, dtype=dtype, device=device)
+            out[:half, : len(vec_a)] = ta
+            out[half:, : len(vec_b)] = tb
+            mask[:half, : len(vec_a)] = True
+            mask[half:, : len(vec_b)] = True
+            return out, mask
+
+        # Own-side per-env tables
+        self.key_body_ids, _ = per_env(side_a["key_ids"], side_b["key_ids"])
+        self.head_body_id, _ = per_env([side_a["head_id"]], [side_b["head_id"]])
+        self.head_body_id = self.head_body_id.squeeze(-1)
+        self.facing_target_body_id, _ = per_env(
+            [side_a["facing_id"]], [side_b["facing_id"]]
         )
+        self.facing_target_body_id = self.facing_target_body_id.squeeze(-1)
+        self.kick_foot_body_ids, _ = per_env(side_a["kick_ids"], side_b["kick_ids"])
+        self.damage_body_ids, self._damage_mask = per_env(
+            side_a["damage_ids"], side_b["damage_ids"]
+        )
+        # Partner-side strike tables: row i indexes the OPPONENT's bodies, so
+        # block A rows carry side B's strike ids and vice versa (the fix for
+        # the "opponent surfaces via ego indices" hole, hit_state.py).
+        self.strike_body_ids, self._strike_mask = per_env(
+            side_b["strike_ids"], side_a["strike_ids"]
+        )
+        strike_groups_pe, _ = per_env(side_b["groups"], side_a["groups"])
+        strike_mults_pe, _ = per_env(
+            side_b["strike_mults"], side_a["strike_mults"], dtype=torch.float
+        )
+        damage_mults_pe, _ = per_env(
+            side_a["damage_mults"], side_b["damage_mults"], dtype=torch.float
+        )
+        self._stun_region_weights, _ = per_env(
+            side_a["stun_weights"], side_b["stun_weights"], dtype=torch.float
+        )
+        # Per-side scalars broadcast per env (stature-dependent rules)
+        def scalar_pe(a, b):
+            t = torch.full((num_envs,), float(a), device=device)
+            t[half:] = float(b)
+            return t
+        self.knockdown_height_pe = scalar_pe(
+            side_a["knockdown_height"], side_b["knockdown_height"]
+        )
+        self.kick_bonus_height_pe = scalar_pe(
+            side_a["kick_bonus_height"], side_b["kick_bonus_height"]
+        )
+        self.kick_bonus_rearm_pe = scalar_pe(
+            side_a["kick_bonus_rearm_height"], side_b["kick_bonus_rearm_height"]
+        )
+        self.default_root_height_pe = scalar_pe(
+            side_a["default_root_height"], side_b["default_root_height"]
+        )
+        gaze_pe = torch.zeros(num_envs, 3, device=device)
+        gaze_pe[:half] = torch.tensor(side_a["gaze_axis"], device=device)
+        gaze_pe[half:] = torch.tensor(side_b["gaze_axis"], device=device)
+        self._gaze_axis_pe = gaze_pe
+        self._side_strike_ids = (side_a["strike_ids"], side_b["strike_ids"])
 
         self.hit_state = BattleHitState(
             num_envs=num_envs,
             damage_body_ids=self.damage_body_ids,
             strike_body_ids=self.strike_body_ids,
-            damage_multipliers=torch.tensor(
-                config.damage_multipliers, dtype=torch.float
-            ),
+            damage_multipliers=damage_mults_pe * self._damage_mask,
             config=config.hit_state,
             dt=env.dt,
             device=device,
-            strike_body_groups=strike_groups,
+            strike_body_groups=strike_groups_pe,
             num_strike_groups=len(self.strike_group_labels),
-            strike_multipliers=strike_multipliers,
+            strike_multipliers=strike_mults_pe,
             # KE mode uses the same per-event physics for the dense reward
             # (continuous, ungated log1p(KE/ref)) as for health (speed-gated).
             reward_from_event_ke=config.raw_health_damage,
+            damage_mask=self._damage_mask,
+            strike_mask=self._strike_mask,
+            # Per-block reward scale only when the sides are different robots
+            e0_block_split=half if self._cross_morph else None,
         )
-
-        # Stun region weights aligned to damage_body_names (head dominates).
-        self._stun_region_weights = torch.tensor(
-            config.stun_region_weights, dtype=torch.float, device=device
-        )
+        self._stun_region_weights = self._stun_region_weights * self._damage_mask
 
         # Fight state
         self.health = torch.full((num_envs,), config.initial_health, device=device)
@@ -356,9 +429,63 @@ class BattleControl(ControlComponent):
         self.facing = torch.zeros(num_envs, device=device)
         self.facing_delta = torch.zeros(num_envs, device=device)
         self._prev_facing = torch.full((num_envs,), -1.0, device=device)
-        self._gaze_axis = torch.tensor(
-            config.gaze_forward_axis, dtype=torch.float, device=device
-        )
+
+    @staticmethod
+    def _gather_body(t: Tensor, ids: Tensor) -> Tensor:
+        """Per-env single-body gather: t [2N, B, C] + ids [2N] -> [2N, C]."""
+        idx = ids.view(-1, 1, 1).expand(-1, 1, t.shape[-1])
+        return t.gather(1, idx).squeeze(1)
+
+    @staticmethod
+    def _gather_bodies(t: Tensor, ids: Tensor) -> Tensor:
+        """Per-env multi-body gather: t [2N, B, C] + ids [2N, K] -> [2N, K, C]."""
+        idx = ids.unsqueeze(-1).expand(-1, -1, t.shape[-1])
+        return t.gather(1, idx)
+
+    @staticmethod
+    def _resolve_side_tables(raw: dict, body_names) -> dict:
+        """Resolve one side's name tables into id vectors + scalars."""
+        group_labels = list(raw["strike_body_group_names"].keys())
+        group_of = {}
+        for group_idx, (_label, names) in enumerate(
+            raw["strike_body_group_names"].items()
+        ):
+            for name in names:
+                group_of[name] = group_idx
+        return {
+            "raw": raw,
+            "group_labels": group_labels,
+            "strike_ids": resolve_body_ids(raw["strike_body_names"], body_names),
+            "damage_ids": resolve_body_ids(raw["damage_body_names"], body_names),
+            "key_ids": resolve_body_ids(raw["key_body_names"], body_names),
+            "head_id": int(
+                resolve_body_ids([raw["head_body_name"]], body_names)[0]
+            ),
+            "facing_id": int(
+                resolve_body_ids([raw["facing_target_body_name"]], body_names)[0]
+            ),
+            "kick_ids": resolve_body_ids(
+                [raw["kick_bonus_left_foot_body"],
+                 raw["kick_bonus_right_foot_body"]],
+                body_names,
+            ),
+            "groups": [
+                group_of.get(name, 0) for name in raw["strike_body_names"]
+            ],
+            "strike_mults": [
+                raw["strike_group_multipliers"].get(
+                    group_labels[group_of.get(name, 0)], 1.0
+                )
+                for name in raw["strike_body_names"]
+            ],
+            "damage_mults": list(raw["damage_multipliers"]),
+            "stun_weights": list(raw["stun_region_weights"]),
+            "gaze_axis": tuple(raw["gaze_forward_axis"]),
+            "knockdown_height": raw["knockdown_height"],
+            "kick_bonus_height": raw["kick_bonus_height"],
+            "kick_bonus_rearm_height": raw["kick_bonus_rearm_height"],
+            "default_root_height": raw["default_root_height"],
+        }
 
     def _build_ring_offsets(self) -> Tensor:
         """Evenly spaced XY offsets tracing the square arena boundary."""
@@ -518,13 +645,26 @@ class BattleControl(ControlComponent):
         # (masses are only available once the sim articulation is initialized).
         if cfg.raw_health_damage and self.hit_state.strike_body_masses is None:
             try:
-                masses = env.simulator.get_body_masses()  # [N, B] common order
-                self.hit_state.set_strike_body_masses(
-                    masses.mean(dim=0)[self.strike_body_ids.to(masses.device)]
+                masses = env.simulator.get_body_masses()  # [2N, B] common order
+                # Row i's strike columns index the PARTNER robot's bodies, so
+                # the mass vectors come from each block's own rows and swap
+                # sides (fixes the masses.mean(dim=0) single-morphology
+                # collapse for mixed pools).
+                half = self.num_matches
+                ids_a, ids_b = self._side_strike_ids
+                mass_a = masses[:half].mean(dim=0)[ids_a.to(masses.device)]
+                mass_b = masses[half:].mean(dim=0)[ids_b.to(masses.device)]
+                width = self.strike_body_ids.shape[1]
+                mass_pe = torch.zeros(
+                    env.num_envs, width, device=masses.device
                 )
+                mass_pe[:half, : len(mass_b)] = mass_b  # partners of block A
+                mass_pe[half:, : len(mass_a)] = mass_a
+                self.hit_state.set_strike_body_masses(mass_pe)
                 log.info(
-                    "KE damage: strike-limb masses (kg) = %s",
-                    [round(float(m), 2) for m in self.hit_state.strike_body_masses],
+                    "KE damage: strike-limb masses (kg) = A%s / B%s",
+                    [round(float(m), 2) for m in mass_a],
+                    [round(float(m), 2) for m in mass_b],
                 )
             except NotImplementedError:
                 log.warning(
@@ -532,7 +672,7 @@ class BattleControl(ControlComponent):
                     "masses (pure speed^2)."
                 )
                 self.hit_state.set_strike_body_masses(
-                    torch.ones(len(self.strike_body_ids), device=env.device)
+                    torch.ones_like(self.strike_body_ids, dtype=torch.float)
                 )
 
         taken, taken_by_group, taken_per_body, ke_per_body = self.hit_state.step(
@@ -553,7 +693,7 @@ class BattleControl(ControlComponent):
             hp_per_hit = (
                 cfg.damage_to_health
                 * ke_per_body
-                * self.hit_state.damage_multipliers.unsqueeze(0)
+                * self.hit_state.damage_multipliers
             ).clamp_max(cfg.max_hp_per_hit)
             hp_loss = hp_per_hit.sum(dim=-1)
             self.health = (self.health - hp_loss).clamp_min(0.0)
@@ -590,20 +730,20 @@ class BattleControl(ControlComponent):
         # Kick-attempt shaping: one bonus unit per armed foot crossing
         # kick_bonus_height, capped per foot per episode; foot re-arms
         # after dropping below kick_bonus_rearm_height (no leg-hold farming).
-        foot_z = body_pos[:, self.kick_foot_body_ids, 2]  # [2N, 2]
-        up = foot_z > cfg.kick_bonus_height
+        foot_z = body_pos[..., 2].gather(1, self.kick_foot_body_ids)  # [2N, 2]
+        up = foot_z > self.kick_bonus_height_pe.unsqueeze(-1)
         fired = self.kick_armed & up & (
             self.kick_counts < cfg.kick_bonus_max_per_foot)
         self.kick_counts = self.kick_counts + fired.long()
         self.kick_armed = torch.where(
             fired, torch.zeros_like(self.kick_armed), self.kick_armed)
         self.kick_armed = self.kick_armed | (
-            foot_z < cfg.kick_bonus_rearm_height)
+            foot_z < self.kick_bonus_rearm_pe.unsqueeze(-1))
         self.kick_attempt_bonus = fired.float().sum(dim=-1)
 
         # Knockdown timer
         root_height = body_pos[:, 0, 2]
-        down = root_height < cfg.knockdown_height
+        down = root_height < self.knockdown_height_pe
         self.down_timer = torch.where(
             down, self.down_timer + env.dt, torch.zeros_like(self.down_timer)
         )
@@ -620,16 +760,14 @@ class BattleControl(ControlComponent):
         # Gaze quality + potential-based delta (SOMA faces body-frame -y).
         # Gaze originates at own head; the TARGET is the opponent's chest —
         # boxer's soft focus on the shoulder line, not eye contact.
-        head_pos = body_pos[:, self.head_body_id]
-        head_rot = state.rigid_body_rot[:, self.head_body_id]
-        facing_target = body_pos[:, self.facing_target_body_id]
+        head_pos = self._gather_body(body_pos, self.head_body_id)
+        head_rot = self._gather_body(state.rigid_body_rot, self.head_body_id)
+        facing_target = self._gather_body(body_pos, self.facing_target_body_id)
         to_opp = torch.nn.functional.normalize(
             facing_target[partner] - head_pos, dim=-1
         )
         gaze = torch.nn.functional.normalize(
-            rotations.quat_rotate(
-                head_rot, self._gaze_axis.expand_as(head_pos), True
-            ),
+            rotations.quat_rotate(head_rot, self._gaze_axis_pe, True),
             dim=-1,
         )
         facing_now = ((gaze * to_opp).sum(dim=-1) + 1.0) * 0.5
@@ -754,11 +892,14 @@ class BattleControl(ControlComponent):
             opp_root_rot=state.root_rot[partner],
             opp_root_vel=state.root_vel[partner],
             opp_root_ang_vel=state.root_ang_vel[partner],
-            opp_key_body_pos=body_pos[partner][:, self.key_body_ids],
-            opp_key_body_vel=body_vel[partner][:, self.key_body_ids],
-            head_pos=body_pos[:, self.head_body_id],
-            head_rot=state.rigid_body_rot[:, self.head_body_id],
-            opp_head_pos=body_pos[partner][:, self.head_body_id],
+            # Key/head positions gathered with each env's OWN ids, then
+            # partner-permuted — so an atlas ego reads the t800's key bodies
+            # through the t800's table, not its own indices.
+            opp_key_body_pos=self._gather_bodies(body_pos, self.key_body_ids)[partner],
+            opp_key_body_vel=self._gather_bodies(body_vel, self.key_body_ids)[partner],
+            head_pos=self._gather_body(body_pos, self.head_body_id),
+            head_rot=self._gather_body(state.rigid_body_rot, self.head_body_id),
+            opp_head_pos=self._gather_body(body_pos, self.head_body_id)[partner],
             health=self.health,
             opp_health=self.health[partner],
             downed=downed_norm,

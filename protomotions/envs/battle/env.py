@@ -86,9 +86,15 @@ class BattleEnv(BaseEnv):
             self.battle_fall_init_mask[env_ids] = (
                 torch.rand(len(env_ids), device=self.device) < fall_prob
             )
-            if self.battle_fall_init_mask[env_ids].any():
-                force_default = kwargs.get("force_default_mask")
-                fall_subset = self.battle_fall_init_mask[env_ids]
+            force_default = kwargs.get("force_default_mask")
+            fall_subset = self.battle_fall_init_mask[env_ids]
+            if self.battle_control._cross_morph:
+                # Cross-morphology: the motion lib belongs to the EGO robot;
+                # reference poses would be garbage on the opponent block, so
+                # block B always resets to default/fall states (per-side
+                # motion libraries are the Phase 3 follow-up).
+                fall_subset = fall_subset | (env_ids >= self.num_matches)
+            if fall_subset.any():
                 if force_default is None:
                     force_default = fall_subset.clone()
                 else:
@@ -112,10 +118,13 @@ class BattleEnv(BaseEnv):
             )
             new_states.root_rot[fall_subset] = rand_quat
             # Drop from above the (already respawn-offset) standing height so
-            # the fighter settles into a fallen pose during the recovery window.
+            # the fighter settles into a fallen pose during the recovery
+            # window. Per-side stature: the opponent block may be a
+            # different robot (cross-morphology).
             new_states.root_pos[fall_subset, 2] = (
                 new_states.root_pos[fall_subset, 2]
-                + self.robot_config.default_root_height * 0.5
+                + self.battle_control.default_root_height_pe[env_ids][fall_subset]
+                * 0.5
             )
             new_states.root_vel[fall_subset] = 0.0
             new_states.root_ang_vel[fall_subset] = 0.0

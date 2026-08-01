@@ -164,6 +164,15 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
         stun_gates_ko=True,
         **battle_table_kwargs(robot_cfg, args.robot_name),
     )
+    if getattr(args, "opponent_robot", None):
+        # Phase 3: the opponent block's body tables come from ITS robot.
+        from protomotions.robot_configs.factory import robot_config as build_robot
+        opp_cfg = build_robot(args.opponent_robot)
+        battle_control.opponent_tables = dict(
+            battle_table_kwargs(opp_cfg, args.opponent_robot),
+            body_names=list(opp_cfg.kinematic_info.body_names),
+            default_root_height=opp_cfg.default_root_height,
+        )
 
     cfg = EnvConfig(
         ref_contact_smooth_window=7,
