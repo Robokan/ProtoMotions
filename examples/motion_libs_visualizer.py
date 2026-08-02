@@ -34,7 +34,7 @@ parser.add_argument(
 parser.add_argument(
     "--robot",
     type=str,
-    choices=["g1", "rigv1", "h1_2", "smpl", "soma23", "atlas", "t800", "samurai"],
+    choices=["g1", "rigv1", "h1_2", "smpl", "soma23", "atlas", "t800", "samurai", "raptor", "tiger", "go2", "anymal_d", "dog_v2"],
     default="g1",
     help="Robot to load (g1, rigv1, h1_2, smpl, soma23, atlas, or t800)",
 )
