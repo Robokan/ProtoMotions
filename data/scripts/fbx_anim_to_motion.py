@@ -44,14 +44,15 @@ WORKER_FLAG = "--_worker"
 # ----------------------------------------------------------------------
 # Worker: ONE fbx -> frames npz (runs in its own process, ufbx rules)
 # ----------------------------------------------------------------------
-def worker(fbx_path: str, robot: str, out_npz: str, fps: float):
+def worker(fbx_path: str, robot: str, out_npz: str, fps: float,
+           bones_file: str):
     import gc
 
     gc.disable()
     import ufbx
 
     spec = ROBOTS[robot]
-    keep = spec["keep"]
+    keep = json.loads(Path(bones_file).read_text())
     keep_set = set(keep)
     keep_alive = []
     scene = ufbx.load_file(fbx_path)
@@ -203,7 +204,7 @@ def main():
     if WORKER_FLAG in sys.argv:
         i = sys.argv.index(WORKER_FLAG)
         worker(sys.argv[i + 1], sys.argv[i + 2], sys.argv[i + 3],
-               float(sys.argv[i + 4]))
+               float(sys.argv[i + 4]), sys.argv[i + 5])
         return
 
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
@@ -220,12 +221,22 @@ def main():
     tmp = args.output_dir / "_frames"
     tmp.mkdir(exist_ok=True)
 
+    # The robot's kept bones come from the GENERATED MJCF — whatever
+    # --min-bone-length pruning built the robot is matched automatically.
+    from protomotions.components.pose_lib import extract_kinematic_info
+
+    ki = extract_kinematic_info(
+        f"protomotions/data/assets/mjcf/{args.robot}.xml"
+    )
+    bones_file = tmp / "_bones.json"
+    bones_file.write_text(json.dumps(list(ki.body_names)))
+
     # Bind world rotations: one worker on the mesh FBX at t0 gives R==bind.
     bind_npz = tmp / "_bind.npz"
     if not bind_npz.exists() or args.force_remake:
         subprocess.run(
             [sys.executable, __file__, WORKER_FLAG, spec["fbx"],
-             args.robot, str(bind_npz), "1.0"],
+             args.robot, str(bind_npz), "1.0", str(bones_file)],
             check=True,
         )
     bd = np.load(bind_npz, allow_pickle=True)
@@ -248,7 +259,7 @@ def main():
         try:
             subprocess.run(
                 [sys.executable, __file__, WORKER_FLAG, str(f),
-                 args.robot, str(npz), str(args.fps)],
+                 args.robot, str(npz), str(args.fps), str(bones_file)],
                 check=True, capture_output=True,
             )
             frames_to_motion(npz, args.robot, bind_rw, dst, args.min_height)

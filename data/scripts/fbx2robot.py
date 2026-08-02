@@ -45,15 +45,9 @@ ROBOTS = {
             "RaptorDinosaur/Model/Raptor_Gameplay.FBX",
         root="Hips",
         up_axis="z",
-        keep=[
-            "Hips", "Spine", "Spine1",
-            "Neck", "Neck1", "Neck3", "Head", "Jaw",
-            "Tail1", "Tail3", "Tail5",
-            "LeftUpLeg", "LeftLeg", "LeftFoot", "LeftToeBase",
-            "RightUpLeg", "RightLeg", "RightFoot", "RightToeBase",
-            "LeftShoulder", "LeftArm", "LeftForeArm", "LeftHand",
-            "RightShoulder", "RightArm", "RightForeArm", "RightHand",
-        ],
+        # Full skeleton: every bone under the root (fingers, toes, jaw,
+        # tongue, eyes...). --min-bone-length prunes short bones later.
+        keep="all",
         target_mass=40.0,   # velociraptor-class at this stature
         radius_cap={"Head": 0.09, "Jaw": 0.04,
                     "LeftHand": 0.035, "RightHand": 0.035,
@@ -170,15 +164,44 @@ def kept_parent(name, parent_name, keep_set):
     return p
 
 
-def build(robot: str, out_path: Path):
+def build(robot: str, out_path: Path, min_bone_length: float = 0.0):
     spec = ROBOTS[robot]
     world_raw, parent_name = load_bind(spec["fbx"])
 
-    # Units/axes: UE exports here are cm; detect up-axis from the root's
-    # dominant world component and rotate everything to Z-up meters.
-    keep = spec["keep"]
     root = spec["root"]
-    w = {k: v * 0.01 for k, v in world_raw.items() if k in set(keep)}
+    if spec["keep"] == "all":
+        # every descendant of the root bone, tree order
+        def under_root(n):
+            p = n
+            while p is not None:
+                if p == root:
+                    return True
+                p = parent_name.get(p)
+            return False
+        keep = [n for n in world_raw if n and under_root(n)]
+    else:
+        keep = list(spec["keep"])
+
+    # --min-bone-length pruning: fold bones whose offset from their kept
+    # parent is below the threshold (children re-attach to the parent).
+    w_all = {k: v * 0.01 for k, v in world_raw.items()}
+    if min_bone_length > 0:
+        pruned = True
+        while pruned:
+            pruned = False
+            for n in list(keep):
+                if n == root:
+                    continue
+                kp = kept_parent(n, parent_name, set(keep))
+                if kp is None:
+                    continue
+                if np.linalg.norm(w_all[n] - w_all[kp]) < min_bone_length:
+                    keep.remove(n)
+                    pruned = True
+        print(f"min_bone_length={min_bone_length}: {len(keep)} bones kept")
+
+    # Units/axes: UE exports are cm; convert to Z-up meters.
+    w = {k: w_all[k] for k in keep}
     if spec["up_axis"] == "y":  # Y-up -> Z-up
         rot = np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]], dtype=float)
         w = {k: rot @ v for k, v in w.items()}
@@ -197,8 +220,17 @@ def build(robot: str, out_path: Path):
             end = min(ends, key=lambda e: np.linalg.norm(e - pos)) \
                 if name == root else np.mean(ends, axis=0)
         else:
-            axis = np.array(spec["leaf_axis"].get(name, (0, 0, 1)), float)
-            end = pos + axis * 0.08
+            axis = spec["leaf_axis"].get(name)
+            if axis is None:
+                parent = kpar[name]
+                d = pos - w[parent] if parent else np.array([0, 0, 1.0])
+                n_ = np.linalg.norm(d)
+                axis = d / n_ if n_ > 1e-6 else np.array([0, 0, 1.0])
+            else:
+                axis = np.array(axis, float)
+            end = pos + axis * max(
+                0.05, 0.6 * np.linalg.norm(
+                    pos - w[kpar[name]]) if kpar[name] else 0.05)
         seg = end - pos
         length = np.linalg.norm(seg)
         radius = np.clip(RADIUS_PER_LEN * length, MIN_RADIUS, MAX_RADIUS)
@@ -304,9 +336,14 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--robot", choices=sorted(ROBOTS), required=True)
     ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument(
+        "--min-bone-length", type=float, default=0.0,
+        help="Fold bones whose offset from their kept parent is shorter "
+        "than this (meters). 0 = keep the full skeleton.",
+    )
     args = ap.parse_args()
     gc.disable()
-    build(args.robot, args.out)
+    build(args.robot, args.out, args.min_bone_length)
     sys.stdout.flush()
     os._exit(0)
 
