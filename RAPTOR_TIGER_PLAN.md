@@ -74,13 +74,15 @@ ForeArm, Hand. PRUNE: cameras, FootIK, LodGroup/LODs, toe/finger
 phalanx chains (Index/Middle/Ring/Thumb*), eyes/lids, Tongue*, Snout,
 Throat, Belly, Dupa, PreySocket, props, ToeBaseEND.
 
-Tiger (~26): RigPelvis; RigSpine1..3 (collapse Spine2), RigChest;
-RigNeck1, RigNeck2; RigHead (find exact name in tiger_tree.txt), jaw if
-present; RigTail1, RigTail3, RigTail5; hind per side: RigLBLeg1/2/3 +
-RigLBLegAnkle; front per side: RigLFLegCollarbone, RigLFLeg1, and the
-distal front segments (see tree tail past line 50 — FLeg2/FLegAnkle).
-PRUNE: digits (keep Ankle as foot contact), ShoulderBlade chains
-(scapula cosmetic), LODs, RigRoot stays as root parent fold-in.
+Tiger (~28, tree confirmed): RigPelvis; RigSpine1, RigSpine3 (collapse
+Spine2), RigChest; RigNeck1, RigNeck3 (collapse 2, fold 4 into head
+offset); RigHead; RigJaw1 (bite); RigTail1, RigTail3, RigTail5
+(collapse evens, drop 6+); hind per side: RigLBLeg1, RigLBLeg2,
+RigLBLeg3, RigLBLegAnkle (digitigrade foot); front per side:
+RigLFLegCollarbone, RigLFLeg1, RigLFLeg2, RigLFLeg3, RigLFLegAnkle.
+PRUNE: Digit*/Claw chains (Ankle = foot contact body), ShoulderBlade*,
+ears/eyes/eyelids/whiskers/nose/tongue, LODs; RigRoot folds into root.
+Trees saved: ~/sparkpack/output/{raptor,tiger}_tree.txt.
 
 ## Pipeline to build (fbx2robot.py + fbx_anim_to_motion.py)
 
