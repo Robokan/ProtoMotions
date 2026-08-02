@@ -79,7 +79,10 @@ for mat in bpy.data.materials:
     px = _np.asarray(im.pixels).reshape(-1, im.channels) if im.channels == 4 else None
     has_cutout = px is not None and px[:, 3].mean() < 0.97
     for link in list(nt.links):
-        if link.to_node == bsdf and link.to_socket.name == "Alpha":
+        if link.to_node == bsdf and link.to_socket.name in ("Alpha", "Normal"):
+            # FBX-imported normal-map chains export flattened/incorrectly
+            # (texture straight into normal, no tangent-space transform)
+            # and break Isaac's UsdPreviewSurface compile -> invisible mesh.
             nt.links.remove(link)
     if has_cutout:
         nt.links.new(node.outputs["Alpha"], bsdf.inputs["Alpha"])
