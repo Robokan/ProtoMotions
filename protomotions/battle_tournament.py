@@ -235,7 +235,12 @@ def main():
     agent_config = resolved["agent"]
 
     headless = args.headless
-    if args.exhibition is not None and headless is None and args.record is None:
+    wants_viewer = (
+        args.exhibition is not None
+        or args.exhibition_vs_pool is not None
+        or args.exhibition_pool
+    )
+    if wants_viewer and headless is None and args.record is None:
         headless = False
     if headless is None:
         headless = True
