@@ -136,6 +136,21 @@ class Terrain:
             int(self.env_rows * self.length_per_env_pixels) + 2 * self.border
         )
 
+        # Motion-support cells: dedicated flat cells with support boxes stamped
+        # under elevated foot stances of flagged motion clips. Laid out in a
+        # strip of extra rows appended beyond the existing terrain (subterrain
+        # grid, border and object playground are untouched).
+        self.motion_support_origins: dict = {}
+        self._motion_support_cells: list = []
+        self._motion_support_rows = 0
+        # getattr: configs pickled before this field existed lack the attribute
+        if getattr(config, "motion_support_manifest", None) is not None:
+            assert not config.load_terrain, (
+                "motion_support_manifest is not supported with load_terrain"
+            )
+            self._plan_motion_support_cells()
+            self.tot_rows += self._motion_support_rows
+
         self.height_field_raw = np.zeros((self.tot_rows, self.tot_cols), dtype=np.int16)
         self.ceiling_field_raw = np.zeros(
             (self.tot_rows, self.tot_cols), dtype=np.int16
@@ -162,6 +177,9 @@ class Terrain:
         else:
             self.generate_subterrains()
 
+        if self._motion_support_cells:
+            self._stamp_motion_support_cells()
+
         # Normalize terrain heights so the lowest point is at z=0
         min_height = np.min(self.height_field_raw)
         if min_height < 0:
@@ -169,6 +187,10 @@ class Terrain:
                 f"Normalizing terrain: shifting all heights by {min_height * self.vertical_scale:.4f}m to set minimum to z=0"
             )
             self.height_field_raw = self.height_field_raw - min_height
+
+        # Support cell floors sit at 0 before normalization; record their
+        # world height after the shift so spawn placement can use it directly.
+        self.motion_support_floor_z = float(-min(0, min_height)) * self.vertical_scale
 
         self.height_samples = (
             torch.tensor(self.height_field_raw, device=self.device, dtype=torch.float)
@@ -210,6 +232,142 @@ class Terrain:
     def generate_subterrains(self):
         self.curriculum(n_subterrains_per_level=self.env_cols, n_levels=self.env_rows)
 
+    def _plan_motion_support_cells(self):
+        """Plan one rectangular cell per motion flagged as ``needs_support``.
+
+        Parses the support manifest YAML and the packed motion lib to map clip
+        filenames to motion IDs. Each cell covers the motion's root travel
+        bounds and all support box footprints, plus a flat margin on all sides.
+        Cells are shelf-packed into a strip of extra rows appended beyond the
+        existing terrain (``self.tot_rows`` is increased by the caller).
+
+        The anchor of a cell is the world (x, y) where motion-local (0, 0)
+        maps; world coordinates follow the existing convention
+        ``world = pixel * horizontal_scale`` (see compute_walkable_coords).
+        Anchors are stored in ``self.motion_support_origins``.
+        """
+        import os
+
+        import yaml
+
+        assert self.config.motion_support_motion_lib is not None, (
+            "motion_support_manifest requires motion_support_motion_lib "
+            "to map clip names to motion IDs"
+        )
+
+        with open(self.config.motion_support_manifest, "r") as f:
+            manifest = yaml.safe_load(f)
+
+        motion_files = torch.load(
+            self.config.motion_support_motion_lib,
+            map_location="cpu",
+            weights_only=False,
+        )["motion_files"]
+        basename_to_motion_id = {
+            os.path.basename(path): motion_id
+            for motion_id, path in enumerate(motion_files)
+        }
+
+        margin = self.config.motion_support_margin
+        strip_start_row = self.tot_rows  # Strip begins past the trailing border
+        cur_row = strip_start_row
+        cur_col = 0
+        shelf_rows = 0
+
+        for clip_name, entry in manifest.items():
+            if entry.get("classification") != "needs_support":
+                continue
+            motion_id = basename_to_motion_id.get(os.path.basename(clip_name))
+            if motion_id is None:
+                continue
+            boxes = entry.get("support_boxes") or []
+            if len(boxes) == 0:
+                continue
+
+            # Motion-local cell bounds: root travel ∪ box footprints + margin
+            min_x = min(
+                entry["root_xy_min"][0],
+                min(b["center_x"] - b["extent_x"] / 2 for b in boxes),
+            ) - margin
+            max_x = max(
+                entry["root_xy_max"][0],
+                max(b["center_x"] + b["extent_x"] / 2 for b in boxes),
+            ) + margin
+            min_y = min(
+                entry["root_xy_min"][1],
+                min(b["center_y"] - b["extent_y"] / 2 for b in boxes),
+            ) - margin
+            max_y = max(
+                entry["root_xy_max"][1],
+                max(b["center_y"] + b["extent_y"] / 2 for b in boxes),
+            ) + margin
+
+            cell_rows = math.ceil((max_x - min_x) / self.horizontal_scale)
+            cell_cols = math.ceil((max_y - min_y) / self.horizontal_scale)
+            assert cell_cols <= self.tot_cols, (
+                f"Motion-support cell for '{clip_name}' is wider "
+                f"({cell_cols} px) than the terrain ({self.tot_cols} px)"
+            )
+
+            # Shelf packing: cells side by side along the strip, new shelf
+            # (row of cells) whenever the current one is full.
+            if cur_col + cell_cols > self.tot_cols:
+                cur_row += shelf_rows
+                cur_col = 0
+                shelf_rows = 0
+
+            anchor_x = cur_row * self.horizontal_scale - min_x
+            anchor_y = cur_col * self.horizontal_scale - min_y
+            self._motion_support_cells.append(
+                {
+                    "motion_id": motion_id,
+                    "start_row": cur_row,
+                    "start_col": cur_col,
+                    "num_rows": cell_rows,
+                    "num_cols": cell_cols,
+                    "anchor": (anchor_x, anchor_y),
+                    "boxes": boxes,
+                }
+            )
+            self.motion_support_origins[motion_id] = (anchor_x, anchor_y)
+
+            shelf_rows = max(shelf_rows, cell_rows)
+            cur_col += cell_cols
+
+        self._motion_support_rows = (cur_row + shelf_rows) - strip_start_row
+        if self._motion_support_cells:
+            print(
+                f"Motion-support terrain: {len(self._motion_support_cells)} cells in a "
+                f"{self._motion_support_rows * self.horizontal_scale:.1f}m strip "
+                f"appended beyond the terrain"
+            )
+
+    def _stamp_motion_support_cells(self):
+        """Stamp each cell's support boxes into the height field.
+
+        Pixels inside a box footprint get height ``round(top_z / vertical_scale)``
+        (top_z is height above the motion's ground). The rest of the cell stays
+        at zero. Overlapping boxes keep the maximum height.
+        """
+        for cell in self._motion_support_cells:
+            anchor_x, anchor_y = cell["anchor"]
+            row_end = cell["start_row"] + cell["num_rows"]
+            col_end = cell["start_col"] + cell["num_cols"]
+            for box in cell["boxes"]:
+                x0 = anchor_x + box["center_x"] - box["extent_x"] / 2
+                x1 = anchor_x + box["center_x"] + box["extent_x"] / 2
+                y0 = anchor_y + box["center_y"] - box["extent_y"] / 2
+                y1 = anchor_y + box["center_y"] + box["extent_y"] / 2
+
+                px0 = max(cell["start_row"], int(round(x0 / self.horizontal_scale)))
+                px1 = min(row_end, int(round(x1 / self.horizontal_scale)) + 1)
+                py0 = max(cell["start_col"], int(round(y0 / self.horizontal_scale)))
+                py1 = min(col_end, int(round(y1 / self.horizontal_scale)) + 1)
+
+                height = np.int16(round(box["top_z"] / self.vertical_scale))
+                region = self.height_field_raw[px0:px1, py0:py1]
+                np.maximum(region, height, out=region)
+
     def compute_walkable_coords(self):
         self.walkable_field_raw[: self.border, :] = 1
         self.walkable_field_raw[
@@ -222,6 +380,12 @@ class Terrain:
         ] = 1
         self.walkable_field_raw[:, : self.border] = 1
         self.walkable_field_raw[-self.border :, :] = 1
+        if self._motion_support_rows > 0:
+            # Exclude the motion-support strip (and the border preceding it,
+            # which -self.border no longer covers) from random spawn sampling.
+            self.walkable_field_raw[
+                -(self._motion_support_rows + self.border) :, :
+            ] = 1
 
         self.walkable_field = torch.tensor(self.walkable_field_raw, device=self.device)
 
@@ -241,6 +405,9 @@ class Terrain:
         ] = 1
         self.flat_field_raw[:, : self.border] = 1
         self.flat_field_raw[-self.border :, :] = 1
+        if self._motion_support_rows > 0:
+            # Exclude the motion-support strip from flat spawn sampling.
+            self.flat_field_raw[-(self._motion_support_rows + self.border) :, :] = 1
 
         self.flat_field_raw = torch.tensor(self.flat_field_raw, device=self.device)
 
@@ -255,6 +422,11 @@ class Terrain:
         Returns True only if terrain_proportions has flat=1.0 and all others are 0.0.
         This is used to skip expensive terrain height calculations when unnecessary.
         """
+        # Motion-support cells stamp raised geometry, so height queries
+        # (and respawn height correction) must not be skipped.
+        if self.motion_support_origins:
+            return False
+
         # Matches the terrain type order used by curriculum().
         proportions = self.config.terrain_proportions
         assert len(proportions) == 8

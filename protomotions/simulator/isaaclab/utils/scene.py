@@ -182,7 +182,12 @@ class SceneCfg(InteractiveSceneCfg):
 
         override_material = (
             sim_utils.PreviewSurfaceCfg(diffuse_color=(0.9, 0.9, 0.9), metallic=0.5)
-            if getattr(robot_config.asset, "override_visual_material", True)
+            if (
+                getattr(robot_config.asset, "override_visual_material", True)
+                and getattr(
+                    robot_config.asset, "apply_default_visual_material", True
+                )  # go2-training's spelling of the same opt-out
+            )
             else None
         )
         opponent_usd = getattr(
@@ -216,7 +221,10 @@ class SceneCfg(InteractiveSceneCfg):
             spawn=robot_spawn,
             init_state=ArticulationCfg.InitialStateCfg(
                 pos=(0.0, 0.0, robot_config.default_root_height),
-                joint_pos={".*": 0.0},
+                joint_pos={
+                    name: float(robot_config.default_dof_pos[i])
+                    for i, name in enumerate(robot_config.kinematic_info.dof_names)
+                } if robot_config.default_dof_pos is not None else {".*": 0.0},
                 joint_vel={".*": 0.0},
             ),
             actuators=actuators,

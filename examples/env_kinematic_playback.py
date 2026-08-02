@@ -95,6 +95,12 @@ def create_parser():
         "--seed", type=int, default=0, help="Random seed for reproducibility"
     )
     parser.add_argument(
+        "--overrides",
+        nargs="*",
+        default=[],
+        help="Config overrides in format key=value (e.g., terrain.motion_support_manifest=path.yaml)",
+    )
+    parser.add_argument(
         "--motion-ids",
         type=str,
         default=None,
@@ -236,6 +242,34 @@ def main():
     scene_lib_config = configs["scene_lib"]
     motion_lib_config = configs["motion_lib"]
     env_config: EnvConfig = configs["env"]
+
+    # Apply CLI overrides (e.g., terrain.motion_support_manifest=...)
+    if args.overrides:
+        from protomotions.utils.config_utils import (
+            apply_config_overrides,
+            parse_cli_overrides,
+        )
+
+        cli_overrides = parse_cli_overrides(args.overrides)
+        if cli_overrides:
+            apply_config_overrides(
+                cli_overrides,
+                env_config,
+                simulator_config,
+                robot_config,
+                terrain_config=terrain_config,
+                motion_lib_config=motion_lib_config,
+                scene_lib_config=scene_lib_config,
+            )
+
+    # Kinematic viewer doesn't need contact sensors (PhysX tensor API isn't
+    # available until the sim is fully running — disabling avoids the import error).
+    robot_config.contact_bodies = None
+
+    # Disable projectiles — they cause write_root_state_to_sim failures during
+    # scene init in IsaacLab 3.0 before the first physics step completes.
+    if hasattr(simulator_config, "projectile"):
+        simulator_config.projectile.num_projectiles = 0
 
     print(f"Robot config class: {type(robot_config).__name__}")
     print(f"Simulator config class: {type(simulator_config).__name__}")
@@ -392,6 +426,51 @@ def main():
     # print("=" * 140)
 
     # Run simulation loop
+    # --- N/P clip switching ---------------------------------------------
+    # 'n' / 'p' cycle the played-back motion clip. The key handlers only set a
+    # request flag; the actual motion switch + reset happens between steps in
+    # the main loop (calling env.reset() inside the render callback would be
+    # re-entrant). Works for any simulator exposing _custom_key_handlers.
+    _num_motions = env.motion_lib.num_motions()
+    _clip_req = {"delta": 0}
+
+    def _request_next():
+        _clip_req["delta"] = 1
+
+    def _request_prev():
+        _clip_req["delta"] = -1
+
+    if hasattr(env.simulator, "_custom_key_handlers"):
+        # n/p and =/- both cycle the played-back clip (=/- mirror the Newton
+        # viewer; with a single env they would otherwise just switch which robot
+        # the camera follows, which is a no-op).
+        env.simulator._custom_key_handlers.update(
+            {
+                "n": _request_next,
+                "p": _request_prev,
+                "=": _request_next,
+                "-": _request_prev,
+            }
+        )
+
+    def _apply_clip_switch():
+        if env.motion_manager is None or _clip_req["delta"] == 0:
+            return
+        cur = int(env.motion_manager.motion_ids[0].item())
+        new_id = (cur + _clip_req["delta"]) % _num_motions
+        _clip_req["delta"] = 0
+        # Pin every env to the new clip so reset keeps it, then reset to snap
+        # the robot to the new clip's start.
+        fixed = torch.full(
+            (env.num_envs,), new_id, dtype=torch.long, device=device
+        )
+        env.motion_manager._fixed_motion_ids_per_env = fixed
+        env.motion_manager._env_has_fixed_motion[:] = True
+        env.motion_manager.motion_ids[:] = new_id
+        env.motion_manager.motion_times[:] = 0.0
+        env.reset()
+        print(f"[viewer] clip {new_id}/{_num_motions}")
+
     print("\n=== Starting Kinematic Playback ===")
     print("This will play back the reference motion kinematically")
     print("The humanoid will follow the motion capture data exactly")
@@ -399,6 +478,8 @@ def main():
     print("  L - start/stop recording")
     print("  ; - cancel recording")
     print("  O - toggle camera target")
+    print("  N / = - next motion clip")
+    print("  P / - - previous motion clip")
     print("  Q - close simulator")
 
     actions = torch.zeros(env.num_envs, robot_config.number_of_actions, device=device)
@@ -407,6 +488,7 @@ def main():
         step_count = 0
         while env.is_simulation_running():
             obs, rewards, dones, terminated, infos = env.step(actions)
+            _apply_clip_switch()
 
             step_count += 1
 

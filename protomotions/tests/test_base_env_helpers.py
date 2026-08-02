@@ -466,6 +466,7 @@ def _make_env(
     env._current_noisy_obs = None
     env._action_config_device_ready = False
     env.skip_height_correction = False
+    env.is_getup_env = torch.zeros(num_envs, dtype=torch.bool)
     env.inference_mode = False
     env.state_history = _StateHistory(num_envs) if history else None
     env.control_manager = _ControlManager()

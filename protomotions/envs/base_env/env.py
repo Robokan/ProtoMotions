@@ -174,6 +174,14 @@ class BaseEnv:
             self.num_envs, device=self.device, dtype=torch.bool
         )
 
+        # Per-env flag: True while an env is in a random-orientation "get-up"
+        # episode. These envs get an extended grace window (see
+        # check_resets_and_terminations) so they have time to stand up AND
+        # rejoin the reference before tracking-error termination can fire.
+        self.is_getup_env = torch.zeros(
+            self.num_envs, device=self.device, dtype=torch.bool
+        )
+
         self.respawn_root_offset = torch.zeros(
             self.num_envs, 3, dtype=torch.float, device=self.device
         )
@@ -208,6 +216,11 @@ class BaseEnv:
         self._current_processed_action = torch.zeros(
             self.num_envs, num_actions, dtype=torch.float, device=self.device
         )
+
+        # Inference/demo mode: skip reward computation in the step (rewards are
+        # only needed for training). Set True by inference_agent.py to speed up
+        # the viewer; leave False for training/evaluation.
+        self.inference_mode = False
 
         # Global context cache - built once per step in post_physics_step
         # and reused by observations, rewards, and terminations
@@ -496,6 +509,27 @@ class BaseEnv:
         """Default object state (empty if no scenes)."""
         return self.scene_lib.get_default_object_state(self.device)
 
+    @cached_property
+    def _motion_support_anchors(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Per-motion support cell anchors from the terrain.
+
+        Returns:
+            anchor_xy: World (x, y) anchor per motion id [num_motions, 2]
+            has_support: Whether the motion has a support cell [num_motions]
+        """
+        support_origins = getattr(self.terrain, "motion_support_origins", {})
+        num_motions = self.motion_lib.num_motions()
+        anchor_xy = torch.zeros((num_motions, 2), device=self.device)
+        has_support = torch.zeros(
+            num_motions, dtype=torch.bool, device=self.device
+        )
+        for motion_id, (anchor_x, anchor_y) in support_origins.items():
+            if motion_id < num_motions:
+                anchor_xy[motion_id, 0] = anchor_x
+                anchor_xy[motion_id, 1] = anchor_y
+                has_support[motion_id] = True
+        return anchor_xy, has_support
+
     def update_respawn_root_offset_by_env_ids(
         self,
         env_ids,
@@ -548,6 +582,24 @@ class BaseEnv:
                 )
                 respawn_offset[scene_mask, 2] = terrain_heights
 
+        # Motion-support envs: anchor the motion at its dedicated support cell
+        # so the reference motion aligns exactly with the stamped support
+        # geometry. The offset is the cell anchor itself (NOT offset by
+        # ref_root) because the support boxes were stamped in motion-local
+        # coordinates anchored there: world_ref = ref + anchor.
+        # Only applies to reference resets (ref_state set), which run after
+        # motion_manager.sample_motions() assigned fresh motion ids.
+        support_mask = torch.zeros_like(non_scene_mask)
+        support_origins = getattr(self.terrain, "motion_support_origins", {})
+        if support_origins and ref_state is not None and self.motion_manager is not None:
+            anchor_xy, has_support = self._motion_support_anchors
+            motion_ids = self.motion_manager.motion_ids[env_ids]
+            support_mask = non_scene_mask & has_support[motion_ids]
+            if support_mask.any():
+                respawn_offset[support_mask, :2] = anchor_xy[motion_ids[support_mask]]
+                # Exclude support envs from random location sampling below
+                non_scene_mask = non_scene_mask & ~support_mask
+
         if non_scene_mask.any():
             num_non_scene = non_scene_mask.sum().item()
             respawn_position_xy = self.terrain.sample_valid_locations(
@@ -562,19 +614,30 @@ class BaseEnv:
                 ref_root = ref_state.root_pos[non_scene_mask, :2]
             respawn_offset[non_scene_mask, :2] = respawn_position_xy - ref_root
 
-            if not self.skip_height_correction:
-                if ref_state is not None:
-                    rigid_body_pos = ref_state.rigid_body_pos[non_scene_mask].clone()
-                    rigid_body_pos_spawned = rigid_body_pos + respawn_offset[
-                        non_scene_mask
-                    ].unsqueeze(1)
-                else:
-                    rigid_body_pos_spawned = respawn_offset[non_scene_mask].unsqueeze(1)
+        if non_scene_mask.any() and not self.skip_height_correction:
+            if ref_state is not None:
+                rigid_body_pos = ref_state.rigid_body_pos[non_scene_mask].clone()
+                rigid_body_pos_spawned = rigid_body_pos + respawn_offset[
+                    non_scene_mask
+                ].unsqueeze(1)
+            else:
+                rigid_body_pos_spawned = respawn_offset[non_scene_mask].unsqueeze(1)
 
-                terrain_heights = self.terrain.find_terrain_height_for_max_below_body(
-                    rigid_body_pos_spawned
-                )
-                respawn_offset[non_scene_mask, 2] = terrain_heights
+            terrain_heights = self.terrain.find_terrain_height_for_max_below_body(
+                rigid_body_pos_spawned
+            )
+            respawn_offset[non_scene_mask, 2] = terrain_heights
+
+        if support_mask.any():
+            # Support cells share the motion's ground frame: the cell floor is
+            # flat and the boxes reproduce the clip's elevations, so the only
+            # z offset needed is the cell floor's world height. The
+            # max-below-body heuristic must NOT be used here — with matching
+            # geometry every foot has near-zero clearance and a box-top
+            # tie-break would lift the robot by a full box height.
+            respawn_offset[support_mask, 2] = getattr(
+                self.terrain, "motion_support_floor_z", 0.0
+            )
 
         respawn_offset[:, 2] += self.config.ref_respawn_offset
 
@@ -629,6 +692,25 @@ class BaseEnv:
             z_offset = self.terrain.find_terrain_height_for_max_below_body(
                 target_pos_spawned
             )
+
+            # Motions anchored in support cells already match the terrain
+            # geometry — their z offset is the constant cell-floor height.
+            # The max-below-body heuristic flips discontinuously when feet
+            # cross box edges, which would bounce the whole reference pose.
+            support_origins = getattr(self.terrain, "motion_support_origins", {})
+            if support_origins and self.motion_manager is not None:
+                _, has_support = self._motion_support_anchors
+                support_mask = has_support[self.motion_manager.motion_ids[env_ids]]
+                if support_mask.any():
+                    z_offset = torch.where(
+                        support_mask,
+                        torch.full_like(
+                            z_offset,
+                            getattr(self.terrain, "motion_support_floor_z", 0.0),
+                        ),
+                        z_offset,
+                    )
+
             new_offset[:, :, 2] = z_offset.unsqueeze(1)
 
         return new_offset
@@ -872,16 +954,24 @@ class BaseEnv:
         reset_buf = max_length_reached.clone()
         terminated = torch.zeros_like(self.reset_buf, dtype=torch.bool)
 
+        # Get-up envs are a "recover to the reference pose" skill judged locally
+        # (joint + gravity-relative up-axis match; see compute_reward /
+        # _compute_getup_reward) on quantities a fallen robot can actually sense
+        # (IMU + encoders) and reach. They are therefore NEVER terminated on the
+        # absolute tracking error (which they can neither observe nor recover) --
+        # they run to max-episode-length. Normal tracking envs are unaffected.
+        keep = ~self.is_getup_env
+
         comp_reset, comp_terminate = (
             self.control_manager.check_resets_and_terminations()
         )
-        reset_buf = reset_buf | comp_reset
-        terminated = terminated | comp_terminate
+        reset_buf = reset_buf | (comp_reset & keep)
+        terminated = terminated | (comp_terminate & keep)
 
         # Process terminations
         comp_reset, comp_terminate, term_logging = self._process_terminations(context)
-        reset_buf = reset_buf | comp_reset
-        terminated = terminated | comp_terminate
+        reset_buf = reset_buf | (comp_reset & keep)
+        terminated = terminated | (comp_terminate & keep)
         self.extras.update(term_logging)
 
         return reset_buf, terminated
@@ -1072,9 +1162,44 @@ class BaseEnv:
         # Process rewards
         combined_reward, reward_logging = self._process_rewards(context, grace_mask)
 
+        # Get-up envs: override the (absolute) tracking reward with a local
+        # recover-to-pose reward judged only on what a fallen robot can sense
+        # (IMU + joint encoders) and reach -- joint-position match + the
+        # reference's gravity-relative up-axis. Global position and yaw are
+        # excluded (unobservable post-fall and unrecoverable in place).
+        if bool(self.is_getup_env.any()):
+            getup_r = self._compute_getup_reward(context)
+            combined_reward = torch.where(self.is_getup_env, getup_r, combined_reward)
+
         self.rew_buf[:] = combined_reward
         self.extras.update(reward_logging)
         self.extras["total_env_reward"] = combined_reward
+
+    def _compute_getup_reward(self, context: EnvContext):
+        """Local get-up reward: match the reference joint configuration and the
+        reference's gravity-relative orientation (up-axis), both IMU/encoder
+        observable. Position- and yaw-free, so a fallen robot can actually earn
+        it by standing up into the reference pose in place."""
+        from protomotions.utils.rotations import quat_rotate_inverse
+
+        cur_dof = context.current.dof_pos
+        ref_dof = context.mimic.ref_state.dof_pos
+        cur_rot = context.current.root_rot  # xyzw
+        ai = self.robot_config.anchor_body_index
+        ref_rot = context.mimic.ref_state.rigid_body_rot[:, ai]
+
+        # joint-position match (encoders)
+        dof_err = (cur_dof - ref_dof).abs().mean(dim=-1)
+
+        # gravity-direction (IMU "projected gravity") match -- yaw-invariant
+        gdir = torch.tensor([0.0, 0.0, -1.0], device=self.device).expand(
+            cur_rot.shape[0], 3
+        )
+        cur_g = quat_rotate_inverse(cur_rot, gdir, True)
+        ref_g = quat_rotate_inverse(ref_rot, gdir, True)
+        orient_err = 1.0 - (cur_g * ref_g).sum(dim=-1).clamp(-1.0, 1.0)
+
+        return 0.6 * torch.exp(-5.0 * dof_err) + 0.4 * torch.exp(-3.0 * orient_err)
 
     ###############################################################
     # Handle Resets
@@ -1216,6 +1341,10 @@ class BaseEnv:
                 dof_limits_upper=self.robot_config.kinematic_info.dof_limits_upper,
             )
 
+        # Random get-up resets: spawn some envs in random orientation + random joints
+        if self.config.random_getup_prob > 0.0:
+            self._apply_random_getup_reset(new_states, env_ids)
+
         self.simulator.reset_envs(new_states, new_object_states, env_ids)
 
         default_mask = ~torch.isin(env_ids, ref_env_ids)
@@ -1269,6 +1398,44 @@ class BaseEnv:
         self.compute_observations(env_ids, context=self.context)
 
         return self.get_obs(), {}
+
+    def _apply_random_getup_reset(self, new_states, env_ids):
+        """Override a random fraction of envs with random orientation and joint positions.
+
+        For each selected env: random root quaternion (any orientation) and joint positions
+        sampled uniformly within DOF limits. Root position z is raised slightly so the robot
+        doesn't start embedded in the ground.
+        """
+        num_resets = env_ids.shape[0]
+        prob = self.config.random_getup_prob
+        # Clear the get-up flag for all envs being reset; set it below only for
+        # the subset that actually gets a random-orientation spawn.
+        self.is_getup_env[env_ids] = False
+        getup_mask = torch.rand(num_resets, device=self.device) < prob
+        if not getup_mask.any():
+            return
+
+        getup_indices = getup_mask.nonzero(as_tuple=True)[0]
+        self.is_getup_env[env_ids[getup_indices]] = True
+
+        # Random quaternion via Gaussian → normalize (uniform on S3)
+        rand_quat = torch.randn(len(getup_indices), 4, device=self.device)
+        rand_quat = rand_quat / rand_quat.norm(dim=-1, keepdim=True)  # xyzw
+
+        # Random DOF positions uniform within limits
+        dof_low = self.robot_config.kinematic_info.dof_limits_lower.to(self.device)
+        dof_high = self.robot_config.kinematic_info.dof_limits_upper.to(self.device)
+        rand_dof = dof_low + torch.rand(len(getup_indices), dof_low.shape[0], device=self.device) * (dof_high - dof_low)
+
+        new_states.root_rot[getup_indices] = rand_quat
+        new_states.dof_pos[getup_indices] = rand_dof
+        # Zero velocities so the robot starts stationary
+        if new_states.root_vel is not None:
+            new_states.root_vel[getup_indices] = 0.0
+        if new_states.root_ang_vel is not None:
+            new_states.root_ang_vel[getup_indices] = 0.0
+        if new_states.dof_vel is not None:
+            new_states.dof_vel[getup_indices] = 0.0
 
     def _get_ref_reset_envs(
         self, env_ids, force_default_mask, disable_motion_resample=False

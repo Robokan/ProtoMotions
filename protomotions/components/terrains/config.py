@@ -142,6 +142,19 @@ class TerrainConfig:
         metadata={"help": "Save generated terrain to file."}
     )
 
+    motion_support_manifest: Optional[str] = field(
+        default=None,
+        metadata={"help": "Path to support-geometry manifest YAML. Enables dedicated motion-support cells."}
+    )
+    motion_support_motion_lib: Optional[str] = field(
+        default=None,
+        metadata={"help": "Path to packed motion lib .pt used to map manifest clip names to motion IDs."}
+    )
+    motion_support_margin: float = field(
+        default=3.0,
+        metadata={"help": "Flat ground margin (meters) around each motion-support cell.", "min": 0.0}
+    )
+
     sim_config: TerrainSimConfig = field(
         default_factory=TerrainSimConfig,
         metadata={"help": "Simulation properties (friction, restitution)."}

@@ -706,6 +706,9 @@ class MotionLib:
         for field in self._fields:
             if not hasattr(self, field):
                 setattr(self, field, None)
+        self.contacts = None  # default; overridden below if present in file
+        self.lrs = None  # default; overridden below if present in file
+
 
         for field in loaded_data:
             setattr(self, field, loaded_data[field])

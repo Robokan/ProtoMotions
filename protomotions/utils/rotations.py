@@ -673,6 +673,53 @@ def angle_from_matrix_axis(rot_mat: Tensor, axis: Tensor) -> Tensor:
     return angle
 
 
+def twist_angle_about_axis(rot_mat: Tensor, axis: Tensor) -> Tensor:
+    """Clean swing/twist projection: angle of R's TWIST about `axis`.
+
+    Decomposes a rotation R into a swing (off-axis) and a twist (about `axis`)
+    part, R = R_swing @ R_twist, and returns ONLY the twist angle, DISCARDING
+    any off-axis (swing) component. This differs from `angle_from_matrix_axis`,
+    which mixes the full rotation magnitude (via trace) into cos(theta) so that
+    off-axis content corrupts the extracted angle.
+
+    Implementation (quaternion swing-twist): for q = (w, v) with v the vector
+    part, the twist about unit axis a is
+        q_twist = normalize( (w, (v . a) a) ),
+        theta   = 2 * atan2( v . a, w ),
+    which is the standard swing-twist decomposition. The sign/branch convention
+    matches `angle_from_matrix_axis` for rotations that ARE purely about `axis`
+    (their swing is identity), so single-hinge joints whose target rotation is
+    already about their axis (e.g. go2 / anymal_d leg joints) get the SAME angle
+    to numerical precision; only genuine off-axis content is treated
+    differently (discarded here, leaked into the angle by the trace method).
+
+    Args:
+        rot_mat (B, 3, 3): Batch of rotation matrices.
+        axis (3,): The hinge axis (normalized internally).
+
+    Returns:
+        torch.Tensor (B,): Twist angle about `axis`, in radians, in (-pi, pi].
+    """
+    axis = axis.to(rot_mat.device, rot_mat.dtype)
+    axis = axis / torch.linalg.norm(axis)
+
+    # WXYZ quaternion of R.
+    quat = matrix_to_quaternion(rot_mat, w_last=False)  # (B, 4)
+    w = quat[:, 0]
+    v = quat[:, 1:]  # (B, 3)
+
+    # Project the vector part onto the axis (the twist's vector component).
+    proj = torch.einsum("bi,i->b", v, axis)  # v . a
+
+    # Twist angle = 2 * atan2(v . a, w). Handle the antipodal (w<0) branch so
+    # the result is the minimal-angle representative consistent with the
+    # trace-based extractor (which returns (-pi, pi]).
+    angle = 2.0 * torch.atan2(proj, w)
+    # Wrap into (-pi, pi].
+    angle = torch.atan2(torch.sin(angle), torch.cos(angle))
+    return angle
+
+
 @torch.jit.script
 def exp_map_to_angle_axis(exp_map: Tensor) -> Tuple[Tensor, Tensor]:
     min_theta = 1e-5

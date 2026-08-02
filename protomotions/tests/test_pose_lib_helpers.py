@@ -67,6 +67,7 @@ def _kin_info(
         body_names = [f"body_{i}" for i in range(num_bodies)]
     if nq is None:
         nq = 7 + sum(len(axes) for axes in hinge_axes_map.values())
+    num_hinge_dofs = max(nq - 7, 0)
     return SimpleNamespace(
         body_names=body_names,
         parent_indices=parent_indices,
@@ -75,6 +76,9 @@ def _kin_info(
         hinge_axes_map=hinge_axes_map,
         nq=nq,
         num_bodies=num_bodies,
+        # Unlimited hinges (matches extract_kinematic_info's +-1e10 sentinel)
+        dof_limits_lower=torch.full((num_hinge_dofs,), -1e10),
+        dof_limits_upper=torch.full((num_hinge_dofs,), 1e10),
     )
 
 
@@ -721,7 +725,9 @@ def test_extract_kinematic_info_rejects_multiple_world_roots(tmp_path):
         extract_kinematic_info(str(mjcf_path))
 
 
-def test_extract_kinematic_info_rejects_two_dof_body(tmp_path):
+def test_extract_kinematic_info_accepts_two_dof_body(tmp_path):
+    """2-DOF bodies are valid (e.g. dm_control dog spine/hip joints); qpos
+    decomposition for them requires the 'sequential' method."""
     mjcf_path = _write_mjcf(
         tmp_path,
         """
@@ -729,7 +735,7 @@ def test_extract_kinematic_info_rejects_two_dof_body(tmp_path):
           <worldbody>
             <body name="root">
               <freejoint/>
-              <body name="bad_joint_count">
+              <body name="two_dof_body">
                 <joint name="hinge_x" type="hinge" axis="1 0 0"/>
                 <joint name="hinge_y" type="hinge" axis="0 1 0"/>
               </body>
@@ -739,8 +745,11 @@ def test_extract_kinematic_info_rejects_two_dof_body(tmp_path):
         """,
     )
 
-    with pytest.raises(AssertionError, match="expected 1 or 3"):
-        extract_kinematic_info(str(mjcf_path))
+    info = extract_kinematic_info(str(mjcf_path))
+
+    assert info.nq == 7 + 2
+    body_idx = info.body_names.index("two_dof_body")
+    assert info.hinge_axes_map[body_idx].shape == (2, 3)
 
 
 def test_extract_control_info_reads_joint_values_and_regex_overrides(tmp_path):

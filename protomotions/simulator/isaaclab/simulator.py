@@ -352,6 +352,19 @@ class IsaacLabSimulator(Simulator):
             self._register_user_interface_key_callback,
             replay_existing=True,
         )
+        # Camera-env cycling (record.py) is only wired for the IsaacLab viewer.
+        self.user_interface.register_key(
+            "EQUAL",
+            owner="simulator",
+            description="Focus camera on next environment",
+            on_press=self._next_camera_env,
+        )
+        self.user_interface.register_key(
+            "MINUS",
+            owner="simulator",
+            description="Focus camera on previous environment",
+            on_press=self._prev_camera_env,
+        )
 
     def _register_custom_user_interface_keys(self, handlers: Dict[str, callable]) -> None:
         for key_name, handler in handlers.items():
@@ -1035,7 +1048,11 @@ class IsaacLabSimulator(Simulator):
                 self._get_simulator_root_state(self._camera_target["env"])
                 .root_pos.cpu()
                 .numpy()
+                .copy()
             )
+            # Fix the tracked height to the robot's nominal standing height so
+            # the camera follows in x/y only and doesn't bounce with the body.
+            char_root_pos[2] = self.robot_config.default_root_height
             height_offset = 0.2
         else:
             in_scene_object_id = self._camera_target["element"] - 1
@@ -1110,6 +1127,15 @@ class IsaacLabSimulator(Simulator):
         if arr.ndim == 3 and arr.shape[-1] == 4:
             arr = arr[..., :3]
         return np.ascontiguousarray(arr, dtype=np.uint8)
+
+    def is_simulation_running(self) -> bool:
+        """
+        Check if the simulation is running.
+
+        Also returns False once the Isaac Sim window is closed (app shutdown
+        requested), so playback loops exit cleanly instead of hanging.
+        """
+        return self._simulation_running and self._simulation_app.is_running()
 
     def close(self) -> None:
         """

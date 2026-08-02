@@ -108,6 +108,11 @@ class EnvConfig:
         metadata={"help": "Single action processing config dict with 'fn' key. Use make_pd_action_config() helper."}
     )
 
+    random_getup_prob: float = field(
+        default=0.0,
+        metadata={"help": "Fraction of resets that spawn robot in random orientation+joints for get-up training. 0 = disabled."}
+    )
+
     # Odometer corruption parameters.  Used by corrupted_xy_offset_factory to
     # simulate per-session calibration error in the G1 leg-kinematics odometer.
     # The env samples odom_scale and a yaw_bias angle once per episode at reset.
