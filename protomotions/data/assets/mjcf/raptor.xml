@@ -3,7 +3,7 @@
   <option timestep="0.016667" />
   <default>
     <joint limited="true" armature="0.02" frictionloss="0.1" />
-    <geom type="capsule" density="1094.8" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+    <geom type="capsule" density="1353.0" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
     <motor ctrllimited="true" />
   </default>
   <worldbody>
@@ -14,7 +14,7 @@
         <joint name="Spine_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
         <joint name="Spine_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
         <joint name="Spine_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-        <geom name="g_Spine" fromto="-3.7378e-10 -0.0098915 -0.0052823 -1.5574e-09 -0.041214 -0.02201" size="0.09" />
+        <geom name="g_Spine" fromto="-4.8665e-10 -0.013026 -0.00061441 -2.0277e-09 -0.054274 -0.0025601" size="0.09" />
         <body name="Spine1" pos="-4.0554e-09 -0.10855 -0.0051201">
           <joint name="Spine1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
           <joint name="Spine1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
@@ -39,12 +39,12 @@
                   <joint name="Neck3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
                   <joint name="Neck3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
                   <joint name="Neck3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                  <geom name="g_Neck3" fromto="-3.4399e-05 -0.0046759 -0.00094812 -0.00014333 -0.019483 -0.0039505" size="0.025" />
+                  <geom name="g_Neck3" fromto="-2.9566e-05 -0.0069161 0.0018385 -0.00021682 -0.050718 0.013483" size="0.025" />
                   <body name="Head" pos="-0.00024638 -0.057634 0.015321">
                     <joint name="Head_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
                     <joint name="Head_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
                     <joint name="Head_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                    <geom name="g_Head" fromto="-6.5269e-05 -0.011448 0.0005656 -0.00047864 -0.083952 0.0041478" size="0.025" />
+                    <geom name="g_Head" fromto="-0.0001245 -0.016835 -0.0035122 -0.00091301 -0.12346 -0.025756" size="0.03153" />
                     <body name="Snout" pos="-0.001445 -0.23057 -0.0085532">
                       <joint name="Snout_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
                       <joint name="Snout_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
@@ -55,79 +55,13 @@
                       <joint name="Jaw_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.0873 0.5236" />
                       <joint name="Jaw_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.0873 0.0873" />
                       <joint name="Jaw_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.0873 0.0873" />
-                      <geom name="g_Jaw" fromto="-0.00012077 -0.014392 -0.0051837 -0.00088567 -0.10554 -0.038014" size="0.02804" />
+                      <geom name="g_Jaw" fromto="-0.00019472 -0.023043 -0.0085039 -0.0014279 -0.16898 -0.062362" size="0.04" />
                       <body name="JawEND" pos="-0.0016226 -0.19202 -0.070866">
                         <joint name="JawEND_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
                         <joint name="JawEND_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
                         <joint name="JawEND_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
                         <geom name="g_JawEND" fromto="-0.00011683 -0.013826 -0.0051023 -0.00085675 -0.10139 -0.037417" size="0.02702" />
                       </body>
-                      <body name="Tongue" pos="-0.00039026 -0.047837 -0.01553">
-                        <joint name="Tongue_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                        <joint name="Tongue_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                        <joint name="Tongue_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                        <geom name="g_Tongue" fromto="-2.8171e-05 -0.0043056 -0.00034027 -0.00011738 -0.01794 -0.0014178" size="0.025" />
-                        <body name="Tongue1" pos="-0.00023476 -0.03588 -0.0028356">
-                          <joint name="Tongue1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                          <joint name="Tongue1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                          <joint name="Tongue1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                          <geom name="g_Tongue1" fromto="-3.5731e-05 -0.0041105 -0.0016684 -0.00014888 -0.017127 -0.0069517" size="0.025" />
-                          <body name="Tongue2" pos="-0.00029776 -0.034254 -0.013903">
-                            <joint name="Tongue2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                            <joint name="Tongue2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                            <joint name="Tongue2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                            <geom name="g_Tongue2" fromto="-2.9641e-05 -0.0036857 -0.0011315 -0.00012351 -0.015357 -0.0047145" size="0.025" />
-                            <body name="Tongue3" pos="-0.00024701 -0.030715 -0.009429">
-                              <joint name="Tongue3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                              <joint name="Tongue3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                              <joint name="Tongue3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                              <geom name="g_Tongue3" fromto="-2.5903e-05 -0.0034429 -0.00078549 -0.00010793 -0.014345 -0.0032729" size="0.025" />
-                              <body name="Tongue4" pos="-0.00021585 -0.028691 -0.0065458">
-                                <joint name="Tongue4_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                                <joint name="Tongue4_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                                <joint name="Tongue4_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                                <geom name="g_Tongue4" fromto="-4.4009e-05 -0.0058495 -0.0013346 -0.00032273 -0.042897 -0.0097869" size="0.025" />
-                              </body>
-                            </body>
-                          </body>
-                        </body>
-                      </body>
-                    </body>
-                    <body name="LeftEye" pos="0.030408 -0.073137 0.021482">
-                      <joint name="LeftEye_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                      <joint name="LeftEye_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                      <joint name="LeftEye_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                      <geom name="g_LeftEye" fromto="0.0022231 -0.005347 0.0015706 0.0092631 -0.022279 0.0065441" size="0.025" />
-                    </body>
-                    <body name="LeftLowEyeLid" pos="0.030454 -0.07312 0.021134">
-                      <joint name="LeftLowEyeLid_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                      <joint name="LeftLowEyeLid_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                      <joint name="LeftLowEyeLid_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                      <geom name="g_LeftLowEyeLid" fromto="0.0022289 -0.0053516 0.0015468 0.016346 -0.039245 0.011343" size="0.025" />
-                    </body>
-                    <body name="LeftUpEyeLid" pos="0.030354 -0.073156 0.021891">
-                      <joint name="LeftUpEyeLid_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                      <joint name="LeftUpEyeLid_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                      <joint name="LeftUpEyeLid_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                      <geom name="g_LeftUpEyeLid" fromto="0.0022163 -0.0053416 0.0015984 0.016253 -0.039172 0.011722" size="0.025" />
-                    </body>
-                    <body name="RightEye" pos="-0.031003 -0.072767 0.021886">
-                      <joint name="RightEye_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                      <joint name="RightEye_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                      <joint name="RightEye_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                      <geom name="g_RightEye" fromto="-0.0022666 -0.00532 0.0016001 -0.016622 -0.039013 0.011734" size="0.025" />
-                    </body>
-                    <body name="RightLowEyeLid" pos="-0.031053 -0.072749 0.021538">
-                      <joint name="RightLowEyeLid_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                      <joint name="RightLowEyeLid_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                      <joint name="RightLowEyeLid_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                      <geom name="g_RightLowEyeLid" fromto="-0.0022728 -0.0053244 0.0015764 -0.0094698 -0.022185 0.0065682" size="0.025" />
-                    </body>
-                    <body name="RightUpEyeLid" pos="-0.030943 -0.072787 0.022294">
-                      <joint name="RightUpEyeLid_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                      <joint name="RightUpEyeLid_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                      <joint name="RightUpEyeLid_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                      <geom name="g_RightUpEyeLid" fromto="-0.0022593 -0.0053146 0.0016279 -0.0094139 -0.022144 0.0067827" size="0.025" />
                     </body>
                     <body name="PreySocket" pos="-0.0014468 -0.18353 -0.051905">
                       <joint name="PreySocket_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
@@ -135,12 +69,6 @@
                       <joint name="PreySocket_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
                       <geom name="g_PreySocket" fromto="-0.00010417 -0.013214 -0.0037372 -0.00076392 -0.096906 -0.027406" size="0.02518" />
                     </body>
-                  </body>
-                  <body name="Throat" pos="-0.00032694 -0.020298 -0.031123">
-                    <joint name="Throat_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                    <joint name="Throat_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                    <joint name="Throat_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                    <geom name="g_Throat" fromto="-5.2791e-05 -0.0032775 -0.0050255 -0.00021996 -0.013656 -0.020939" size="0.025" />
                   </body>
                 </body>
               </body>
@@ -165,85 +93,7 @@
                   <joint name="LeftHand_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
                   <joint name="LeftHand_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
                   <joint name="LeftHand_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                  <geom name="g_LeftHand" fromto="-9.028e-05 -0.0046681 -0.0053133 -0.00066206 -0.034233 -0.038964" size="0.025" />
-                  <body name="LeftHandMiddle1" pos="0.005367 -0.039467 -0.042337">
-                    <joint name="LeftHandMiddle1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                    <joint name="LeftHandMiddle1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                    <joint name="LeftHandMiddle1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                    <geom name="g_LeftHandMiddle1" fromto="0.00056333 -0.0020472 -0.0038651 0.0023472 -0.0085301 -0.016105" size="0.025" />
-                    <body name="LeftHandMiddle2" pos="0.0046945 -0.01706 -0.03221">
-                      <joint name="LeftHandMiddle2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                      <joint name="LeftHandMiddle2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                      <joint name="LeftHandMiddle2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                      <geom name="g_LeftHandMiddle2" fromto="-2.0153e-05 -0.002002 -0.0041767 -8.397e-05 -0.0083416 -0.017403" size="0.025" />
-                      <body name="LeftHandMiddle3" pos="-0.00016794 -0.016683 -0.034806">
-                        <joint name="LeftHandMiddle3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                        <joint name="LeftHandMiddle3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                        <joint name="LeftHandMiddle3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                        <geom name="g_LeftHandMiddle3" fromto="-0.00034489 -0.0030514 -0.0065844 -0.0025292 -0.022377 -0.048285" size="0.025" />
-                        <body name="LeftHandMiddle4" pos="-0.0028741 -0.025428 -0.05487">
-                          <joint name="LeftHandMiddle4_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                          <joint name="LeftHandMiddle4_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                          <joint name="LeftHandMiddle4_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                          <geom name="g_LeftHandMiddle4" fromto="-0.00028483 -0.00252 -0.0054377 -0.0020887 -0.01848 -0.039877" size="0.025" />
-                        </body>
-                      </body>
-                    </body>
-                  </body>
-                  <body name="LeftHandRing1" pos="0.0074586 -0.0274 -0.046892">
-                    <joint name="LeftHandRing1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                    <joint name="LeftHandRing1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                    <joint name="LeftHandRing1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                    <geom name="g_LeftHandRing1" fromto="0.00079807 -0.00082952 -0.003543 0.0033253 -0.0034563 -0.014763" size="0.025" />
-                    <body name="LeftHandRing2" pos="0.0066506 -0.0069127 -0.029525">
-                      <joint name="LeftHandRing2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                      <joint name="LeftHandRing2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                      <joint name="LeftHandRing2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                      <geom name="g_LeftHandRing2" fromto="5.0758e-05 -0.0007343 -0.003677 0.00021149 -0.0030596 -0.015321" size="0.025" />
-                      <body name="LeftHandRing3" pos="0.00042298 -0.0061192 -0.030642">
-                        <joint name="LeftHandRing3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                        <joint name="LeftHandRing3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                        <joint name="LeftHandRing3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                        <geom name="g_LeftHandRing3" fromto="-0.00027743 -0.0011583 -0.0060952 -0.0020345 -0.0084944 -0.044698" size="0.025" />
-                        <body name="LeftHandRing4" pos="-0.0023119 -0.0096527 -0.050793">
-                          <joint name="LeftHandRing4_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                          <joint name="LeftHandRing4_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                          <joint name="LeftHandRing4_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                          <geom name="g_LeftHandRing4" fromto="-0.00026802 -0.0011191 -0.0058886 -0.0011168 -0.0046628 -0.024536" size="0.025" />
-                        </body>
-                      </body>
-                    </body>
-                  </body>
-                  <body name="LeftHandIndex1" pos="-0.0012083 -0.046912 -0.033616">
-                    <joint name="LeftHandIndex1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                    <joint name="LeftHandIndex1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                    <joint name="LeftHandIndex1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                    <geom name="g_LeftHandIndex1" fromto="6.4898e-05 -0.0019629 -0.0018588 0.00027041 -0.0081787 -0.0077449" size="0.025" />
-                    <body name="LeftHandIndex2" pos="0.00054082 -0.016357 -0.01549">
-                      <joint name="LeftHandIndex2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                      <joint name="LeftHandIndex2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                      <joint name="LeftHandIndex2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                      <geom name="g_LeftHandIndex2" fromto="-0.00016515 -0.0011646 -0.0012676 -0.00068815 -0.0048524 -0.0052818" size="0.025" />
-                      <body name="LeftHandIndex3" pos="-0.0013763 -0.0097047 -0.010564">
-                        <joint name="LeftHandIndex3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                        <joint name="LeftHandIndex3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                        <joint name="LeftHandIndex3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                        <geom name="g_LeftHandIndex3" fromto="-0.00069534 -0.003388 -0.0038616 -0.0028972 -0.014117 -0.01609" size="0.025" />
-                        <body name="LeftHandIndex4" pos="-0.0057945 -0.028233 -0.03218">
-                          <joint name="LeftHandIndex4_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                          <joint name="LeftHandIndex4_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                          <joint name="LeftHandIndex4_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                          <geom name="g_LeftHandIndex4" fromto="-0.00080478 -0.0039212 -0.0044695 -0.0033533 -0.016339 -0.018623" size="0.025" />
-                        </body>
-                      </body>
-                    </body>
-                  </body>
-                  <body name="LeftHandProp" pos="-0.014627 -0.041824 -0.054267">
-                    <joint name="LeftHandProp_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                    <joint name="LeftHandProp_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                    <joint name="LeftHandProp_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                    <geom name="g_LeftHandProp" fromto="-0.0012527 -0.003582 -0.0046476 -0.0052195 -0.014925 -0.019365" size="0.025" />
-                  </body>
+                  <geom name="g_LeftHand" fromto="0 0.0073614 0 0 0.053984 0" size="0.025" />
                 </body>
               </body>
             </body>
@@ -267,102 +117,18 @@
                   <joint name="RightHand_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
                   <joint name="RightHand_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
                   <joint name="RightHand_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                  <geom name="g_RightHand" fromto="0.00025052 -0.0045328 -0.0053069 0.0018371 -0.03324 -0.038917" size="0.025" />
-                  <body name="RightHandMiddle1" pos="-0.005367 -0.039467 -0.042337">
-                    <joint name="RightHandMiddle1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                    <joint name="RightHandMiddle1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                    <joint name="RightHandMiddle1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                    <geom name="g_RightHandMiddle1" fromto="-0.00056337 -0.0020472 -0.0038651 -0.0023474 -0.00853 -0.016105" size="0.025" />
-                    <body name="RightHandMiddle2" pos="-0.0046947 -0.01706 -0.032209">
-                      <joint name="RightHandMiddle2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                      <joint name="RightHandMiddle2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                      <joint name="RightHandMiddle2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                      <geom name="g_RightHandMiddle2" fromto="2.0153e-05 -0.002002 -0.0041767 8.3969e-05 -0.0083415 -0.017403" size="0.025" />
-                      <body name="RightHandMiddle3" pos="0.00016794 -0.016683 -0.034806">
-                        <joint name="RightHandMiddle3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                        <joint name="RightHandMiddle3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                        <joint name="RightHandMiddle3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                        <geom name="g_RightHandMiddle3" fromto="0.00034489 -0.0030514 -0.0065844 0.0025292 -0.022377 -0.048286" size="0.025" />
-                        <body name="RightHandMiddle4" pos="0.0028741 -0.025428 -0.05487">
-                          <joint name="RightHandMiddle4_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                          <joint name="RightHandMiddle4_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                          <joint name="RightHandMiddle4_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                          <geom name="g_RightHandMiddle4" fromto="0.00028483 -0.00252 -0.0054377 0.0020887 -0.01848 -0.039877" size="0.025" />
-                        </body>
-                      </body>
-                    </body>
-                  </body>
-                  <body name="RightHandRing1" pos="-0.0074589 -0.0274 -0.046892">
-                    <joint name="RightHandRing1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                    <joint name="RightHandRing1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                    <joint name="RightHandRing1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                    <geom name="g_RightHandRing1" fromto="-0.00079798 -0.00082956 -0.003543 -0.0033249 -0.0034565 -0.014762" size="0.025" />
-                    <body name="RightHandRing2" pos="-0.0066498 -0.006913 -0.029525">
-                      <joint name="RightHandRing2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                      <joint name="RightHandRing2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                      <joint name="RightHandRing2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                      <geom name="g_RightHandRing2" fromto="-5.0772e-05 -0.00073429 -0.0036771 -0.00021155 -0.0030595 -0.015321" size="0.025" />
-                      <body name="RightHandRing3" pos="-0.0004231 -0.0061191 -0.030642">
-                        <joint name="RightHandRing3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                        <joint name="RightHandRing3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                        <joint name="RightHandRing3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                        <geom name="g_RightHandRing3" fromto="0.00027734 -0.0011584 -0.0060952 0.0020338 -0.0084946 -0.044698" size="0.025" />
-                        <body name="RightHandRing4" pos="0.0023112 -0.009653 -0.050793">
-                          <joint name="RightHandRing4_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                          <joint name="RightHandRing4_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                          <joint name="RightHandRing4_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                          <geom name="g_RightHandRing4" fromto="0.00026794 -0.0011191 -0.0058886 0.0019649 -0.0082067 -0.043183" size="0.025" />
-                        </body>
-                      </body>
-                    </body>
-                  </body>
-                  <body name="RightHandIndex1" pos="0.0012082 -0.046912 -0.033616">
-                    <joint name="RightHandIndex1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                    <joint name="RightHandIndex1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                    <joint name="RightHandIndex1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                    <geom name="g_RightHandIndex1" fromto="-6.4897e-05 -0.0019628 -0.0018588 -0.0002704 -0.0081784 -0.0077449" size="0.025" />
-                    <body name="RightHandIndex2" pos="-0.00054081 -0.016357 -0.01549">
-                      <joint name="RightHandIndex2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                      <joint name="RightHandIndex2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                      <joint name="RightHandIndex2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                      <geom name="g_RightHandIndex2" fromto="0.00016516 -0.0011646 -0.0012676 0.00068818 -0.0048526 -0.0052816" size="0.025" />
-                      <body name="RightHandIndex3" pos="0.0013764 -0.0097051 -0.010563">
-                        <joint name="RightHandIndex3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                        <joint name="RightHandIndex3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                        <joint name="RightHandIndex3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                        <geom name="g_RightHandIndex3" fromto="0.00069533 -0.003388 -0.0038617 0.0028972 -0.014117 -0.01609" size="0.025" />
-                        <body name="RightHandIndex4" pos="0.0057945 -0.028233 -0.032181">
-                          <joint name="RightHandIndex4_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                          <joint name="RightHandIndex4_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                          <joint name="RightHandIndex4_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                          <geom name="g_RightHandIndex4" fromto="0.00080477 -0.0039212 -0.0044695 0.0059017 -0.028756 -0.032776" size="0.025" />
-                        </body>
-                      </body>
-                    </body>
-                  </body>
-                  <body name="RightHandProp" pos="0.019968 -0.037313 -0.054051">
-                    <joint name="RightHandProp_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                    <joint name="RightHandProp_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                    <joint name="RightHandProp_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                    <geom name="g_RightHandProp" fromto="0.0017453 -0.0032613 -0.0047242 0.0072721 -0.013589 -0.019684" size="0.025" />
-                  </body>
+                  <geom name="g_RightHand" fromto="0 0.0073614 0 0 0.053984 0" size="0.025" />
                 </body>
               </body>
             </body>
           </body>
-        </body>
-        <body name="Belly" pos="-2.1743e-09 -0.056309 -0.082918">
-          <joint name="Belly_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-          <joint name="Belly_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-          <joint name="Belly_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-          <geom name="g_Belly" fromto="-1.5655e-10 -0.0040543 -0.0059701 -1.148e-09 -0.029731 -0.043781" size="0.025" />
         </body>
       </body>
       <body name="Tail" pos="0 0.066018 -0.0008208">
         <joint name="Tail_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
         <joint name="Tail_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
         <joint name="Tail_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-        <geom name="g_Tail" fromto="-3.7981e-10 0.011747 -0.0044414 -2.7853e-09 0.086144 -0.03257" size="0.025" />
+        <geom name="g_Tail" fromto="-4.5355e-10 0.014039 -5.9088e-05 -3.326e-09 0.10295 -0.00043331" size="0.02574" />
         <body name="Tail1" pos="-3.7796e-09 0.11699 -0.0004924">
           <joint name="Tail1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
           <joint name="Tail1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
@@ -399,12 +165,6 @@
             </body>
           </body>
         </body>
-        <body name="Dupa" pos="-2.5505e-09 0.078792 -0.07353">
-          <joint name="Dupa_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-          <joint name="Dupa_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-          <joint name="Dupa_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-          <geom name="g_Dupa" fromto="-1.8364e-10 0.005673 -0.0052942 -1.3467e-09 0.041602 -0.038824" size="0.025" />
-        </body>
       </body>
       <body name="LeftUpLeg" pos="0.042968 -0.00097936 0.037394">
         <joint name="LeftUpLeg_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
@@ -420,114 +180,12 @@
             <joint name="LeftFoot_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
             <joint name="LeftFoot_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
             <joint name="LeftFoot_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-            <geom name="g_LeftFoot" fromto="0.00027569 -0.0031282 -0.010448 0.0020217 -0.02294 -0.076615" size="0.025" />
+            <geom name="g_LeftFoot" fromto="0.00055251 -0.0042918 -0.012742 0.0040518 -0.031473 -0.09344" size="0.025" />
             <body name="LeftToeBase" pos="0.0046043 -0.035765 -0.10618">
               <joint name="LeftToeBase_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
               <joint name="LeftToeBase_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
               <joint name="LeftToeBase_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-              <geom name="g_LeftToeBase" fromto="-8.0012e-05 -0.01364 -0.00060581 -0.00058676 -0.10003 -0.0044426" size="0.02503" />
-              <body name="LeftToeBaseEND" pos="-0.00066677 -0.11367 -0.0050484">
-                <joint name="LeftToeBaseEND_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                <joint name="LeftToeBaseEND_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                <joint name="LeftToeBaseEND_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                <geom name="g_LeftToeBaseEND" fromto="-4.8007e-05 -0.0081839 -0.00036349 -0.00035205 -0.060015 -0.0026656" size="0.025" />
-              </body>
-            </body>
-            <body name="LeftFootIndex1" pos="-0.010941 -0.029341 -0.097458">
-              <joint name="LeftFootIndex1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-              <joint name="LeftFootIndex1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-              <joint name="LeftFootIndex1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-              <geom name="g_LeftFootIndex1" fromto="-0.00033523 -0.0030934 -0.0005476 -0.0013968 -0.012889 -0.0022816" size="0.025" />
-              <body name="LeftFootIndex2" pos="-0.0027936 -0.025778 -0.0045633">
-                <joint name="LeftFootIndex2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                <joint name="LeftFootIndex2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                <joint name="LeftFootIndex2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                <geom name="g_LeftFootIndex2" fromto="-0.00030449 -0.0026651 0.001322 -0.0012687 -0.011104 0.0055082" size="0.025" />
-                <body name="LeftFootIndex3" pos="-0.0025374 -0.022209 0.011016">
-                  <joint name="LeftFootIndex3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                  <joint name="LeftFootIndex3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                  <joint name="LeftFootIndex3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                  <geom name="g_LeftFootIndex3" fromto="-0.00035293 -0.0026898 0.0065561 -0.0025882 -0.019725 0.048078" size="0.025" />
-                  <body name="LeftFootIndex4" pos="-0.0029411 -0.022415 0.054634">
-                    <joint name="LeftFootIndex4_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                    <joint name="LeftFootIndex4_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                    <joint name="LeftFootIndex4_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                    <geom name="g_LeftFootIndex4" fromto="-0.00029845 -0.0022746 0.0055441 -0.0021886 -0.01668 0.040657" size="0.025" />
-                  </body>
-                </body>
-              </body>
-            </body>
-            <body name="LeftFootMiddle1" pos="0.0048883 -0.030946 -0.10303">
-              <joint name="LeftFootMiddle1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-              <joint name="LeftFootMiddle1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-              <joint name="LeftFootMiddle1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-              <geom name="g_LeftFootMiddle1" fromto="-4.1996e-10 -0.0060119 -0.0015575 -3.0797e-09 -0.044087 -0.011422" size="0.025" />
-              <body name="LeftFootMiddle2" pos="-3.4997e-09 -0.050099 -0.012979">
-                <joint name="LeftFootMiddle2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                <joint name="LeftFootMiddle2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                <joint name="LeftFootMiddle2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                <geom name="g_LeftFootMiddle2" fromto="-1.7523e-10 -0.0041118 0.00021805 -7.3012e-10 -0.017132 0.00090853" size="0.025" />
-                <body name="LeftFootMiddle3" pos="-1.4602e-09 -0.034265 0.0018171">
-                  <joint name="LeftFootMiddle3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                  <joint name="LeftFootMiddle3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                  <joint name="LeftFootMiddle3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                  <geom name="g_LeftFootMiddle3" fromto="5.0628e-11 -0.004984 -6.2303e-05 2.1095e-10 -0.020766 -0.0002596" size="0.025" />
-                  <body name="LeftFootMiddle4" pos="4.219e-10 -0.041533 -0.00051919">
-                    <joint name="LeftFootMiddle4_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                    <joint name="LeftFootMiddle4_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                    <joint name="LeftFootMiddle4_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                    <geom name="g_LeftFootMiddle4" fromto="6.0945e-11 -0.0059995 -7.4999e-05 2.5394e-10 -0.024998 -0.00031249" size="0.025" />
-                  </body>
-                </body>
-              </body>
-            </body>
-            <body name="LeftFootRing1" pos="0.022041 -0.02974 -0.10303">
-              <joint name="LeftFootRing1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-              <joint name="LeftFootRing1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-              <joint name="LeftFootRing1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-              <geom name="g_LeftFootRing1" fromto="0.000302 -0.0060039 -0.001559 0.0022147 -0.044029 -0.011432" size="0.025" />
-              <body name="LeftFootRing2" pos="0.0025167 -0.050033 -0.012991">
-                <joint name="LeftFootRing2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                <joint name="LeftFootRing2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                <joint name="LeftFootRing2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                <geom name="g_LeftFootRing2" fromto="0.00019443 -0.0041072 0.00021697 0.00081012 -0.017113 0.00090406" size="0.025" />
-                <body name="LeftFootRing3" pos="0.0016202 -0.034227 0.0018081">
-                  <joint name="LeftFootRing3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                  <joint name="LeftFootRing3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                  <joint name="LeftFootRing3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                  <geom name="g_LeftFootRing3" fromto="0.00023876 -0.0049782 -6.3588e-05 0.00099483 -0.020743 -0.00026495" size="0.025" />
-                  <body name="LeftFootRing4" pos="0.0019897 -0.041485 -0.0005299">
-                    <joint name="LeftFootRing4_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                    <joint name="LeftFootRing4_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                    <joint name="LeftFootRing4_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                    <geom name="g_LeftFootRing4" fromto="0.00028741 -0.0059926 -7.6545e-05 0.0011975 -0.024969 -0.00031894" size="0.025" />
-                  </body>
-                </body>
-              </body>
-            </body>
-            <body name="LeftFootThumb1" pos="-0.0091054 -0.0045475 -0.025618">
-              <joint name="LeftFootThumb1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-              <joint name="LeftFootThumb1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-              <joint name="LeftFootThumb1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-              <geom name="g_LeftFootThumb1" fromto="-0.00055637 -8.083e-06 -0.002123 -0.0023182 -3.3679e-05 -0.0088458" size="0.025" />
-              <body name="LeftFootThumb2" pos="-0.0046365 -6.7359e-05 -0.017692">
-                <joint name="LeftFootThumb2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                <joint name="LeftFootThumb2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                <joint name="LeftFootThumb2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                <geom name="g_LeftFootThumb2" fromto="-0.00093831 0.00011515 -0.0034052 -0.0039096 0.00047979 -0.014188" size="0.025" />
-                <body name="LeftFootThumb3" pos="-0.0078192 0.00095958 -0.028377">
-                  <joint name="LeftFootThumb3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                  <joint name="LeftFootThumb3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                  <joint name="LeftFootThumb3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                  <geom name="g_LeftFootThumb3" fromto="-0.0008668 -0.00010365 -0.0034313 -0.0036117 -0.0004319 -0.014297" size="0.025" />
-                  <body name="LeftFootThumb4" pos="-0.0072233 -0.00086379 -0.028594">
-                    <joint name="LeftFootThumb4_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                    <joint name="LeftFootThumb4_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                    <joint name="LeftFootThumb4_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                    <geom name="g_LeftFootThumb4" fromto="-0.0014689 -0.00017565 -0.0058148 -0.0061204 -0.00073189 -0.024228" size="0.025" />
-                  </body>
-                </body>
-              </body>
+              <geom name="g_LeftToeBase" fromto="0 0.0080739 0 0 0.059209 0" size="0.025" />
             </body>
           </body>
         </body>
@@ -546,114 +204,12 @@
             <joint name="RightFoot_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
             <joint name="RightFoot_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
             <joint name="RightFoot_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-            <geom name="g_RightFoot" fromto="-0.00027569 -0.0031282 -0.010448 -0.0020217 -0.02294 -0.076615" size="0.025" />
+            <geom name="g_RightFoot" fromto="-0.00055252 -0.0042918 -0.012742 -0.0040518 -0.031473 -0.09344" size="0.025" />
             <body name="RightToeBase" pos="-0.0046043 -0.035765 -0.10618">
               <joint name="RightToeBase_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
               <joint name="RightToeBase_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
               <joint name="RightToeBase_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-              <geom name="g_RightToeBase" fromto="8.0016e-05 -0.01364 -0.00060581 0.00058678 -0.10003 -0.0044426" size="0.02503" />
-              <body name="RightToeBaseEND" pos="0.0006668 -0.11367 -0.0050484">
-                <joint name="RightToeBaseEND_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                <joint name="RightToeBaseEND_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                <joint name="RightToeBaseEND_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                <geom name="g_RightToeBaseEND" fromto="4.8009e-05 -0.0081839 -0.00036349 0.00035207 -0.060015 -0.0026656" size="0.025" />
-              </body>
-            </body>
-            <body name="RightFootIndex1" pos="0.010941 -0.029341 -0.097458">
-              <joint name="RightFootIndex1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-              <joint name="RightFootIndex1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-              <joint name="RightFootIndex1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-              <geom name="g_RightFootIndex1" fromto="0.00033523 -0.0030934 -0.0005476 0.0013968 -0.012889 -0.0022817" size="0.025" />
-              <body name="RightFootIndex2" pos="0.0027936 -0.025778 -0.0045633">
-                <joint name="RightFootIndex2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                <joint name="RightFootIndex2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                <joint name="RightFootIndex2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                <geom name="g_RightFootIndex2" fromto="0.0003045 -0.0026651 0.001322 0.0012687 -0.011104 0.0055083" size="0.025" />
-                <body name="RightFootIndex3" pos="0.0025375 -0.022209 0.011017">
-                  <joint name="RightFootIndex3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                  <joint name="RightFootIndex3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                  <joint name="RightFootIndex3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                  <geom name="g_RightFootIndex3" fromto="0.00035293 -0.0026898 0.0065561 0.0025881 -0.019725 0.048078" size="0.025" />
-                  <body name="RightFootIndex4" pos="0.0029411 -0.022415 0.054634">
-                    <joint name="RightFootIndex4_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                    <joint name="RightFootIndex4_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                    <joint name="RightFootIndex4_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                    <geom name="g_RightFootIndex4" fromto="0.00029845 -0.0022746 0.0055441 0.0012435 -0.0094775 0.0231" size="0.025" />
-                  </body>
-                </body>
-              </body>
-            </body>
-            <body name="RightFootMiddle1" pos="-0.0048883 -0.030946 -0.10303">
-              <joint name="RightFootMiddle1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-              <joint name="RightFootMiddle1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-              <joint name="RightFootMiddle1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-              <geom name="g_RightFootMiddle1" fromto="-1.667e-11 -0.0060119 -0.0015575 -1.2224e-10 -0.044087 -0.011422" size="0.025" />
-              <body name="RightFootMiddle2" pos="-1.3891e-10 -0.050099 -0.012979">
-                <joint name="RightFootMiddle2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                <joint name="RightFootMiddle2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                <joint name="RightFootMiddle2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                <geom name="g_RightFootMiddle2" fromto="-1.3823e-10 -0.0041118 0.00021805 -5.7595e-10 -0.017132 0.00090853" size="0.025" />
-                <body name="RightFootMiddle3" pos="-1.1519e-09 -0.034265 0.0018171">
-                  <joint name="RightFootMiddle3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                  <joint name="RightFootMiddle3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                  <joint name="RightFootMiddle3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                  <geom name="g_RightFootMiddle3" fromto="-1.077e-10 -0.004984 -6.2296e-05 -4.4874e-10 -0.020767 -0.00025956" size="0.025" />
-                  <body name="RightFootMiddle4" pos="-8.9747e-10 -0.041533 -0.00051913">
-                    <joint name="RightFootMiddle4_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                    <joint name="RightFootMiddle4_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                    <joint name="RightFootMiddle4_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                    <geom name="g_RightFootMiddle4" fromto="-1.2964e-10 -0.0059995 -7.4989e-05 -5.4018e-10 -0.024998 -0.00031246" size="0.025" />
-                  </body>
-                </body>
-              </body>
-            </body>
-            <body name="RightFootRing1" pos="-0.022041 -0.02974 -0.10303">
-              <joint name="RightFootRing1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-              <joint name="RightFootRing1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-              <joint name="RightFootRing1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-              <geom name="g_RightFootRing1" fromto="-0.00030204 -0.0060039 -0.001559 -0.002215 -0.044029 -0.011432" size="0.025" />
-              <body name="RightFootRing2" pos="-0.002517 -0.050033 -0.012991">
-                <joint name="RightFootRing2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                <joint name="RightFootRing2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                <joint name="RightFootRing2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                <geom name="g_RightFootRing2" fromto="-0.0001944 -0.0041072 0.00021697 -0.00081 -0.017113 0.00090406" size="0.025" />
-                <body name="RightFootRing3" pos="-0.00162 -0.034227 0.0018081">
-                  <joint name="RightFootRing3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                  <joint name="RightFootRing3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                  <joint name="RightFootRing3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                  <geom name="g_RightFootRing3" fromto="-0.0002388 -0.0049782 -6.3589e-05 -0.00099501 -0.020743 -0.00026496" size="0.025" />
-                  <body name="RightFootRing4" pos="-0.00199 -0.041485 -0.00052991">
-                    <joint name="RightFootRing4_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                    <joint name="RightFootRing4_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                    <joint name="RightFootRing4_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                    <geom name="g_RightFootRing4" fromto="-0.00028746 -0.0059926 -7.6547e-05 -0.0011978 -0.024969 -0.00031894" size="0.025" />
-                  </body>
-                </body>
-              </body>
-            </body>
-            <body name="RightFootThumb1" pos="0.0091055 -0.0045476 -0.025618">
-              <joint name="RightFootThumb1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-              <joint name="RightFootThumb1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-              <joint name="RightFootThumb1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-              <geom name="g_RightFootThumb1" fromto="0.00055637 -8.0854e-06 -0.002123 0.0023182 -3.3689e-05 -0.0088458" size="0.025" />
-              <body name="RightFootThumb2" pos="0.0046364 -6.7379e-05 -0.017692">
-                <joint name="RightFootThumb2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                <joint name="RightFootThumb2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                <joint name="RightFootThumb2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                <geom name="g_RightFootThumb2" fromto="0.0009383 0.00011516 -0.0034052 0.0039096 0.00047982 -0.014188" size="0.025" />
-                <body name="RightFootThumb3" pos="0.0078192 0.00095964 -0.028377">
-                  <joint name="RightFootThumb3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                  <joint name="RightFootThumb3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                  <joint name="RightFootThumb3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                  <geom name="g_RightFootThumb3" fromto="0.0008668 -0.00010365 -0.0034313 0.0036117 -0.00043189 -0.014297" size="0.025" />
-                  <body name="RightFootThumb4" pos="0.0072233 -0.00086379 -0.028595">
-                    <joint name="RightFootThumb4_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
-                    <joint name="RightFootThumb4_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
-                    <joint name="RightFootThumb4_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
-                    <geom name="g_RightFootThumb4" fromto="0.0014689 -0.00017565 -0.0058148 0.0061203 -0.00073189 -0.024228" size="0.025" />
-                  </body>
-                </body>
-              </body>
+              <geom name="g_RightToeBase" fromto="0 0.0080739 0 0 0.059209 0" size="0.025" />
             </body>
           </body>
         </body>
@@ -676,15 +232,9 @@
     <motor name="m_Spine1_x" joint="Spine1_x" ctrlrange="-20 20" />
     <motor name="m_Spine1_y" joint="Spine1_y" ctrlrange="-20 20" />
     <motor name="m_Spine1_z" joint="Spine1_z" ctrlrange="-20 20" />
-    <motor name="m_Belly_x" joint="Belly_x" ctrlrange="-20 20" />
-    <motor name="m_Belly_y" joint="Belly_y" ctrlrange="-20 20" />
-    <motor name="m_Belly_z" joint="Belly_z" ctrlrange="-20 20" />
     <motor name="m_Tail1_x" joint="Tail1_x" ctrlrange="-20 20" />
     <motor name="m_Tail1_y" joint="Tail1_y" ctrlrange="-20 20" />
     <motor name="m_Tail1_z" joint="Tail1_z" ctrlrange="-20 20" />
-    <motor name="m_Dupa_x" joint="Dupa_x" ctrlrange="-20 20" />
-    <motor name="m_Dupa_y" joint="Dupa_y" ctrlrange="-20 20" />
-    <motor name="m_Dupa_z" joint="Dupa_z" ctrlrange="-20 20" />
     <motor name="m_LeftLeg_x" joint="LeftLeg_x" ctrlrange="-20 20" />
     <motor name="m_LeftLeg_y" joint="LeftLeg_y" ctrlrange="-20 20" />
     <motor name="m_LeftLeg_z" joint="LeftLeg_z" ctrlrange="-20 20" />
@@ -724,33 +274,9 @@
     <motor name="m_LeftToeBase_x" joint="LeftToeBase_x" ctrlrange="-20 20" />
     <motor name="m_LeftToeBase_y" joint="LeftToeBase_y" ctrlrange="-20 20" />
     <motor name="m_LeftToeBase_z" joint="LeftToeBase_z" ctrlrange="-20 20" />
-    <motor name="m_LeftFootIndex1_x" joint="LeftFootIndex1_x" ctrlrange="-20 20" />
-    <motor name="m_LeftFootIndex1_y" joint="LeftFootIndex1_y" ctrlrange="-20 20" />
-    <motor name="m_LeftFootIndex1_z" joint="LeftFootIndex1_z" ctrlrange="-20 20" />
-    <motor name="m_LeftFootMiddle1_x" joint="LeftFootMiddle1_x" ctrlrange="-20 20" />
-    <motor name="m_LeftFootMiddle1_y" joint="LeftFootMiddle1_y" ctrlrange="-20 20" />
-    <motor name="m_LeftFootMiddle1_z" joint="LeftFootMiddle1_z" ctrlrange="-20 20" />
-    <motor name="m_LeftFootRing1_x" joint="LeftFootRing1_x" ctrlrange="-20 20" />
-    <motor name="m_LeftFootRing1_y" joint="LeftFootRing1_y" ctrlrange="-20 20" />
-    <motor name="m_LeftFootRing1_z" joint="LeftFootRing1_z" ctrlrange="-20 20" />
-    <motor name="m_LeftFootThumb1_x" joint="LeftFootThumb1_x" ctrlrange="-20 20" />
-    <motor name="m_LeftFootThumb1_y" joint="LeftFootThumb1_y" ctrlrange="-20 20" />
-    <motor name="m_LeftFootThumb1_z" joint="LeftFootThumb1_z" ctrlrange="-20 20" />
     <motor name="m_RightToeBase_x" joint="RightToeBase_x" ctrlrange="-20 20" />
     <motor name="m_RightToeBase_y" joint="RightToeBase_y" ctrlrange="-20 20" />
     <motor name="m_RightToeBase_z" joint="RightToeBase_z" ctrlrange="-20 20" />
-    <motor name="m_RightFootIndex1_x" joint="RightFootIndex1_x" ctrlrange="-20 20" />
-    <motor name="m_RightFootIndex1_y" joint="RightFootIndex1_y" ctrlrange="-20 20" />
-    <motor name="m_RightFootIndex1_z" joint="RightFootIndex1_z" ctrlrange="-20 20" />
-    <motor name="m_RightFootMiddle1_x" joint="RightFootMiddle1_x" ctrlrange="-20 20" />
-    <motor name="m_RightFootMiddle1_y" joint="RightFootMiddle1_y" ctrlrange="-20 20" />
-    <motor name="m_RightFootMiddle1_z" joint="RightFootMiddle1_z" ctrlrange="-20 20" />
-    <motor name="m_RightFootRing1_x" joint="RightFootRing1_x" ctrlrange="-20 20" />
-    <motor name="m_RightFootRing1_y" joint="RightFootRing1_y" ctrlrange="-20 20" />
-    <motor name="m_RightFootRing1_z" joint="RightFootRing1_z" ctrlrange="-20 20" />
-    <motor name="m_RightFootThumb1_x" joint="RightFootThumb1_x" ctrlrange="-20 20" />
-    <motor name="m_RightFootThumb1_y" joint="RightFootThumb1_y" ctrlrange="-20 20" />
-    <motor name="m_RightFootThumb1_z" joint="RightFootThumb1_z" ctrlrange="-20 20" />
     <motor name="m_Neck2_x" joint="Neck2_x" ctrlrange="-20 20" />
     <motor name="m_Neck2_y" joint="Neck2_y" ctrlrange="-20 20" />
     <motor name="m_Neck2_z" joint="Neck2_z" ctrlrange="-20 20" />
@@ -763,36 +289,6 @@
     <motor name="m_Tail4_x" joint="Tail4_x" ctrlrange="-20 20" />
     <motor name="m_Tail4_y" joint="Tail4_y" ctrlrange="-20 20" />
     <motor name="m_Tail4_z" joint="Tail4_z" ctrlrange="-20 20" />
-    <motor name="m_LeftToeBaseEND_x" joint="LeftToeBaseEND_x" ctrlrange="-20 20" />
-    <motor name="m_LeftToeBaseEND_y" joint="LeftToeBaseEND_y" ctrlrange="-20 20" />
-    <motor name="m_LeftToeBaseEND_z" joint="LeftToeBaseEND_z" ctrlrange="-20 20" />
-    <motor name="m_LeftFootIndex2_x" joint="LeftFootIndex2_x" ctrlrange="-20 20" />
-    <motor name="m_LeftFootIndex2_y" joint="LeftFootIndex2_y" ctrlrange="-20 20" />
-    <motor name="m_LeftFootIndex2_z" joint="LeftFootIndex2_z" ctrlrange="-20 20" />
-    <motor name="m_LeftFootMiddle2_x" joint="LeftFootMiddle2_x" ctrlrange="-20 20" />
-    <motor name="m_LeftFootMiddle2_y" joint="LeftFootMiddle2_y" ctrlrange="-20 20" />
-    <motor name="m_LeftFootMiddle2_z" joint="LeftFootMiddle2_z" ctrlrange="-20 20" />
-    <motor name="m_LeftFootRing2_x" joint="LeftFootRing2_x" ctrlrange="-20 20" />
-    <motor name="m_LeftFootRing2_y" joint="LeftFootRing2_y" ctrlrange="-20 20" />
-    <motor name="m_LeftFootRing2_z" joint="LeftFootRing2_z" ctrlrange="-20 20" />
-    <motor name="m_LeftFootThumb2_x" joint="LeftFootThumb2_x" ctrlrange="-20 20" />
-    <motor name="m_LeftFootThumb2_y" joint="LeftFootThumb2_y" ctrlrange="-20 20" />
-    <motor name="m_LeftFootThumb2_z" joint="LeftFootThumb2_z" ctrlrange="-20 20" />
-    <motor name="m_RightToeBaseEND_x" joint="RightToeBaseEND_x" ctrlrange="-20 20" />
-    <motor name="m_RightToeBaseEND_y" joint="RightToeBaseEND_y" ctrlrange="-20 20" />
-    <motor name="m_RightToeBaseEND_z" joint="RightToeBaseEND_z" ctrlrange="-20 20" />
-    <motor name="m_RightFootIndex2_x" joint="RightFootIndex2_x" ctrlrange="-20 20" />
-    <motor name="m_RightFootIndex2_y" joint="RightFootIndex2_y" ctrlrange="-20 20" />
-    <motor name="m_RightFootIndex2_z" joint="RightFootIndex2_z" ctrlrange="-20 20" />
-    <motor name="m_RightFootMiddle2_x" joint="RightFootMiddle2_x" ctrlrange="-20 20" />
-    <motor name="m_RightFootMiddle2_y" joint="RightFootMiddle2_y" ctrlrange="-20 20" />
-    <motor name="m_RightFootMiddle2_z" joint="RightFootMiddle2_z" ctrlrange="-20 20" />
-    <motor name="m_RightFootRing2_x" joint="RightFootRing2_x" ctrlrange="-20 20" />
-    <motor name="m_RightFootRing2_y" joint="RightFootRing2_y" ctrlrange="-20 20" />
-    <motor name="m_RightFootRing2_z" joint="RightFootRing2_z" ctrlrange="-20 20" />
-    <motor name="m_RightFootThumb2_x" joint="RightFootThumb2_x" ctrlrange="-20 20" />
-    <motor name="m_RightFootThumb2_y" joint="RightFootThumb2_y" ctrlrange="-20 20" />
-    <motor name="m_RightFootThumb2_z" joint="RightFootThumb2_z" ctrlrange="-20 20" />
     <motor name="m_Neck3_x" joint="Neck3_x" ctrlrange="-20 20" />
     <motor name="m_Neck3_y" joint="Neck3_y" ctrlrange="-20 20" />
     <motor name="m_Neck3_z" joint="Neck3_z" ctrlrange="-20 20" />
@@ -805,185 +301,23 @@
     <motor name="m_Tail5_x" joint="Tail5_x" ctrlrange="-20 20" />
     <motor name="m_Tail5_y" joint="Tail5_y" ctrlrange="-20 20" />
     <motor name="m_Tail5_z" joint="Tail5_z" ctrlrange="-20 20" />
-    <motor name="m_LeftFootIndex3_x" joint="LeftFootIndex3_x" ctrlrange="-20 20" />
-    <motor name="m_LeftFootIndex3_y" joint="LeftFootIndex3_y" ctrlrange="-20 20" />
-    <motor name="m_LeftFootIndex3_z" joint="LeftFootIndex3_z" ctrlrange="-20 20" />
-    <motor name="m_LeftFootMiddle3_x" joint="LeftFootMiddle3_x" ctrlrange="-20 20" />
-    <motor name="m_LeftFootMiddle3_y" joint="LeftFootMiddle3_y" ctrlrange="-20 20" />
-    <motor name="m_LeftFootMiddle3_z" joint="LeftFootMiddle3_z" ctrlrange="-20 20" />
-    <motor name="m_LeftFootRing3_x" joint="LeftFootRing3_x" ctrlrange="-20 20" />
-    <motor name="m_LeftFootRing3_y" joint="LeftFootRing3_y" ctrlrange="-20 20" />
-    <motor name="m_LeftFootRing3_z" joint="LeftFootRing3_z" ctrlrange="-20 20" />
-    <motor name="m_LeftFootThumb3_x" joint="LeftFootThumb3_x" ctrlrange="-20 20" />
-    <motor name="m_LeftFootThumb3_y" joint="LeftFootThumb3_y" ctrlrange="-20 20" />
-    <motor name="m_LeftFootThumb3_z" joint="LeftFootThumb3_z" ctrlrange="-20 20" />
-    <motor name="m_RightFootIndex3_x" joint="RightFootIndex3_x" ctrlrange="-20 20" />
-    <motor name="m_RightFootIndex3_y" joint="RightFootIndex3_y" ctrlrange="-20 20" />
-    <motor name="m_RightFootIndex3_z" joint="RightFootIndex3_z" ctrlrange="-20 20" />
-    <motor name="m_RightFootMiddle3_x" joint="RightFootMiddle3_x" ctrlrange="-20 20" />
-    <motor name="m_RightFootMiddle3_y" joint="RightFootMiddle3_y" ctrlrange="-20 20" />
-    <motor name="m_RightFootMiddle3_z" joint="RightFootMiddle3_z" ctrlrange="-20 20" />
-    <motor name="m_RightFootRing3_x" joint="RightFootRing3_x" ctrlrange="-20 20" />
-    <motor name="m_RightFootRing3_y" joint="RightFootRing3_y" ctrlrange="-20 20" />
-    <motor name="m_RightFootRing3_z" joint="RightFootRing3_z" ctrlrange="-20 20" />
-    <motor name="m_RightFootThumb3_x" joint="RightFootThumb3_x" ctrlrange="-20 20" />
-    <motor name="m_RightFootThumb3_y" joint="RightFootThumb3_y" ctrlrange="-20 20" />
-    <motor name="m_RightFootThumb3_z" joint="RightFootThumb3_z" ctrlrange="-20 20" />
     <motor name="m_Head_x" joint="Head_x" ctrlrange="-20 20" />
     <motor name="m_Head_y" joint="Head_y" ctrlrange="-20 20" />
     <motor name="m_Head_z" joint="Head_z" ctrlrange="-20 20" />
-    <motor name="m_Throat_x" joint="Throat_x" ctrlrange="-20 20" />
-    <motor name="m_Throat_y" joint="Throat_y" ctrlrange="-20 20" />
-    <motor name="m_Throat_z" joint="Throat_z" ctrlrange="-20 20" />
-    <motor name="m_LeftHandMiddle1_x" joint="LeftHandMiddle1_x" ctrlrange="-20 20" />
-    <motor name="m_LeftHandMiddle1_y" joint="LeftHandMiddle1_y" ctrlrange="-20 20" />
-    <motor name="m_LeftHandMiddle1_z" joint="LeftHandMiddle1_z" ctrlrange="-20 20" />
-    <motor name="m_LeftHandRing1_x" joint="LeftHandRing1_x" ctrlrange="-20 20" />
-    <motor name="m_LeftHandRing1_y" joint="LeftHandRing1_y" ctrlrange="-20 20" />
-    <motor name="m_LeftHandRing1_z" joint="LeftHandRing1_z" ctrlrange="-20 20" />
-    <motor name="m_LeftHandIndex1_x" joint="LeftHandIndex1_x" ctrlrange="-20 20" />
-    <motor name="m_LeftHandIndex1_y" joint="LeftHandIndex1_y" ctrlrange="-20 20" />
-    <motor name="m_LeftHandIndex1_z" joint="LeftHandIndex1_z" ctrlrange="-20 20" />
-    <motor name="m_LeftHandProp_x" joint="LeftHandProp_x" ctrlrange="-20 20" />
-    <motor name="m_LeftHandProp_y" joint="LeftHandProp_y" ctrlrange="-20 20" />
-    <motor name="m_LeftHandProp_z" joint="LeftHandProp_z" ctrlrange="-20 20" />
-    <motor name="m_RightHandMiddle1_x" joint="RightHandMiddle1_x" ctrlrange="-20 20" />
-    <motor name="m_RightHandMiddle1_y" joint="RightHandMiddle1_y" ctrlrange="-20 20" />
-    <motor name="m_RightHandMiddle1_z" joint="RightHandMiddle1_z" ctrlrange="-20 20" />
-    <motor name="m_RightHandRing1_x" joint="RightHandRing1_x" ctrlrange="-20 20" />
-    <motor name="m_RightHandRing1_y" joint="RightHandRing1_y" ctrlrange="-20 20" />
-    <motor name="m_RightHandRing1_z" joint="RightHandRing1_z" ctrlrange="-20 20" />
-    <motor name="m_RightHandIndex1_x" joint="RightHandIndex1_x" ctrlrange="-20 20" />
-    <motor name="m_RightHandIndex1_y" joint="RightHandIndex1_y" ctrlrange="-20 20" />
-    <motor name="m_RightHandIndex1_z" joint="RightHandIndex1_z" ctrlrange="-20 20" />
-    <motor name="m_RightHandProp_x" joint="RightHandProp_x" ctrlrange="-20 20" />
-    <motor name="m_RightHandProp_y" joint="RightHandProp_y" ctrlrange="-20 20" />
-    <motor name="m_RightHandProp_z" joint="RightHandProp_z" ctrlrange="-20 20" />
     <motor name="m_Tail6_x" joint="Tail6_x" ctrlrange="-20 20" />
     <motor name="m_Tail6_y" joint="Tail6_y" ctrlrange="-20 20" />
     <motor name="m_Tail6_z" joint="Tail6_z" ctrlrange="-20 20" />
-    <motor name="m_LeftFootIndex4_x" joint="LeftFootIndex4_x" ctrlrange="-20 20" />
-    <motor name="m_LeftFootIndex4_y" joint="LeftFootIndex4_y" ctrlrange="-20 20" />
-    <motor name="m_LeftFootIndex4_z" joint="LeftFootIndex4_z" ctrlrange="-20 20" />
-    <motor name="m_LeftFootMiddle4_x" joint="LeftFootMiddle4_x" ctrlrange="-20 20" />
-    <motor name="m_LeftFootMiddle4_y" joint="LeftFootMiddle4_y" ctrlrange="-20 20" />
-    <motor name="m_LeftFootMiddle4_z" joint="LeftFootMiddle4_z" ctrlrange="-20 20" />
-    <motor name="m_LeftFootRing4_x" joint="LeftFootRing4_x" ctrlrange="-20 20" />
-    <motor name="m_LeftFootRing4_y" joint="LeftFootRing4_y" ctrlrange="-20 20" />
-    <motor name="m_LeftFootRing4_z" joint="LeftFootRing4_z" ctrlrange="-20 20" />
-    <motor name="m_LeftFootThumb4_x" joint="LeftFootThumb4_x" ctrlrange="-20 20" />
-    <motor name="m_LeftFootThumb4_y" joint="LeftFootThumb4_y" ctrlrange="-20 20" />
-    <motor name="m_LeftFootThumb4_z" joint="LeftFootThumb4_z" ctrlrange="-20 20" />
-    <motor name="m_RightFootIndex4_x" joint="RightFootIndex4_x" ctrlrange="-20 20" />
-    <motor name="m_RightFootIndex4_y" joint="RightFootIndex4_y" ctrlrange="-20 20" />
-    <motor name="m_RightFootIndex4_z" joint="RightFootIndex4_z" ctrlrange="-20 20" />
-    <motor name="m_RightFootMiddle4_x" joint="RightFootMiddle4_x" ctrlrange="-20 20" />
-    <motor name="m_RightFootMiddle4_y" joint="RightFootMiddle4_y" ctrlrange="-20 20" />
-    <motor name="m_RightFootMiddle4_z" joint="RightFootMiddle4_z" ctrlrange="-20 20" />
-    <motor name="m_RightFootRing4_x" joint="RightFootRing4_x" ctrlrange="-20 20" />
-    <motor name="m_RightFootRing4_y" joint="RightFootRing4_y" ctrlrange="-20 20" />
-    <motor name="m_RightFootRing4_z" joint="RightFootRing4_z" ctrlrange="-20 20" />
-    <motor name="m_RightFootThumb4_x" joint="RightFootThumb4_x" ctrlrange="-20 20" />
-    <motor name="m_RightFootThumb4_y" joint="RightFootThumb4_y" ctrlrange="-20 20" />
-    <motor name="m_RightFootThumb4_z" joint="RightFootThumb4_z" ctrlrange="-20 20" />
     <motor name="m_Snout_x" joint="Snout_x" ctrlrange="-20 20" />
     <motor name="m_Snout_y" joint="Snout_y" ctrlrange="-20 20" />
     <motor name="m_Snout_z" joint="Snout_z" ctrlrange="-20 20" />
     <motor name="m_Jaw_x" joint="Jaw_x" ctrlrange="-20 20" />
     <motor name="m_Jaw_y" joint="Jaw_y" ctrlrange="-20 20" />
     <motor name="m_Jaw_z" joint="Jaw_z" ctrlrange="-20 20" />
-    <motor name="m_LeftEye_x" joint="LeftEye_x" ctrlrange="-20 20" />
-    <motor name="m_LeftEye_y" joint="LeftEye_y" ctrlrange="-20 20" />
-    <motor name="m_LeftEye_z" joint="LeftEye_z" ctrlrange="-20 20" />
-    <motor name="m_LeftLowEyeLid_x" joint="LeftLowEyeLid_x" ctrlrange="-20 20" />
-    <motor name="m_LeftLowEyeLid_y" joint="LeftLowEyeLid_y" ctrlrange="-20 20" />
-    <motor name="m_LeftLowEyeLid_z" joint="LeftLowEyeLid_z" ctrlrange="-20 20" />
-    <motor name="m_LeftUpEyeLid_x" joint="LeftUpEyeLid_x" ctrlrange="-20 20" />
-    <motor name="m_LeftUpEyeLid_y" joint="LeftUpEyeLid_y" ctrlrange="-20 20" />
-    <motor name="m_LeftUpEyeLid_z" joint="LeftUpEyeLid_z" ctrlrange="-20 20" />
-    <motor name="m_RightEye_x" joint="RightEye_x" ctrlrange="-20 20" />
-    <motor name="m_RightEye_y" joint="RightEye_y" ctrlrange="-20 20" />
-    <motor name="m_RightEye_z" joint="RightEye_z" ctrlrange="-20 20" />
-    <motor name="m_RightLowEyeLid_x" joint="RightLowEyeLid_x" ctrlrange="-20 20" />
-    <motor name="m_RightLowEyeLid_y" joint="RightLowEyeLid_y" ctrlrange="-20 20" />
-    <motor name="m_RightLowEyeLid_z" joint="RightLowEyeLid_z" ctrlrange="-20 20" />
-    <motor name="m_RightUpEyeLid_x" joint="RightUpEyeLid_x" ctrlrange="-20 20" />
-    <motor name="m_RightUpEyeLid_y" joint="RightUpEyeLid_y" ctrlrange="-20 20" />
-    <motor name="m_RightUpEyeLid_z" joint="RightUpEyeLid_z" ctrlrange="-20 20" />
     <motor name="m_PreySocket_x" joint="PreySocket_x" ctrlrange="-20 20" />
     <motor name="m_PreySocket_y" joint="PreySocket_y" ctrlrange="-20 20" />
     <motor name="m_PreySocket_z" joint="PreySocket_z" ctrlrange="-20 20" />
-    <motor name="m_LeftHandMiddle2_x" joint="LeftHandMiddle2_x" ctrlrange="-20 20" />
-    <motor name="m_LeftHandMiddle2_y" joint="LeftHandMiddle2_y" ctrlrange="-20 20" />
-    <motor name="m_LeftHandMiddle2_z" joint="LeftHandMiddle2_z" ctrlrange="-20 20" />
-    <motor name="m_LeftHandRing2_x" joint="LeftHandRing2_x" ctrlrange="-20 20" />
-    <motor name="m_LeftHandRing2_y" joint="LeftHandRing2_y" ctrlrange="-20 20" />
-    <motor name="m_LeftHandRing2_z" joint="LeftHandRing2_z" ctrlrange="-20 20" />
-    <motor name="m_LeftHandIndex2_x" joint="LeftHandIndex2_x" ctrlrange="-20 20" />
-    <motor name="m_LeftHandIndex2_y" joint="LeftHandIndex2_y" ctrlrange="-20 20" />
-    <motor name="m_LeftHandIndex2_z" joint="LeftHandIndex2_z" ctrlrange="-20 20" />
-    <motor name="m_RightHandMiddle2_x" joint="RightHandMiddle2_x" ctrlrange="-20 20" />
-    <motor name="m_RightHandMiddle2_y" joint="RightHandMiddle2_y" ctrlrange="-20 20" />
-    <motor name="m_RightHandMiddle2_z" joint="RightHandMiddle2_z" ctrlrange="-20 20" />
-    <motor name="m_RightHandRing2_x" joint="RightHandRing2_x" ctrlrange="-20 20" />
-    <motor name="m_RightHandRing2_y" joint="RightHandRing2_y" ctrlrange="-20 20" />
-    <motor name="m_RightHandRing2_z" joint="RightHandRing2_z" ctrlrange="-20 20" />
-    <motor name="m_RightHandIndex2_x" joint="RightHandIndex2_x" ctrlrange="-20 20" />
-    <motor name="m_RightHandIndex2_y" joint="RightHandIndex2_y" ctrlrange="-20 20" />
-    <motor name="m_RightHandIndex2_z" joint="RightHandIndex2_z" ctrlrange="-20 20" />
     <motor name="m_JawEND_x" joint="JawEND_x" ctrlrange="-20 20" />
     <motor name="m_JawEND_y" joint="JawEND_y" ctrlrange="-20 20" />
     <motor name="m_JawEND_z" joint="JawEND_z" ctrlrange="-20 20" />
-    <motor name="m_Tongue_x" joint="Tongue_x" ctrlrange="-20 20" />
-    <motor name="m_Tongue_y" joint="Tongue_y" ctrlrange="-20 20" />
-    <motor name="m_Tongue_z" joint="Tongue_z" ctrlrange="-20 20" />
-    <motor name="m_LeftHandMiddle3_x" joint="LeftHandMiddle3_x" ctrlrange="-20 20" />
-    <motor name="m_LeftHandMiddle3_y" joint="LeftHandMiddle3_y" ctrlrange="-20 20" />
-    <motor name="m_LeftHandMiddle3_z" joint="LeftHandMiddle3_z" ctrlrange="-20 20" />
-    <motor name="m_LeftHandRing3_x" joint="LeftHandRing3_x" ctrlrange="-20 20" />
-    <motor name="m_LeftHandRing3_y" joint="LeftHandRing3_y" ctrlrange="-20 20" />
-    <motor name="m_LeftHandRing3_z" joint="LeftHandRing3_z" ctrlrange="-20 20" />
-    <motor name="m_LeftHandIndex3_x" joint="LeftHandIndex3_x" ctrlrange="-20 20" />
-    <motor name="m_LeftHandIndex3_y" joint="LeftHandIndex3_y" ctrlrange="-20 20" />
-    <motor name="m_LeftHandIndex3_z" joint="LeftHandIndex3_z" ctrlrange="-20 20" />
-    <motor name="m_RightHandMiddle3_x" joint="RightHandMiddle3_x" ctrlrange="-20 20" />
-    <motor name="m_RightHandMiddle3_y" joint="RightHandMiddle3_y" ctrlrange="-20 20" />
-    <motor name="m_RightHandMiddle3_z" joint="RightHandMiddle3_z" ctrlrange="-20 20" />
-    <motor name="m_RightHandRing3_x" joint="RightHandRing3_x" ctrlrange="-20 20" />
-    <motor name="m_RightHandRing3_y" joint="RightHandRing3_y" ctrlrange="-20 20" />
-    <motor name="m_RightHandRing3_z" joint="RightHandRing3_z" ctrlrange="-20 20" />
-    <motor name="m_RightHandIndex3_x" joint="RightHandIndex3_x" ctrlrange="-20 20" />
-    <motor name="m_RightHandIndex3_y" joint="RightHandIndex3_y" ctrlrange="-20 20" />
-    <motor name="m_RightHandIndex3_z" joint="RightHandIndex3_z" ctrlrange="-20 20" />
-    <motor name="m_Tongue1_x" joint="Tongue1_x" ctrlrange="-20 20" />
-    <motor name="m_Tongue1_y" joint="Tongue1_y" ctrlrange="-20 20" />
-    <motor name="m_Tongue1_z" joint="Tongue1_z" ctrlrange="-20 20" />
-    <motor name="m_LeftHandMiddle4_x" joint="LeftHandMiddle4_x" ctrlrange="-20 20" />
-    <motor name="m_LeftHandMiddle4_y" joint="LeftHandMiddle4_y" ctrlrange="-20 20" />
-    <motor name="m_LeftHandMiddle4_z" joint="LeftHandMiddle4_z" ctrlrange="-20 20" />
-    <motor name="m_LeftHandRing4_x" joint="LeftHandRing4_x" ctrlrange="-20 20" />
-    <motor name="m_LeftHandRing4_y" joint="LeftHandRing4_y" ctrlrange="-20 20" />
-    <motor name="m_LeftHandRing4_z" joint="LeftHandRing4_z" ctrlrange="-20 20" />
-    <motor name="m_LeftHandIndex4_x" joint="LeftHandIndex4_x" ctrlrange="-20 20" />
-    <motor name="m_LeftHandIndex4_y" joint="LeftHandIndex4_y" ctrlrange="-20 20" />
-    <motor name="m_LeftHandIndex4_z" joint="LeftHandIndex4_z" ctrlrange="-20 20" />
-    <motor name="m_RightHandMiddle4_x" joint="RightHandMiddle4_x" ctrlrange="-20 20" />
-    <motor name="m_RightHandMiddle4_y" joint="RightHandMiddle4_y" ctrlrange="-20 20" />
-    <motor name="m_RightHandMiddle4_z" joint="RightHandMiddle4_z" ctrlrange="-20 20" />
-    <motor name="m_RightHandRing4_x" joint="RightHandRing4_x" ctrlrange="-20 20" />
-    <motor name="m_RightHandRing4_y" joint="RightHandRing4_y" ctrlrange="-20 20" />
-    <motor name="m_RightHandRing4_z" joint="RightHandRing4_z" ctrlrange="-20 20" />
-    <motor name="m_RightHandIndex4_x" joint="RightHandIndex4_x" ctrlrange="-20 20" />
-    <motor name="m_RightHandIndex4_y" joint="RightHandIndex4_y" ctrlrange="-20 20" />
-    <motor name="m_RightHandIndex4_z" joint="RightHandIndex4_z" ctrlrange="-20 20" />
-    <motor name="m_Tongue2_x" joint="Tongue2_x" ctrlrange="-20 20" />
-    <motor name="m_Tongue2_y" joint="Tongue2_y" ctrlrange="-20 20" />
-    <motor name="m_Tongue2_z" joint="Tongue2_z" ctrlrange="-20 20" />
-    <motor name="m_Tongue3_x" joint="Tongue3_x" ctrlrange="-20 20" />
-    <motor name="m_Tongue3_y" joint="Tongue3_y" ctrlrange="-20 20" />
-    <motor name="m_Tongue3_z" joint="Tongue3_z" ctrlrange="-20 20" />
-    <motor name="m_Tongue4_x" joint="Tongue4_x" ctrlrange="-20 20" />
-    <motor name="m_Tongue4_y" joint="Tongue4_y" ctrlrange="-20 20" />
-    <motor name="m_Tongue4_z" joint="Tongue4_z" ctrlrange="-20 20" />
   </actuator>
 </mujoco>

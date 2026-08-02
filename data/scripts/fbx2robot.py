@@ -67,17 +67,9 @@ ROBOTS = {
             "Animalia/Tiger_M/Meshes/Tiger_M.FBX",
         root="RigPelvis",
         up_axis="y",
-        keep=[
-            "RigPelvis", "RigSpine1", "RigSpine3", "RigChest",
-            "RigNeck1", "RigNeck3", "RigHead", "RigJaw1",
-            "RigTail1", "RigTail3", "RigTail5",
-            "RigLBLeg1", "RigLBLeg2", "RigLBLeg3", "RigLBLegAnkle",
-            "RigRBLeg1", "RigRBLeg2", "RigRBLeg3", "RigRBLegAnkle",
-            "RigLFLegCollarbone", "RigLFLeg1", "RigLFLeg2", "RigLFLeg3",
-            "RigLFLegAnkle",
-            "RigRFLegCollarbone", "RigRFLeg1", "RigRFLeg2", "RigRFLeg3",
-            "RigRFLegAnkle",
-        ],
+        # Full skeleton (digits, claws, jaw, tongue, ears, whiskers...);
+        # --min-bone-length prunes short bones later.
+        keep="all",
         target_mass=200.0,
         radius_cap={"RigHead": 0.11, "RigJaw1": 0.05, "RigTail5": 0.035,
                     "RigLBLegAnkle": 0.045, "RigRBLegAnkle": 0.045,
@@ -164,7 +156,8 @@ def kept_parent(name, parent_name, keep_set):
     return p
 
 
-def build(robot: str, out_path: Path, min_bone_length: float = 0.0):
+def build(robot: str, out_path: Path, min_bone_length: float = 0.0,
+          keep_bones=None):
     spec = ROBOTS[robot]
     world_raw, parent_name = load_bind(spec["fbx"])
 
@@ -182,22 +175,33 @@ def build(robot: str, out_path: Path, min_bone_length: float = 0.0):
     else:
         keep = list(spec["keep"])
 
-    # --min-bone-length pruning: fold bones whose offset from their kept
-    # parent is below the threshold (children re-attach to the parent).
+    # --min-bone-length pruning by LEAF EROSION: repeatedly delete LEAF
+    # bones whose offset from their kept parent is below the threshold, so
+    # chains erode from the tips (phalanges, tongue, eyes) and interior
+    # bones (Head, hips, leg segments) can never fold away mid-chain.
+    # --keep-bones protects named bones — and, automatically, their whole
+    # ancestor chain (a protected bone never erodes, so its parents never
+    # become prunable leaves).
     w_all = {k: v * 0.01 for k, v in world_raw.items()}
+    protected = set(keep_bones or [])
     if min_bone_length > 0:
-        pruned = True
-        while pruned:
-            pruned = False
-            for n in list(keep):
-                if n == root:
+        keep_set_ = set(keep)
+        changed = True
+        while changed:
+            changed = False
+            has_child = set()
+            for n in keep_set_:
+                kp = kept_parent(n, parent_name, keep_set_)
+                if kp is not None:
+                    has_child.add(kp)
+            for n in list(keep_set_):
+                if n == root or n in has_child or n in protected:
                     continue
-                kp = kept_parent(n, parent_name, set(keep))
-                if kp is None:
-                    continue
-                if np.linalg.norm(w_all[n] - w_all[kp]) < min_bone_length:
-                    keep.remove(n)
-                    pruned = True
+                kp = kept_parent(n, parent_name, keep_set_)
+                if kp and np.linalg.norm(w_all[n] - w_all[kp]) < min_bone_length:
+                    keep_set_.discard(n)
+                    changed = True
+        keep = [n for n in keep if n in keep_set_]
         print(f"min_bone_length={min_bone_length}: {len(keep)} bones kept")
 
     # Units/axes: UE exports are cm; convert to Z-up meters.
@@ -338,12 +342,18 @@ def main():
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument(
         "--min-bone-length", type=float, default=0.0,
-        help="Fold bones whose offset from their kept parent is shorter "
-        "than this (meters). 0 = keep the full skeleton.",
+        help="Erode LEAF bones whose offset from their kept parent is "
+        "shorter than this (meters). 0 = keep the full skeleton.",
+    )
+    ap.add_argument(
+        "--keep-bones", default="",
+        help="Comma list of bones protected from pruning (their ancestor "
+        "chains survive automatically).",
     )
     args = ap.parse_args()
     gc.disable()
-    build(args.robot, args.out, args.min_bone_length)
+    build(args.robot, args.out, args.min_bone_length,
+          [b.strip() for b in args.keep_bones.split(",") if b.strip()])
     sys.stdout.flush()
     os._exit(0)
 
