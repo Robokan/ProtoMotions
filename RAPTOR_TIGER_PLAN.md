@@ -19,7 +19,9 @@ and trained with ASE — battle integration later. GPU 1 runs Eric's
   (pelvis 0.86 m; its bind has a -1.15 m Y offset — harmless, root
   motion comes from anims). MJCFs at protomotions/data/assets/mjcf/
   {raptor,tiger}.xml. NOTE: tiger up_axis="y" (explicit in ROBOTS spec).
-- [ ] NEXT: robot_configs/raptor.py + tiger.py (dog_v2 pattern:
+- [x] robot_configs/raptor.py registered + validated (27 bodies/78
+  dofs). - [ ] NEXT: tiger.py same pattern (copy raptor.py: Rig* names,
+  pelvis 0.86, mass gains ~x2, feet = Rig{L,R}{B,F}LegAnkle) (dog_v2 pattern:
   semantic naming front-feet="hand", trackable subset, ControlConfig
   gains from actuator efforts, default_root_height 0.51/0.86,
   contact_bodies) + factory registration.
