@@ -234,6 +234,21 @@ ROBOT_SPECS = {
     "samurai": RobotSpec(
         viz_bodies=[],
     ),
+    "raptor": RobotSpec(
+        viz_bodies=[],
+    ),
+    "tiger": RobotSpec(
+        viz_bodies=[],
+    ),
+    "go2": RobotSpec(
+        viz_bodies=[],
+    ),
+    "anymal_d": RobotSpec(
+        viz_bodies=[],
+    ),
+    "dog_v2": RobotSpec(
+        viz_bodies=[],
+    ),
 }
 
 
