@@ -878,9 +878,11 @@ class IdentitySkelOverlay:
             i for i, b in enumerate(self._joint_body) if b is not None
         )
         self._root_bi = self._joint_body[self._root_ji]
-        # robot rest world rotations (wxyz) per body — deltas are measured
-        # against these
-        self._body_rest = np.asarray(body_rest_rot_wxyz, dtype=np.float64)
+        # robot rest world rotations per body — deltas are measured against
+        # these. They arrive in the sim's COMMON convention (xyzw):
+        # reorder once here.
+        rest_arr = np.asarray(body_rest_rot_wxyz, dtype=np.float64)
+        self._body_rest = rest_arr[:, [3, 0, 1, 2]]
 
         # SkelAnimation bound to the skeleton
         anim_prim = stage.DefinePrim(f"{prim_root}_anim", "SkelAnimation")

@@ -40,6 +40,10 @@ parser.add_argument(
 )
 parser.add_argument("--headless", action="store_true", help="Run in headless mode")
 parser.add_argument(
+    "--snapshot-dir", default=None,
+    help="Debug: offscreen-render and dump RGB frames here (works "
+    "headless; frames at display steps 30/60/120).")
+parser.add_argument(
     "--overlay-character",
     default=None,
     help="Path to a rigged character USD (UsdSkel). Drives its skeleton "
@@ -1108,23 +1112,18 @@ class MotionVisualizerSmoothness:
                         )
                         if args.overlay_skeleton == "identity":
                             # fbx2robot creatures: the character skeleton IS
-                            # the robot — drive its SkelAnimation directly,
-                            # no retarget machinery (Eric: "we are just
-                            # animating it as it is").
-                            from protomotions.simulator.isaaclab.overlay import (
-                                IdentitySkelOverlay,
-                            )
-                            import omni.usd
-                            self._overlay = IdentitySkelOverlay(
-                                stage=omni.usd.get_context().get_stage(),
-                                character_usd=args.overlay_character,
-                                prim_root="/World/overlay0",
-                                body_names=self.simulator.robot_config
-                                .kinematic_info.body_names,
-                                body_rest_rot_wxyz=self._overlay_rest_rot,
-                            )
-                            print("[overlay] identity SkelAnimation driver "
-                                  "attached", flush=True)
+                            # the robot — the samurai-proven SkinnedOverlay
+                            # with an identity joint map (derived from the
+                            # robot's kinematic info).
+                            _ki = self.simulator.robot_config.kinematic_info
+                            _names = list(_ki.body_names)
+                            _map = {b: b for b in _names}
+                            _rel = None
+                            _par = {
+                                b: (_names[pi] if pi >= 0 else None)
+                                for b, pi in zip(
+                                    _names, list(_ki.parent_indices))
+                            }
                         elif args.overlay_skeleton == "ue":
                             _map, _rel, _par = (
                                 SOMA23_TO_UE, UE_REST_REL, SOMA23_PARENT_UE)
@@ -1142,8 +1141,6 @@ class MotionVisualizerSmoothness:
                         # clip pose was applied this frame.
                         rest = self._overlay_rest_rot
                         try:
-                            if args.overlay_skeleton == "identity":
-                                raise StopIteration  # attached above
                             self._overlay = SkinnedOverlay(
                                 stage=omni.usd.get_context().get_stage(),
                                 character_usd=args.overlay_character,
@@ -1175,8 +1172,6 @@ class MotionVisualizerSmoothness:
                                 fists=args.overlay_fists,
                                 head_shift=args.overlay_head_shift,
                             )
-                        except StopIteration:
-                            pass  # identity driver already attached
                         except Exception:
                             import traceback
                             print("[overlay] INIT FAILED — overlay disabled, "
@@ -1223,6 +1218,22 @@ class MotionVisualizerSmoothness:
                             traceback.print_exc()
                             args.overlay_character = None
                     self._ov_n = getattr(self, "_ov_n", 0) + 1
+                    if args.snapshot_dir and self._ov_n in (30, 60, 120):
+                        try:
+                            import os as _os
+                            import numpy as _np2
+                            from PIL import Image as _Img
+                            self.simulator._sim.render()
+                            fr = self.simulator.grab_rgb_frame()
+                            if fr is not None:
+                                _os.makedirs(args.snapshot_dir, exist_ok=True)
+                                _Img.fromarray(fr).save(
+                                    f"{args.snapshot_dir}/frame_{self._ov_n:04d}.png")
+                                print(f"[snap] frame_{self._ov_n:04d}.png",
+                                      flush=True)
+                        except Exception:
+                            import traceback
+                            traceback.print_exc()
                     if self._ov_n in (1, 120, 600):
                         bn = (self.motion_libs[0].kinematic_info.body_names
                               if hasattr(self.motion_libs[0], "kinematic_info")
@@ -1314,6 +1325,7 @@ def main():
         app_launcher_flags = {
             "headless": args.headless,
             "device": str(device),
+            **({"enable_cameras": True} if args.snapshot_dir else {}),
             # # Performance settings for faster-than-realtime rendering
             # "rendering_mode": "performance",  # Options: "performance", "balanced", "quality"
         }
