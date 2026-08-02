@@ -1,0 +1,269 @@
+<mujoco model="tiger">
+  <compiler angle="radian" />
+  <option timestep="0.016667" />
+  <default>
+    <joint limited="true" armature="0.02" frictionloss="0.1" />
+    <geom type="capsule" density="655.3" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+    <motor ctrllimited="true" />
+  </default>
+  <worldbody>
+    <body name="RigPelvis" pos="-4.3131e-09 -1.1489 0.85616">
+      <freejoint name="root" />
+      <geom name="g_RigPelvis" fromto="-0.014513 0.0022143 0.0031752 -0.06047 0.0092263 0.01323" size="0.13" />
+      <body name="RigSpine1" pos="-4.7709e-14 -7.6294e-08 -0.23747">
+        <joint name="RigSpine1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
+        <joint name="RigSpine1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
+        <joint name="RigSpine1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
+        <geom name="g_RigSpine1" fromto="-5.9959e-09 0.0045267 -0.075207 -4.397e-08 0.033196 -0.55152" size="0.1381" />
+        <body name="RigSpine3" pos="-4.9966e-08 0.037722 -0.62673">
+          <joint name="RigSpine3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
+          <joint name="RigSpine3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
+          <joint name="RigSpine3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
+          <geom name="g_RigSpine3" fromto="8.6728e-09 0.0017812 -0.037633 6.36e-08 0.013062 -0.27597" size="0.12" />
+          <body name="RigChest" pos="7.2273e-08 0.014844 -0.31361">
+            <joint name="RigChest_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
+            <joint name="RigChest_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
+            <joint name="RigChest_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
+            <geom name="g_RigChest" fromto="7.0149e-11 -0.014205 -0.039483 5.1443e-10 -0.10417 -0.28954" size="0.14" />
+            <body name="RigNeck1" pos="-1.7854e-08 -0.060692 -0.34183">
+              <joint name="RigNeck1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
+              <joint name="RigNeck1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
+              <joint name="RigNeck1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
+              <geom name="g_RigNeck1" fromto="-6.5862e-08 -0.0020186 -0.025851 -4.8299e-07 -0.014803 -0.18957" size="0.04754" />
+              <body name="RigNeck3" pos="-5.4885e-07 -0.016822 -0.21543">
+                <joint name="RigNeck3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
+                <joint name="RigNeck3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
+                <joint name="RigNeck3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
+                <geom name="g_RigNeck3" fromto="3.557e-07 -0.0069629 -0.024662 2.6084e-06 -0.051061 -0.18086" size="0.04698" />
+                <body name="RigHead" pos="2.9641e-06 -0.058024 -0.20552">
+                  <joint name="RigHead_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
+                  <joint name="RigHead_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
+                  <joint name="RigHead_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
+                  <geom name="g_RigHead" fromto="-3.7916e-09 0.0097748 -0.0053941 -2.7805e-08 0.071682 -0.039557" size="0.025" />
+                  <body name="RigJaw1" pos="-3.1596e-08 0.081457 -0.044951">
+                    <joint name="RigJaw1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.0873 0.6109" />
+                    <joint name="RigJaw1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.0873 0.0873" />
+                    <joint name="RigJaw1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.0873 0.0873" />
+                    <geom name="g_RigJaw1" fromto="0 0.0096 0 0 0.0704 0" size="0.025" />
+                  </body>
+                </body>
+              </body>
+            </body>
+            <body name="RigLFLegCollarbone" pos="-0.040298 -0.14722 -0.32262">
+              <joint name="RigLFLegCollarbone_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
+              <joint name="RigLFLegCollarbone_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
+              <joint name="RigLFLegCollarbone_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
+              <geom name="g_RigLFLegCollarbone" fromto="0.02565 0.0071857 7.2135e-06 0.1881 0.052695 5.2899e-05" size="0.04884" />
+              <body name="RigLFLeg1" pos="0.21375 0.059881 6.0113e-05">
+                <joint name="RigLFLeg1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
+                <joint name="RigLFLeg1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
+                <joint name="RigLFLeg1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
+                <geom name="g_RigLFLeg1" fromto="-0.003618 0.06103 0.019201 -0.026532 0.44755 0.14081" size="0.1175" />
+                <body name="RigLFLeg2" pos="-0.03015 0.50858 0.16001">
+                  <joint name="RigLFLeg2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
+                  <joint name="RigLFLeg2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
+                  <joint name="RigLFLeg2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
+                  <geom name="g_RigLFLeg2" fromto="0.00066256 0.055209 -0.0082299 0.0048588 0.40487 -0.060352" size="0.1023" />
+                  <body name="RigLFLeg3" pos="0.0055213 0.46008 -0.068582">
+                    <joint name="RigLFLeg3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
+                    <joint name="RigLFLeg3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
+                    <joint name="RigLFLeg3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
+                    <geom name="g_RigLFLeg3" fromto="-0.00030705 0.017505 -0.00427 -0.0022517 0.12837 -0.031313" size="0.03304" />
+                    <body name="RigLFLegAnkle" pos="-0.0025588 0.14587 -0.035583">
+                      <joint name="RigLFLegAnkle_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
+                      <joint name="RigLFLegAnkle_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
+                      <joint name="RigLFLegAnkle_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
+                      <geom name="g_RigLFLegAnkle" fromto="0 0.0096 0 0 0.0704 0" size="0.025" />
+                    </body>
+                  </body>
+                </body>
+              </body>
+            </body>
+            <body name="RigRFLegCollarbone" pos="0.040299 -0.14722 -0.32262">
+              <joint name="RigRFLegCollarbone_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
+              <joint name="RigRFLegCollarbone_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
+              <joint name="RigRFLegCollarbone_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
+              <geom name="g_RigRFLegCollarbone" fromto="-0.02565 0.0071854 7.1785e-06 -0.1881 0.052693 5.2643e-05" size="0.04884" />
+              <body name="RigRFLeg1" pos="-0.21375 0.059879 5.9821e-05">
+                <joint name="RigRFLeg1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
+                <joint name="RigRFLeg1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
+                <joint name="RigRFLeg1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
+                <geom name="g_RigRFLeg1" fromto="0.003588 0.06103 0.019205 0.026312 0.44755 0.14084" size="0.1175" />
+                <body name="RigRFLeg2" pos="0.0299 0.50858 0.16004">
+                  <joint name="RigRFLeg2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
+                  <joint name="RigRFLeg2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
+                  <joint name="RigRFLeg2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
+                  <geom name="g_RigRFLeg2" fromto="-0.00064069 0.055209 -0.0082327 -0.0046984 0.40487 -0.060373" size="0.1023" />
+                  <body name="RigRFLeg3" pos="-0.0053391 0.46007 -0.068606">
+                    <joint name="RigRFLeg3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
+                    <joint name="RigRFLeg3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
+                    <joint name="RigRFLeg3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
+                    <geom name="g_RigRFLeg3" fromto="0.00032035 0.017504 -0.0042723 0.0023492 0.12836 -0.03133" size="0.03304" />
+                    <body name="RigRFLegAnkle" pos="0.0026696 0.14586 -0.035602">
+                      <joint name="RigRFLegAnkle_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
+                      <joint name="RigRFLegAnkle_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
+                      <joint name="RigRFLegAnkle_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
+                      <geom name="g_RigRFLegAnkle" fromto="0 0.0096 0 0 0.0704 0" size="0.025" />
+                    </body>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+      <body name="RigTail1" pos="-3.4702e-08 -0.03253 0.24309">
+        <joint name="RigTail1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
+        <joint name="RigTail1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
+        <joint name="RigTail1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
+        <geom name="g_RigTail1" fromto="-5.5536e-10 0.03797 0.040885 -4.0727e-09 0.27844 0.29982" size="0.1023" />
+        <body name="RigTail3" pos="-4.628e-09 0.31641 0.34071">
+          <joint name="RigTail3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
+          <joint name="RigTail3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
+          <joint name="RigTail3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
+          <geom name="g_RigTail3" fromto="1.9759e-09 0.045881 0.032328 1.449e-08 0.33646 0.23707" size="0.1029" />
+          <body name="RigTail5" pos="1.6466e-08 0.38234 0.2694">
+            <joint name="RigTail5_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
+            <joint name="RigTail5_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
+            <joint name="RigTail5_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
+            <geom name="g_RigTail5" fromto="0 -0.0096 0 0 -0.0704 0" size="0.025" />
+          </body>
+        </body>
+      </body>
+      <body name="RigLBLeg1" pos="0.12094 0.018453 0.02646">
+        <joint name="RigLBLeg1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
+        <joint name="RigLBLeg1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
+        <joint name="RigLBLeg1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
+        <geom name="g_RigLBLeg1" fromto="0.0052267 0.047852 -0.018527 0.038329 0.35091 -0.13586" size="0.09456" />
+        <body name="RigLBLeg2" pos="0.043556 0.39876 -0.15439">
+          <joint name="RigLBLeg2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
+          <joint name="RigLBLeg2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
+          <joint name="RigLBLeg2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
+          <geom name="g_RigLBLeg2" fromto="-0.0012251 0.042682 0.048845 -0.0089839 0.313 0.3582" size="0.1189" />
+          <body name="RigLBLeg3" pos="-0.010209 0.35568 0.40704">
+            <joint name="RigLBLeg3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
+            <joint name="RigLBLeg3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
+            <joint name="RigLBLeg3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
+            <geom name="g_RigLBLeg3" fromto="0.0031462 0.036386 -0.0058503 0.023072 0.26683 -0.042902" size="0.06781" />
+            <body name="RigLBLegAnkle" pos="0.026219 0.30322 -0.048752">
+              <joint name="RigLBLegAnkle_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
+              <joint name="RigLBLegAnkle_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
+              <joint name="RigLBLegAnkle_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
+              <geom name="g_RigLBLegAnkle" fromto="0 0.0096 0 0 0.0704 0" size="0.025" />
+            </body>
+          </body>
+        </body>
+      </body>
+      <body name="RigRBLeg1" pos="-0.12094 0.018453 0.02646">
+        <joint name="RigRBLeg1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
+        <joint name="RigRBLeg1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
+        <joint name="RigRBLeg1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
+        <geom name="g_RigRBLeg1" fromto="-0.0052288 0.047851 -0.018527 -0.038345 0.35091 -0.13587" size="0.09456" />
+        <body name="RigRBLeg2" pos="-0.043573 0.39876 -0.15439">
+          <joint name="RigRBLeg2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
+          <joint name="RigRBLeg2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
+          <joint name="RigRBLeg2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
+          <geom name="g_RigRBLeg2" fromto="0.001227 0.042681 0.048845 0.0089982 0.31299 0.3582" size="0.1189" />
+          <body name="RigRBLeg3" pos="0.010225 0.35568 0.40705">
+            <joint name="RigRBLeg3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
+            <joint name="RigRBLeg3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
+            <joint name="RigRBLeg3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
+            <geom name="g_RigRBLeg3" fromto="-0.0031467 0.036386 -0.0058505 -0.023076 0.26683 -0.042904" size="0.06781" />
+            <body name="RigRBLegAnkle" pos="-0.026222 0.30322 -0.048754">
+              <joint name="RigRBLegAnkle_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" />
+              <joint name="RigRBLegAnkle_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" />
+              <joint name="RigRBLegAnkle_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" />
+              <geom name="g_RigRBLegAnkle" fromto="0 0.0096 0 0 0.0704 0" size="0.025" />
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+  <actuator>
+    <motor name="m_RigSpine1_x" joint="RigSpine1_x" ctrlrange="-80 80" />
+    <motor name="m_RigSpine1_y" joint="RigSpine1_y" ctrlrange="-80 80" />
+    <motor name="m_RigSpine1_z" joint="RigSpine1_z" ctrlrange="-80 80" />
+    <motor name="m_RigSpine3_x" joint="RigSpine3_x" ctrlrange="-53.33 53.33" />
+    <motor name="m_RigSpine3_y" joint="RigSpine3_y" ctrlrange="-53.33 53.33" />
+    <motor name="m_RigSpine3_z" joint="RigSpine3_z" ctrlrange="-53.33 53.33" />
+    <motor name="m_RigChest_x" joint="RigChest_x" ctrlrange="-35.56 35.56" />
+    <motor name="m_RigChest_y" joint="RigChest_y" ctrlrange="-35.56 35.56" />
+    <motor name="m_RigChest_z" joint="RigChest_z" ctrlrange="-35.56 35.56" />
+    <motor name="m_RigNeck1_x" joint="RigNeck1_x" ctrlrange="-23.7 23.7" />
+    <motor name="m_RigNeck1_y" joint="RigNeck1_y" ctrlrange="-23.7 23.7" />
+    <motor name="m_RigNeck1_z" joint="RigNeck1_z" ctrlrange="-23.7 23.7" />
+    <motor name="m_RigNeck3_x" joint="RigNeck3_x" ctrlrange="-20 20" />
+    <motor name="m_RigNeck3_y" joint="RigNeck3_y" ctrlrange="-20 20" />
+    <motor name="m_RigNeck3_z" joint="RigNeck3_z" ctrlrange="-20 20" />
+    <motor name="m_RigHead_x" joint="RigHead_x" ctrlrange="-20 20" />
+    <motor name="m_RigHead_y" joint="RigHead_y" ctrlrange="-20 20" />
+    <motor name="m_RigHead_z" joint="RigHead_z" ctrlrange="-20 20" />
+    <motor name="m_RigJaw1_x" joint="RigJaw1_x" ctrlrange="-20 20" />
+    <motor name="m_RigJaw1_y" joint="RigJaw1_y" ctrlrange="-20 20" />
+    <motor name="m_RigJaw1_z" joint="RigJaw1_z" ctrlrange="-20 20" />
+    <motor name="m_RigTail1_x" joint="RigTail1_x" ctrlrange="-80 80" />
+    <motor name="m_RigTail1_y" joint="RigTail1_y" ctrlrange="-80 80" />
+    <motor name="m_RigTail1_z" joint="RigTail1_z" ctrlrange="-80 80" />
+    <motor name="m_RigTail3_x" joint="RigTail3_x" ctrlrange="-53.33 53.33" />
+    <motor name="m_RigTail3_y" joint="RigTail3_y" ctrlrange="-53.33 53.33" />
+    <motor name="m_RigTail3_z" joint="RigTail3_z" ctrlrange="-53.33 53.33" />
+    <motor name="m_RigTail5_x" joint="RigTail5_x" ctrlrange="-35.56 35.56" />
+    <motor name="m_RigTail5_y" joint="RigTail5_y" ctrlrange="-35.56 35.56" />
+    <motor name="m_RigTail5_z" joint="RigTail5_z" ctrlrange="-35.56 35.56" />
+    <motor name="m_RigLBLeg1_x" joint="RigLBLeg1_x" ctrlrange="-80 80" />
+    <motor name="m_RigLBLeg1_y" joint="RigLBLeg1_y" ctrlrange="-80 80" />
+    <motor name="m_RigLBLeg1_z" joint="RigLBLeg1_z" ctrlrange="-80 80" />
+    <motor name="m_RigLBLeg2_x" joint="RigLBLeg2_x" ctrlrange="-53.33 53.33" />
+    <motor name="m_RigLBLeg2_y" joint="RigLBLeg2_y" ctrlrange="-53.33 53.33" />
+    <motor name="m_RigLBLeg2_z" joint="RigLBLeg2_z" ctrlrange="-53.33 53.33" />
+    <motor name="m_RigLBLeg3_x" joint="RigLBLeg3_x" ctrlrange="-35.56 35.56" />
+    <motor name="m_RigLBLeg3_y" joint="RigLBLeg3_y" ctrlrange="-35.56 35.56" />
+    <motor name="m_RigLBLeg3_z" joint="RigLBLeg3_z" ctrlrange="-35.56 35.56" />
+    <motor name="m_RigLBLegAnkle_x" joint="RigLBLegAnkle_x" ctrlrange="-23.7 23.7" />
+    <motor name="m_RigLBLegAnkle_y" joint="RigLBLegAnkle_y" ctrlrange="-23.7 23.7" />
+    <motor name="m_RigLBLegAnkle_z" joint="RigLBLegAnkle_z" ctrlrange="-23.7 23.7" />
+    <motor name="m_RigRBLeg1_x" joint="RigRBLeg1_x" ctrlrange="-80 80" />
+    <motor name="m_RigRBLeg1_y" joint="RigRBLeg1_y" ctrlrange="-80 80" />
+    <motor name="m_RigRBLeg1_z" joint="RigRBLeg1_z" ctrlrange="-80 80" />
+    <motor name="m_RigRBLeg2_x" joint="RigRBLeg2_x" ctrlrange="-53.33 53.33" />
+    <motor name="m_RigRBLeg2_y" joint="RigRBLeg2_y" ctrlrange="-53.33 53.33" />
+    <motor name="m_RigRBLeg2_z" joint="RigRBLeg2_z" ctrlrange="-53.33 53.33" />
+    <motor name="m_RigRBLeg3_x" joint="RigRBLeg3_x" ctrlrange="-35.56 35.56" />
+    <motor name="m_RigRBLeg3_y" joint="RigRBLeg3_y" ctrlrange="-35.56 35.56" />
+    <motor name="m_RigRBLeg3_z" joint="RigRBLeg3_z" ctrlrange="-35.56 35.56" />
+    <motor name="m_RigRBLegAnkle_x" joint="RigRBLegAnkle_x" ctrlrange="-23.7 23.7" />
+    <motor name="m_RigRBLegAnkle_y" joint="RigRBLegAnkle_y" ctrlrange="-23.7 23.7" />
+    <motor name="m_RigRBLegAnkle_z" joint="RigRBLegAnkle_z" ctrlrange="-23.7 23.7" />
+    <motor name="m_RigLFLegCollarbone_x" joint="RigLFLegCollarbone_x" ctrlrange="-23.7 23.7" />
+    <motor name="m_RigLFLegCollarbone_y" joint="RigLFLegCollarbone_y" ctrlrange="-23.7 23.7" />
+    <motor name="m_RigLFLegCollarbone_z" joint="RigLFLegCollarbone_z" ctrlrange="-23.7 23.7" />
+    <motor name="m_RigLFLeg1_x" joint="RigLFLeg1_x" ctrlrange="-20 20" />
+    <motor name="m_RigLFLeg1_y" joint="RigLFLeg1_y" ctrlrange="-20 20" />
+    <motor name="m_RigLFLeg1_z" joint="RigLFLeg1_z" ctrlrange="-20 20" />
+    <motor name="m_RigLFLeg2_x" joint="RigLFLeg2_x" ctrlrange="-20 20" />
+    <motor name="m_RigLFLeg2_y" joint="RigLFLeg2_y" ctrlrange="-20 20" />
+    <motor name="m_RigLFLeg2_z" joint="RigLFLeg2_z" ctrlrange="-20 20" />
+    <motor name="m_RigLFLeg3_x" joint="RigLFLeg3_x" ctrlrange="-20 20" />
+    <motor name="m_RigLFLeg3_y" joint="RigLFLeg3_y" ctrlrange="-20 20" />
+    <motor name="m_RigLFLeg3_z" joint="RigLFLeg3_z" ctrlrange="-20 20" />
+    <motor name="m_RigLFLegAnkle_x" joint="RigLFLegAnkle_x" ctrlrange="-20 20" />
+    <motor name="m_RigLFLegAnkle_y" joint="RigLFLegAnkle_y" ctrlrange="-20 20" />
+    <motor name="m_RigLFLegAnkle_z" joint="RigLFLegAnkle_z" ctrlrange="-20 20" />
+    <motor name="m_RigRFLegCollarbone_x" joint="RigRFLegCollarbone_x" ctrlrange="-23.7 23.7" />
+    <motor name="m_RigRFLegCollarbone_y" joint="RigRFLegCollarbone_y" ctrlrange="-23.7 23.7" />
+    <motor name="m_RigRFLegCollarbone_z" joint="RigRFLegCollarbone_z" ctrlrange="-23.7 23.7" />
+    <motor name="m_RigRFLeg1_x" joint="RigRFLeg1_x" ctrlrange="-20 20" />
+    <motor name="m_RigRFLeg1_y" joint="RigRFLeg1_y" ctrlrange="-20 20" />
+    <motor name="m_RigRFLeg1_z" joint="RigRFLeg1_z" ctrlrange="-20 20" />
+    <motor name="m_RigRFLeg2_x" joint="RigRFLeg2_x" ctrlrange="-20 20" />
+    <motor name="m_RigRFLeg2_y" joint="RigRFLeg2_y" ctrlrange="-20 20" />
+    <motor name="m_RigRFLeg2_z" joint="RigRFLeg2_z" ctrlrange="-20 20" />
+    <motor name="m_RigRFLeg3_x" joint="RigRFLeg3_x" ctrlrange="-20 20" />
+    <motor name="m_RigRFLeg3_y" joint="RigRFLeg3_y" ctrlrange="-20 20" />
+    <motor name="m_RigRFLeg3_z" joint="RigRFLeg3_z" ctrlrange="-20 20" />
+    <motor name="m_RigRFLegAnkle_x" joint="RigRFLegAnkle_x" ctrlrange="-20 20" />
+    <motor name="m_RigRFLegAnkle_y" joint="RigRFLegAnkle_y" ctrlrange="-20 20" />
+    <motor name="m_RigRFLegAnkle_z" joint="RigRFLegAnkle_z" ctrlrange="-20 20" />
+  </actuator>
+</mujoco>
