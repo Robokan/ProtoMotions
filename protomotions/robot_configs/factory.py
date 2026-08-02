@@ -57,6 +57,10 @@ def robot_config(robot_name: str, **updates) -> RobotConfig:
         from protomotions.robot_configs.t800 import T800RobotConfig
 
         config = T800RobotConfig()
+    elif robot_name == "tiger":
+        from protomotions.robot_configs.tiger import TigerRobotConfig
+
+        config = TigerRobotConfig()
     elif robot_name == "raptor":
         from protomotions.robot_configs.raptor import RaptorRobotConfig
 
