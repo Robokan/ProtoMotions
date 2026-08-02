@@ -124,6 +124,7 @@ def frames_to_motion(npz_path: Path, robot: str, bind_rw: dict, out: Path,
 
     from protomotions.components.pose_lib import (
         extract_kinematic_info,
+        extract_qpos_from_transforms,
         fk_from_transforms_with_velocities,
     )
     from data.scripts.contact_detection import (
@@ -178,6 +179,13 @@ def frames_to_motion(npz_path: Path, robot: str, bind_rw: dict, out: Path,
         compute_velocities=True,
         velocity_max_horizon=3,
     )
+    q = extract_qpos_from_transforms(
+        ki, root_t, mats, multi_dof_decomposition_method="euler_xyz"
+    )
+    motion.dof_pos = q[:, 7:]
+    dv = torch.zeros_like(motion.dof_pos)
+    dv[1:] = (motion.dof_pos[1:] - motion.dof_pos[:-1]) * float(round(fps))
+    motion.dof_vel = dv
     md = motion.to_dict() if hasattr(motion, "to_dict") else motion
     # ground: lowest body slightly above 0
     zmin = md["rigid_body_pos"][..., 2].min()
