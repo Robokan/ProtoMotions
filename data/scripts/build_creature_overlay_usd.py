@@ -72,8 +72,24 @@ for mat in bpy.data.materials:
     node = nt.nodes.new("ShaderNodeTexImage")
     node.image = im
     nt.links.new(node.outputs["Color"], bsdf.inputs["Base Color"])
+    # Opacity: FBX imports can carry a transparency factor that exports as
+    # opacity~0 (invisible mesh). Force opaque UNLESS the texture has a real
+    # cutout mask (e.g. feather cards) — then wire alpha with CLIP.
+    import numpy as _np
+    px = _np.asarray(im.pixels).reshape(-1, im.channels) if im.channels == 4 else None
+    has_cutout = px is not None and px[:, 3].mean() < 0.97
+    for link in list(nt.links):
+        if link.to_node == bsdf and link.to_socket.name == "Alpha":
+            nt.links.remove(link)
+    if has_cutout:
+        nt.links.new(node.outputs["Alpha"], bsdf.inputs["Alpha"])
+        mat.blend_method = "CLIP"
+        print(f"  {mat.name} <- {os.path.basename(best)} (alpha CLIP)")
+    else:
+        bsdf.inputs["Alpha"].default_value = 1.0
+        mat.blend_method = "OPAQUE"
+        print(f"  {mat.name} <- {os.path.basename(best)} (opaque)")
     wired += 1
-    print(f"  {mat.name} <- {os.path.basename(best)}")
 print(f"wired {wired}/{len(bpy.data.materials)} materials")
 
 os.makedirs(os.path.dirname(args.out), exist_ok=True)
