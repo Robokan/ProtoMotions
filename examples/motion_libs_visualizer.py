@@ -1107,18 +1107,24 @@ class MotionVisualizerSmoothness:
                             SAMURAI_TPOSE_POS,
                         )
                         if args.overlay_skeleton == "identity":
-                            # fbx2robot creatures: robot bodies ARE the
-                            # character bones — map/parents from kinematic
-                            # info, rest conjugations identity.
-                            _ki = self.simulator.robot_config.kinematic_info
-                            _names = list(_ki.body_names)
-                            _map = {b: b for b in _names}
-                            _rel = None
-                            _par = {
-                                b: (_names[pi] if pi >= 0 else None)
-                                for b, pi in zip(
-                                    _names, list(_ki.parent_indices))
-                            }
+                            # fbx2robot creatures: the character skeleton IS
+                            # the robot — drive its SkelAnimation directly,
+                            # no retarget machinery (Eric: "we are just
+                            # animating it as it is").
+                            from protomotions.simulator.isaaclab.overlay import (
+                                IdentitySkelOverlay,
+                            )
+                            import omni.usd
+                            self._overlay = IdentitySkelOverlay(
+                                stage=omni.usd.get_context().get_stage(),
+                                character_usd=args.overlay_character,
+                                prim_root="/World/overlay0",
+                                body_names=self.simulator.robot_config
+                                .kinematic_info.body_names,
+                                body_rest_rot_wxyz=self._overlay_rest_rot,
+                            )
+                            print("[overlay] identity SkelAnimation driver "
+                                  "attached", flush=True)
                         elif args.overlay_skeleton == "ue":
                             _map, _rel, _par = (
                                 SOMA23_TO_UE, UE_REST_REL, SOMA23_PARENT_UE)
@@ -1136,6 +1142,8 @@ class MotionVisualizerSmoothness:
                         # clip pose was applied this frame.
                         rest = self._overlay_rest_rot
                         try:
+                            if args.overlay_skeleton == "identity":
+                                raise StopIteration  # attached above
                             self._overlay = SkinnedOverlay(
                                 stage=omni.usd.get_context().get_stage(),
                                 character_usd=args.overlay_character,
@@ -1167,6 +1175,8 @@ class MotionVisualizerSmoothness:
                                 fists=args.overlay_fists,
                                 head_shift=args.overlay_head_shift,
                             )
+                        except StopIteration:
+                            pass  # identity driver already attached
                         except Exception:
                             import traceback
                             print("[overlay] INIT FAILED — overlay disabled, "
@@ -1174,6 +1184,33 @@ class MotionVisualizerSmoothness:
                             traceback.print_exc()
                             args.overlay_character = None
                             self._overlay = None
+                    if self._overlay is not None and not hasattr(
+                            self, "_ov_dbg_done"):
+                        self._ov_dbg_done = True
+                        try:
+                            import omni.usd
+                            from pxr import Usd, UsdGeom
+                            _st = omni.usd.get_context().get_stage()
+                            _ov = _st.GetPrimAtPath("/World/overlay0")
+                            print(f"[ovdbg] /World/overlay0 valid={bool(_ov and _ov.IsValid())}", flush=True)
+                            if _ov and _ov.IsValid():
+                                _c = UsdGeom.BBoxCache(
+                                    Usd.TimeCode.Default(),
+                                    ["default", "render"])
+                                _r = _c.ComputeWorldBound(_ov).ComputeAlignedRange()
+                                _sz = _r.GetMax() - _r.GetMin()
+                                _mn = _r.GetMin()
+                                print(f"[ovdbg] overlay bbox size={tuple(round(v,2) for v in _sz)} min={tuple(round(v,2) for v in _mn)}", flush=True)
+                                _ops = UsdGeom.Xformable(_ov).GetOrderedXformOps()
+                                print(f"[ovdbg] overlay ops={[o.GetOpName() for o in _ops]}", flush=True)
+                                for _pr in Usd.PrimRange(_ov):
+                                    if _pr.GetTypeName() == "Mesh":
+                                        _rm = _c.ComputeWorldBound(_pr).ComputeAlignedRange()
+                                        _s2 = _rm.GetMax() - _rm.GetMin()
+                                        print(f"[ovdbg] mesh {_pr.GetName()} size={tuple(round(v,2) for v in _s2)}", flush=True)
+                        except Exception:
+                            import traceback
+                            traceback.print_exc()
                     if self._overlay is not None:
                         shift = rigid_body_pos[0].clone()
                         shift[:, 1] += args.overlay_offset

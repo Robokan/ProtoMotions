@@ -815,3 +815,170 @@ class SkinnedOverlay:
             UsdGeom.Imageable(prim).GetVisibilityAttr().Set(
                 "inherited" if visible else "invisible"
             )
+
+
+class IdentitySkelOverlay:
+    """Direct SkelAnimation driver for characters whose skeleton IS the
+    robot (fbx2robot creatures). No retarget math: each frame writes the
+    robot's per-body world rotations into the character's joint LOCAL
+    rotations through the skeleton's own bind transforms.
+
+    char_world(j) = robot_world_delta(body j) @ bind_world(j)
+    char_local(j) = char_world(parent)^-1 @ char_world(j)
+
+    Root follows the robot root (translate + orient on the reference prim).
+    Joints without a matching robot body hold their rest pose.
+    """
+
+    def __init__(self, stage, character_usd: str, prim_root: str,
+                 body_names, body_rest_rot_wxyz):
+        from pathlib import Path as _Path
+
+        import numpy as np
+        from pxr import Gf, Usd, UsdGeom, UsdSkel
+
+        self._np = np
+        self._Gf = Gf
+        character_usd = str(_Path(character_usd).resolve())
+        ref = stage.DefinePrim(prim_root, "Xform")
+        ref.GetReferences().AddReference(character_usd)
+        xf = UsdGeom.Xformable(ref)
+        existing = xf.GetOrderedXformOps()
+        self._t_op = xf.AddTranslateOp(opSuffix="overlayRoot")
+        self._o_op = xf.AddOrientOp(opSuffix="overlayRoot")
+        self._t_op.Set(Gf.Vec3d(0, 0, 0))
+        self._o_op.Set(Gf.Quatf(1.0, Gf.Vec3f(0, 0, 0)))
+        xf.SetXformOpOrder([self._t_op, self._o_op] + existing)
+
+        skel_prim = next(
+            (p for p in Usd.PrimRange(ref) if p.IsA(UsdSkel.Skeleton)), None
+        )
+        if skel_prim is None:
+            raise ValueError(f"No UsdSkel.Skeleton under {character_usd}")
+        self._skel = UsdSkel.Skeleton(skel_prim)
+        joints = list(self._skel.GetJointsAttr().Get())
+        self._joints = joints
+        leaf = [j.split("/")[-1] for j in joints]
+        parents = SkinnedOverlay._parent_indices(joints)
+        self._parents = parents
+
+        bind = self._skel.GetBindTransformsAttr().Get()
+        rest = self._skel.GetRestTransformsAttr().Get()
+        self._bind_world = np.array(
+            [np.array(m).reshape(4, 4) for m in bind]
+        )  # row-major, row-vector convention: world = local @ parent
+        self._rest_local = np.array(
+            [np.array(m).reshape(4, 4) for m in rest]
+        )
+
+        # robot body index per joint (None = hold rest)
+        b_idx = {n: i for i, n in enumerate(body_names)}
+        self._joint_body = [b_idx.get(n) for n in leaf]
+        self._root_ji = next(
+            i for i, b in enumerate(self._joint_body) if b is not None
+        )
+        self._root_bi = self._joint_body[self._root_ji]
+        # robot rest world rotations (wxyz) per body — deltas are measured
+        # against these
+        self._body_rest = np.asarray(body_rest_rot_wxyz, dtype=np.float64)
+
+        # SkelAnimation bound to the skeleton
+        anim_prim = stage.DefinePrim(f"{prim_root}_anim", "SkelAnimation")
+        self._anim = UsdSkel.Animation(anim_prim)
+        self._anim.GetJointsAttr().Set(joints)
+        UsdSkel.BindingAPI.Apply(skel_prim.GetPrim()) \
+            .CreateAnimationSourceRel().SetTargets([anim_prim.GetPath()])
+        # initialize with rest decomposition
+        t0, r0, s0 = [], [], []
+        for j in range(len(joints)):
+            M = self._rest_local[j]
+            t0.append(Gf.Vec3f(*[float(v) for v in M[3, :3]]))
+            q = Gf.Transform(Gf.Matrix4d(*M.flatten())).GetRotation().GetQuat()
+            r0.append(Gf.Quatf(q.GetReal(), Gf.Vec3f(*[float(v) for v in q.GetImaginary()])))
+            s0.append(Gf.Vec3h(1, 1, 1))
+        self._rest_t, self._rest_r = t0, r0
+        self._anim.GetTranslationsAttr().Set(t0)
+        self._anim.GetRotationsAttr().Set(r0)
+        self._anim.GetScalesAttr().Set(s0)
+
+    @staticmethod
+    def _q_to_mat(q):
+        import numpy as np
+        w, x, y, z = q
+        n = w * w + x * x + y * y + z * z
+        s = 2.0 / max(n, 1e-12)
+        return np.array([
+            [1 - s * (y * y + z * z), s * (x * y - w * z), s * (x * z + w * y)],
+            [s * (x * y + w * z), 1 - s * (x * x + z * z), s * (y * z - w * x)],
+            [s * (x * z - w * y), s * (y * z + w * x), 1 - s * (x * x + y * y)],
+        ])
+
+    def sync(self, body_pos, body_rot_wxyz) -> None:
+        """body_pos [B,3], body_rot [B,4] world; rotations arrive xyzw from
+        the motion lib and are reordered here (mirrors SkinnedOverlay)."""
+        np = self._np
+        Gf = self._Gf
+        pos = body_pos.detach().cpu().numpy().astype(np.float64)
+        rot = body_rot_wxyz.detach().cpu().numpy().astype(np.float64)
+        rot = rot[:, [3, 0, 1, 2]]  # xyzw -> wxyz
+
+        J = len(self._joints)
+        # world rotation per joint (3x3), robot delta applied to bind
+        Rw = [None] * J
+        world = [None] * J
+        for j in range(J):
+            bi = self._joint_body[j]
+            Bw = self._bind_world[j]
+            if bi is None:
+                p = self._parents[j]
+                if p < 0:
+                    world[j] = self._rest_local[j]
+                else:
+                    world[j] = self._rest_local[j] @ world[p]
+                continue
+            q = rot[bi]
+            qr = self._body_rest[bi]
+            # delta = q * conj(rest)
+            w1, x1, y1, z1 = q
+            w2, x2, y2, z2 = qr[0], -qr[1], -qr[2], -qr[3]
+            dq = (
+                w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
+                w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+                w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+                w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
+            )
+            D = self._q_to_mat(dq)
+            M = Bw.copy()
+            M[:3, :3] = Bw[:3, :3] @ D.T  # row-vector convention
+            M[3, :3] = pos[bi]
+            world[j] = M
+
+        # root prim op: glue reference frame to the robot root
+        rj = self._root_ji
+        Wr = world[rj]
+        Bw = self._bind_world[rj]
+        A = np.linalg.inv(Bw) @ Wr
+        T = Gf.Transform(Gf.Matrix4d(*A.flatten()))
+        q = T.GetRotation().GetQuat()
+        t = T.GetTranslation()
+        self._t_op.Set(Gf.Vec3d(t[0], t[1], t[2]))
+        self._o_op.Set(Gf.Quatf(
+            float(q.GetReal()), Gf.Vec3f(*[float(v) for v in q.GetImaginary()])
+        ))
+
+        # joint locals relative to parent within the (already glued) frame
+        ts, rs = list(self._rest_t), list(self._rest_r)
+        for j in range(J):
+            p = self._parents[j]
+            L = world[j] @ np.linalg.inv(world[p]) if p >= 0 else \
+                world[j] @ np.linalg.inv(A)
+            TL = Gf.Transform(Gf.Matrix4d(*L.flatten()))
+            qq = TL.GetRotation().GetQuat()
+            tt = TL.GetTranslation()
+            ts[j] = Gf.Vec3f(float(tt[0]), float(tt[1]), float(tt[2]))
+            rs[j] = Gf.Quatf(
+                float(qq.GetReal()),
+                Gf.Vec3f(*[float(v) for v in qq.GetImaginary()]),
+            )
+        self._anim.GetTranslationsAttr().Set(ts)
+        self._anim.GetRotationsAttr().Set(rs)
