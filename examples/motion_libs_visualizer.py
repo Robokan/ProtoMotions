@@ -69,7 +69,7 @@ parser.add_argument(
 parser.add_argument(
     "--overlay-skeleton",
     default="cc",
-    choices=["cc", "ue"],
+    choices=["cc", "ue", "identity"],
     help="Character rig family: 'cc' (Reallusion/CC, e.g. construction "
     "worker) or 'ue' (Epic UE5 skeleton, e.g. red samurai).",
 )
@@ -165,6 +165,15 @@ if args.robot == "samurai" and args.overlay_character is None:
         "protomotions/data/assets/overlay/red_samurai.usd")
     args.overlay_skeleton = "ue"
     args.overlay_root_only = True
+elif args.robot in ("raptor", "tiger") and args.overlay_character is None:
+    # fbx2robot creatures: the character USD shares the robot's skeleton,
+    # so the overlay map is the identity (derived from kinematic info).
+    args.overlay_character = (
+        f"protomotions/data/assets/overlay/{args.robot}.usd")
+    args.overlay_skeleton = "identity"
+    args.overlay_root_only = True
+    if not args.overlay_drive.strip():
+        args.overlay_drive = "all"
     if not args.overlay_drive:
         args.overlay_drive = "all"
     args.overlay_offset = 0.0
@@ -1097,7 +1106,20 @@ class MotionVisualizerSmoothness:
                             SOMA23_PARENT_UE,
                             SAMURAI_TPOSE_POS,
                         )
-                        if args.overlay_skeleton == "ue":
+                        if args.overlay_skeleton == "identity":
+                            # fbx2robot creatures: robot bodies ARE the
+                            # character bones — map/parents from kinematic
+                            # info, rest conjugations identity.
+                            _ki = self.simulator.robot_config.kinematic_info
+                            _names = list(_ki.body_names)
+                            _map = {b: b for b in _names}
+                            _rel = None
+                            _par = {
+                                b: (_names[pi] if pi >= 0 else None)
+                                for b, pi in zip(
+                                    _names, list(_ki.parent_indices))
+                            }
+                        elif args.overlay_skeleton == "ue":
                             _map, _rel, _par = (
                                 SOMA23_TO_UE, UE_REST_REL, SOMA23_PARENT_UE)
                         else:
@@ -1134,9 +1156,12 @@ class MotionVisualizerSmoothness:
                                     ]
                                 ),
                                 rest_rel=_rel,
-                                tpose_pos=(SAMURAI_TPOSE_POS
-                                           if args.robot == "samurai"
-                                           else SOMA23_TPOSE_POS),
+                                tpose_pos=(
+                                    None
+                                    if args.overlay_skeleton == "identity"
+                                    else SAMURAI_TPOSE_POS
+                                    if args.robot == "samurai"
+                                    else SOMA23_TPOSE_POS),
                                 limb_match=args.overlay_limb_match,
                                 body_parents=_par,
                                 fists=args.overlay_fists,
