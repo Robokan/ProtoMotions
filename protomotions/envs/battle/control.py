@@ -356,6 +356,32 @@ class BattleControl(ControlComponent):
         self._side_strike_ids = (side_a["strike_ids"], side_b["strike_ids"])
         self._family_strike_masses = [None] * len(self._family_bank)
 
+        # Per-family PD action scaling (rung 4): the env action config may
+        # carry family-PAIR offset/scale tensors [2, D] (row 0 = ego family,
+        # row 1 = the arena's foreign body) or, from pre-rung-4 frozen
+        # configs, per-env [2N_train, D] block tensors. Either way, adopt
+        # them into LIVE per-env tensors sized to THIS run's env count,
+        # boot-filled with the ego family's rows, and re-stamped per match
+        # in set_opponent_family. The action function reads the config dict
+        # every step, so in-place updates propagate.
+        self._pd_pairs = {}
+        action_cfg = getattr(env.config, "action_config", None)
+        if self._cross_morph and isinstance(action_cfg, dict):
+            for key in ("pd_action_offset", "pd_action_scale"):
+                val = action_cfg.get(key)
+                if not (torch.is_tensor(val) and val.dim() == 2):
+                    continue
+                if val.shape[0] == 2:
+                    pairs = val.to(device)
+                elif val.shape[0] >= 2:
+                    # legacy per-env block layout: rows [0, N_train]
+                    pairs = val[[0, val.shape[0] // 2]].to(device)
+                else:
+                    continue
+                self._pd_pairs[key] = pairs
+                live = pairs[0].unsqueeze(0).expand(num_envs, -1).contiguous()
+                action_cfg[key] = live
+
         self.hit_state = BattleHitState(
             num_envs=num_envs,
             damage_body_ids=self.damage_body_ids,
@@ -473,6 +499,9 @@ class BattleControl(ControlComponent):
             self._gaze_axis_pe[rows_j] = torch.tensor(
                 bank["gaze_axis"], device=device, dtype=torch.float
             )
+            # Opponent row: its own family's PD action scaling
+            for key, pairs in self._pd_pairs.items():
+                self.env.config.action_config[key][rows_j] = pairs[fam]
             # Ego row: partner-side strike tables point at the new opponent
             fill(self.strike_body_ids, bank["strike_ids"], rows_i,
                  self._strike_mask)
