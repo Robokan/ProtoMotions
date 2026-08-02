@@ -112,7 +112,7 @@ class _Terrain:
     def is_flat(self):
         return self.flat
 
-    def sample_valid_locations(self, num_envs, sample_flat=False):
+    def sample_valid_locations(self, num_envs, sample_flat=False, **kwargs):
         self.sample_calls.append((num_envs, sample_flat))
         values = torch.arange(num_envs * 2, dtype=torch.float).reshape(num_envs, 2)
         return values + torch.tensor([10.0, 20.0])
