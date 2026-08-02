@@ -19,15 +19,22 @@ for name in ("raptor", "tiger"):
     stage = Usd.Stage.Open(path)
     skel_prim = next(p for p in stage.Traverse() if p.IsA(UsdSkel.Skeleton))
     sk = UsdSkel.Skeleton(skel_prim)
-    for attr_name in ("restTransforms", "bindTransforms"):
-        attr = skel_prim.GetAttribute(attr_name)
-        mats = attr.Get()
-        out = []
-        for m in mats:
-            M = np.array(m).reshape(4, 4)
-            M[3, :3] *= 0.01  # translations cm -> m (rot/scale untouched)
-            out.append(Gf.Matrix4d(*M.flatten()))
-        attr.Set(Vt.Matrix4dArray(out))
+    # Idempotence: only scale when translations are clearly centimeters
+    # (a bind skeleton spanning >5 units cannot be meters for these
+    # creatures) — re-running the fixup must not double-shrink.
+    probe = np.array(skel_prim.GetAttribute("bindTransforms").Get()[1]).reshape(4, 4)
+    if np.abs(probe[3, :3]).max() < 5.0:
+        print(f"{name}: skeleton already meters, skipping scale", flush=True)
+    else:
+        for attr_name in ("restTransforms", "bindTransforms"):
+            attr = skel_prim.GetAttribute(attr_name)
+            mats = attr.Get()
+            out = []
+            for m in mats:
+                M = np.array(m).reshape(4, 4)
+                M[3, :3] *= 0.01  # translations cm -> m
+                out.append(Gf.Matrix4d(*M.flatten()))
+            attr.Set(Vt.Matrix4dArray(out))
     for prim in stage.Traverse():
         if prim.GetTypeName() == "Mesh":
             from pxr import UsdGeom as _UG
