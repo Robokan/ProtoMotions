@@ -14,9 +14,23 @@ and trained with ASE — battle integration later. GPU 1 runs Eric's
   mixed-arena league).
 - [x] Asset survey complete (trees in the session scratchpad:
   `raptor_tree.txt`, `tiger_tree.txt`).
-- [ ] `data/scripts/fbx2robot.py` — the generalized importer (below).
-- [ ] Raptor MJCF + robot config + motions + ASE boot smoke.
-- [ ] Tiger the same.
+- [x] `data/scripts/fbx2robot.py` SHIPPED (commit 771d905): raptor
+  27 bodies/78 dof/40 kg (hips 0.51 m); tiger 29 bodies/84 dof/200 kg
+  (pelvis 0.86 m; its bind has a -1.15 m Y offset — harmless, root
+  motion comes from anims). MJCFs at protomotions/data/assets/mjcf/
+  {raptor,tiger}.xml. NOTE: tiger up_axis="y" (explicit in ROBOTS spec).
+- [ ] NEXT: robot_configs/raptor.py + tiger.py (dog_v2 pattern:
+  semantic naming front-feet="hand", trackable subset, ControlConfig
+  gains from actuator efforts, default_root_height 0.51/0.86,
+  contact_bodies) + factory registration.
+- [ ] NEXT: data/scripts/fbx_anim_to_motion.py — same-skeleton FK
+  converter (plan item 3; world-rotation copy for kept joints with
+  skipped-bone folding; qpos euler_xyz; use convert_gmr_pkl_to_proto's
+  fk_from_transforms_with_velocities pattern with each robot's
+  kinematic_info; contact labels; cm->m + up-axis like fbx2robot).
+- [ ] Raptor corpus from Animations/RootMotion (~dozens of clips);
+  tiger animation FBXs still to inventory (find dir).
+- [ ] ASE boot smoke per robot on GPU 0 (mlp.py, few epochs).
 
 ## Assets
 
