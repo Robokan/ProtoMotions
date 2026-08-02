@@ -24,12 +24,15 @@ from protomotions.robot_configs.dog_v2 import _pd
 
 
 CONTROL_OVERRIDES = {
-    r"RigSpine[13]_[xyz]": _pd(250.0),
+    # Catch-all FIRST (later matches override): digits, claws, tongue,
+    # ears, whiskers and every other small bone of the full skeleton.
+    r".*_[xyz]": _pd(10.0),
+    r"RigSpine[0-9]_[xyz]": _pd(250.0),
     r"RigChest_[xyz]": _pd(250.0),
-    r"RigNeck[13]_[xyz]": _pd(90.0),
+    r"RigNeck[0-9]_[xyz]": _pd(90.0),
     r"RigHead_[xyz]": _pd(60.0),
     r"RigJaw1_[xyz]": _pd(50.0),
-    r"RigTail[135]_[xyz]": _pd(20.0),
+    r"RigTail[0-9]_[xyz]": _pd(20.0),
     r"Rig[LR]BLeg1_[xyz]": _pd(280.0),   # hind hip
     r"Rig[LR]BLeg2_[xyz]": _pd(240.0),   # hind knee
     r"Rig[LR]BLeg3_[xyz]": _pd(160.0),   # hock
