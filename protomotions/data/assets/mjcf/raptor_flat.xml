@@ -90,9 +90,9 @@
                 <joint name="LeftForeArm_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-2.5874 1.4681" limited="true" armature="0.02" frictionloss="0.1" />
                 <geom name="g_LeftForeArm" fromto="0.0026862 -0.0086777 -0.0082469 0.019699 -0.063637 -0.060478" size="0.025" density="954.4" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                 <body name="LeftHand" pos="0.022385 -0.072314 -0.068724">
-                  <joint name="LeftHand_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-3.5453 2.0532" limited="true" armature="0.02" frictionloss="0.1" />
+                  <joint name="LeftHand_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-3.1067 2.0532" limited="true" armature="0.02" frictionloss="0.1" />
                   <joint name="LeftHand_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.6520 1.3623" limited="true" armature="0.02" frictionloss="0.1" />
-                  <joint name="LeftHand_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-3.5196 2.6298" limited="true" armature="0.02" frictionloss="0.1" />
+                  <joint name="LeftHand_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-3.1067 2.6298" limited="true" armature="0.02" frictionloss="0.1" />
                   <geom name="g_LeftHand" fromto="0.00046469 -0.0045512 -0.0049138 0.0034077 -0.033375 -0.036034" size="0.025" density="954.4" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                   <body name="LeftHandMiddle1" pos="0.005367 -0.039467 -0.042337">
                     <joint name="LeftHandMiddle1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.0460 1.4460" limited="true" armature="0.02" frictionloss="0.1" />
@@ -168,9 +168,9 @@
                 <joint name="RightForeArm_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.4115 2.5874" limited="true" armature="0.02" frictionloss="0.1" />
                 <geom name="g_RightForeArm" fromto="-0.0026862 -0.0086777 -0.0082469 -0.019699 -0.063636 -0.060477" size="0.025" density="954.4" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                 <body name="RightHand" pos="-0.022385 -0.072314 -0.068724">
-                  <joint name="RightHand_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-3.5453 2.0532" limited="true" armature="0.02" frictionloss="0.1" />
+                  <joint name="RightHand_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-3.1067 2.0532" limited="true" armature="0.02" frictionloss="0.1" />
                   <joint name="RightHand_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.3623 1.6520" limited="true" armature="0.02" frictionloss="0.1" />
-                  <joint name="RightHand_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-2.6298 3.5196" limited="true" armature="0.02" frictionloss="0.1" />
+                  <joint name="RightHand_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-2.6298 3.1067" limited="true" armature="0.02" frictionloss="0.1" />
                   <geom name="g_RightHand" fromto="-0.00046471 -0.0045512 -0.0049138 -0.0034078 -0.033375 -0.036035" size="0.025" density="954.4" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                   <body name="RightHandMiddle1" pos="-0.005367 -0.039467 -0.042337">
                     <joint name="RightHandMiddle1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.0460 1.4460" limited="true" armature="0.02" frictionloss="0.1" />
@@ -292,7 +292,7 @@
             <body name="LeftToeBase" pos="0.0046043 -0.035765 -0.10618">
               <joint name="LeftToeBase_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-2.7852 2.5440" limited="true" armature="0.02" frictionloss="0.1" />
               <joint name="LeftToeBase_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.6339 1.7271" limited="true" armature="0.02" frictionloss="0.1" />
-              <joint name="LeftToeBase_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.8521 3.8869" limited="true" armature="0.02" frictionloss="0.1" />
+              <joint name="LeftToeBase_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.8521 3.1067" limited="true" armature="0.02" frictionloss="0.1" />
               <geom name="g_LeftToeBase" fromto="0 0.0080739 0 0 0.024 0" size="0.025" density="1566.4" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
             </body>
             <body name="LeftFootIndex1" pos="-0.010941 -0.029341 -0.097458">
@@ -314,7 +314,7 @@
               </body>
             </body>
             <body name="LeftFootMiddle1" pos="0.0048883 -0.030946 -0.10303">
-              <joint name="LeftFootMiddle1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5603 3.7937" limited="true" armature="0.02" frictionloss="0.1" />
+              <joint name="LeftFootMiddle1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5603 3.1067" limited="true" armature="0.02" frictionloss="0.1" />
               <joint name="LeftFootMiddle1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.4467 1.6240" limited="true" armature="0.02" frictionloss="0.1" />
               <joint name="LeftFootMiddle1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-2.8446 1.2173" limited="true" armature="0.02" frictionloss="0.1" />
               <geom name="g_LeftFootMiddle1" fromto="0 0 0 -3.4997e-09 -0.050099 -0.012979" size="0.00613" density="1566.4" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
@@ -332,7 +332,7 @@
               </body>
             </body>
             <body name="LeftFootRing1" pos="0.022041 -0.02974 -0.10303">
-              <joint name="LeftFootRing1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.6908 3.7263" limited="true" armature="0.02" frictionloss="0.1" />
+              <joint name="LeftFootRing1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.6908 3.1067" limited="true" armature="0.02" frictionloss="0.1" />
               <joint name="LeftFootRing1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.2814 1.6088" limited="true" armature="0.02" frictionloss="0.1" />
               <joint name="LeftFootRing1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-2.5722 1.5796" limited="true" armature="0.02" frictionloss="0.1" />
               <geom name="g_LeftFootRing1" fromto="0 0 0 0.0025167 -0.050033 -0.012991" size="0.00613" density="1566.4" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
@@ -370,7 +370,7 @@
             <body name="RightToeBase" pos="-0.0046043 -0.035765 -0.10618">
               <joint name="RightToeBase_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-2.7852 2.5440" limited="true" armature="0.02" frictionloss="0.1" />
               <joint name="RightToeBase_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.7271 1.6339" limited="true" armature="0.02" frictionloss="0.1" />
-              <joint name="RightToeBase_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-3.8869 1.8521" limited="true" armature="0.02" frictionloss="0.1" />
+              <joint name="RightToeBase_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-3.1067 1.8521" limited="true" armature="0.02" frictionloss="0.1" />
               <geom name="g_RightToeBase" fromto="0 0.0080739 0 0 0.024 0" size="0.025" density="1566.4" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
             </body>
             <body name="RightFootIndex1" pos="0.010941 -0.029341 -0.097458">
@@ -392,7 +392,7 @@
               </body>
             </body>
             <body name="RightFootMiddle1" pos="-0.0048883 -0.030946 -0.10303">
-              <joint name="RightFootMiddle1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5603 3.7937" limited="true" armature="0.02" frictionloss="0.1" />
+              <joint name="RightFootMiddle1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5603 3.1067" limited="true" armature="0.02" frictionloss="0.1" />
               <joint name="RightFootMiddle1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.6240 1.4467" limited="true" armature="0.02" frictionloss="0.1" />
               <joint name="RightFootMiddle1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.2173 2.8446" limited="true" armature="0.02" frictionloss="0.1" />
               <geom name="g_RightFootMiddle1" fromto="0 0 0 -1.3891e-10 -0.050099 -0.012979" size="0.00613" density="1566.4" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
@@ -410,7 +410,7 @@
               </body>
             </body>
             <body name="RightFootRing1" pos="-0.022041 -0.02974 -0.10303">
-              <joint name="RightFootRing1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.6908 3.7263" limited="true" armature="0.02" frictionloss="0.1" />
+              <joint name="RightFootRing1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.6908 3.1067" limited="true" armature="0.02" frictionloss="0.1" />
               <joint name="RightFootRing1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.6088 1.2814" limited="true" armature="0.02" frictionloss="0.1" />
               <joint name="RightFootRing1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5796 2.5722" limited="true" armature="0.02" frictionloss="0.1" />
               <geom name="g_RightFootRing1" fromto="0 0 0 -0.002517 -0.050033 -0.012991" size="0.00613" density="1566.4" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
