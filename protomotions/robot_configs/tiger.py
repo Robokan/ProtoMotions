@@ -3,8 +3,10 @@
 
 """Tiger robot (fbx2robot import of the UE Animalia Tiger_M pack).
 
-29 bodies / 84 hinges (<Body>_x/_y/_z, world-aligned bind frames),
-200 kg, pelvis at 0.86 m. Quadruped: all four ankles are contact feet;
+38 bodies / 111 hinges (<Body>_x/_y/_z, world-aligned bind frames),
+200 kg, standing pelvis ~1.14 m (fbx2robot --min-bone-length 0.14 +
+--drop-bones for whiskers/eyes/ears; anatomical densities: legs 80 kg,
+tail 10.9 kg, torso+head 109 kg, COM over the four ankles). Quadruped: all four ankles are contact feet;
 front ankles double as the "hands" for the battle tables later (paw
 swipes), jaw is the bite. PD gains follow the dog_v2 translation
 (kp = 2*effort, kd = kp/10), efforts scaled for 200 kg.
@@ -38,10 +40,24 @@ CONTROL_OVERRIDES = {
     r"Rig[LR]BLeg3_[xyz]": _pd(160.0),   # hock
     r"Rig[LR]BLegAnkle_[xyz]": _pd(80.0),
     r"Rig[LR]FLegCollarbone_[xyz]": _pd(200.0),
+    r"Rig[LR]ShoulderBlade1_[xyz]": _pd(200.0),
     r"Rig[LR]FLeg1_[xyz]": _pd(240.0),   # shoulder
     r"Rig[LR]FLeg2_[xyz]": _pd(200.0),   # elbow
     r"Rig[LR]FLeg3_[xyz]": _pd(140.0),   # carpus
     r"Rig[LR]FLegAnkle_[xyz]": _pd(80.0),
+}
+
+
+# Rotor/gear inertia. fbx2robot writes armature="0.02" into the MJCF joint
+# default, but _pd() leaves ControlInfo.armature None and IsaacLab then
+# applies its own 0.0 — so the thin distal links (digits, jaw, tail tip)
+# would be driven with only their own inertia. A 1.4 g finger phalanx has
+# I ~ 1.5e-8 kg m2 against kp 12: omega ~ 28,000 rad/s, omega*dt ~ 143 at
+# 200 Hz, i.e. guaranteed divergence -> NaN observations -> dead policy.
+# Mirror the MJCF value so every joint is integrable.
+from dataclasses import replace as _replace
+CONTROL_OVERRIDES = {
+    _k: _replace(_v, armature=0.02) for _k, _v in CONTROL_OVERRIDES.items()
 }
 
 
@@ -79,7 +95,7 @@ class TigerRobotConfig(RobotConfig):
         )
     )
 
-    default_root_height: float = 0.86
+    default_root_height: float = 1.14
     contact_bodies: List[str] = None
 
     control: ControlConfig = field(

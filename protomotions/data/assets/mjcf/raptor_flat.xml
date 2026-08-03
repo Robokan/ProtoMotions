@@ -1,6 +1,12 @@
 <mujoco model="raptor">
   <compiler angle="radian" />
   <option timestep="0.016667" />
+  <contact>
+    <exclude body1="Snout" body2="Jaw" />
+    <exclude body1="Snout" body2="JawEND" />
+    <exclude body1="Head" body2="JawEND" />
+    <exclude body1="Neck3" body2="Jaw" />
+  </contact>
   <worldbody>
     <body name="Hips" pos="0 0.001235 0.51128">
       <geom name="g_Hips" fromto="-0.0051561 -0.00011752 0.0044872 -0.021484 -0.00048968 0.018697" size="0.1" density="958.1" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
@@ -61,7 +67,7 @@
                       <joint name="PreySocket_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5708 1.5708" limited="true" armature="0.02" frictionloss="0.1" />
                       <joint name="PreySocket_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.5708 1.5708" limited="true" armature="0.02" frictionloss="0.1" />
                       <joint name="PreySocket_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5708 1.5708" limited="true" armature="0.02" frictionloss="0.1" />
-                      <geom name="g_PreySocket" type="sphere" pos="0 0.01 0" size="0.02" density="958.1" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                      <geom name="g_PreySocket" type="sphere" pos="0 0.01 0" size="0.02" contype="0" conaffinity="0" density="958.1" friction="1.0 0.05 0.05" />
                     </body>
                   </body>
                 </body>

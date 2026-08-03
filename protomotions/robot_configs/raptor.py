@@ -43,6 +43,19 @@ CONTROL_OVERRIDES = {
 }
 
 
+# Rotor/gear inertia. fbx2robot writes armature="0.02" into the MJCF joint
+# default, but _pd() leaves ControlInfo.armature None and IsaacLab then
+# applies its own 0.0 — so the thin distal links (digits, jaw, tail tip)
+# would be driven with only their own inertia. A 1.4 g finger phalanx has
+# I ~ 1.5e-8 kg m2 against kp 12: omega ~ 28,000 rad/s, omega*dt ~ 143 at
+# 200 Hz, i.e. guaranteed divergence -> NaN observations -> dead policy.
+# Mirror the MJCF value so every joint is integrable.
+from dataclasses import replace as _replace
+CONTROL_OVERRIDES = {
+    _k: _replace(_v, armature=0.02) for _k, _v in CONTROL_OVERRIDES.items()
+}
+
+
 @dataclass
 class RaptorRobotConfig(RobotConfig):
     common_naming_to_robot_body_names: Dict[str, List[str]] = field(
