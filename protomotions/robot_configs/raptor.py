@@ -32,6 +32,13 @@ CONTROL_OVERRIDES = {
     r"Head_[xyz]": _pd(25.0),
     r"Jaw_[xyz]": _pd(20.0),
     r"Tail[0-9]_[xyz]": _pd(15.0),
+    # Tail gains sized from measured gravity-hold torque x2 (the tail is a
+    # 10 kg cantilever off the hips; the base needed 50 Nm against a 6 Nm
+    # limit). Gradient from base to tip.
+    r"Tail_[xyz]": _pd(100.0),
+    r"Tail1_[xyz]": _pd(80.0),
+    r"Tail2_[xyz]": _pd(55.0),
+    r"Tail3_[xyz]": _pd(30.0),
     r"(Left|Right)UpLeg_[xyz]": _pd(120.0),
     r"(Left|Right)Leg_[xyz]": _pd(100.0),
     r"(Left|Right)Foot_[xyz]": _pd(60.0),
