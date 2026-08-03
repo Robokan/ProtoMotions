@@ -66,7 +66,12 @@ ROBOTS = {
         fbx="/home/bizon/sparkpack/UnrealExportedAssets/Tiger/Game/"
             "Animalia/Tiger_M/Meshes/Tiger_M.FBX",
         root="RigPelvis",
-        up_axis="y",
+        # NOT "y": the Animalia FBX bakes a -90deg armature rotation into
+        # the bone world transforms, so they are ALREADY z-up — applying
+        # the y->z conversion double-rotated the tiger nose-down-vertical
+        # (bind AND every converted motion). Verified on Drinking.motion:
+        # identity transform puts all four ankles on the ground plane.
+        up_axis="z",
         # Full skeleton (digits, claws, jaw, tongue, ears, whiskers...);
         # --min-bone-length prunes short bones later.
         keep="all",
@@ -157,7 +162,7 @@ def kept_parent(name, parent_name, keep_set):
 
 
 def build(robot: str, out_path: Path, min_bone_length: float = 0.0,
-          keep_bones=None):
+          keep_bones=None, drop_bones=None):
     spec = ROBOTS[robot]
     world_raw, parent_name = load_bind(spec["fbx"])
 
@@ -203,6 +208,24 @@ def build(robot: str, out_path: Path, min_bone_length: float = 0.0,
                     changed = True
         keep = [n for n in keep if n in keep_set_]
         print(f"min_bone_length={min_bone_length}: {len(keep)} bones kept")
+
+    # --drop-bones: cull named subtrees regardless of length (whiskers,
+    # eyes, eyelids — long offsets that leaf-erosion never removes but a
+    # robot has no use for). Drops the bone AND all its descendants.
+    if drop_bones:
+        drop_roots = set(drop_bones)
+
+        def dropped(n):
+            p = n
+            while p is not None:
+                if p in drop_roots:
+                    return True
+                p = parent_name.get(p)
+            return False
+        before = len(keep)
+        keep = [n for n in keep if not dropped(n)]
+        print(f"drop_bones: removed {before - len(keep)} bones "
+              f"({len(keep)} kept)")
 
     # Units/axes: UE exports are cm; convert to Z-up meters.
     w = {k: w_all[k] for k in keep}
@@ -350,10 +373,16 @@ def main():
         help="Comma list of bones protected from pruning (their ancestor "
         "chains survive automatically).",
     )
+    ap.add_argument(
+        "--drop-bones", default="",
+        help="Comma list of bones to cull along with their whole subtree "
+        "(applied after pruning; for whiskers/eyes/etc.).",
+    )
     args = ap.parse_args()
     gc.disable()
     build(args.robot, args.out, args.min_bone_length,
-          [b.strip() for b in args.keep_bones.split(",") if b.strip()])
+          [b.strip() for b in args.keep_bones.split(",") if b.strip()],
+          [b.strip() for b in args.drop_bones.split(",") if b.strip()])
     sys.stdout.flush()
     os._exit(0)
 
