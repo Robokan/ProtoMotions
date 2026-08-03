@@ -72,6 +72,8 @@
     <mesh name="LINK_SHOULDER_YAW_R" file="LINK_SHOULDER_YAW_R.obj" />
     <mesh name="LINK_ELBOW_PITCH_R" file="LINK_ELBOW_PITCH_R.obj" />
     <mesh name="LINK_ELBOW_YAW_R" file="LINK_ELBOW_YAW_R.obj" />
+    <mesh name="LINK_HAND_L" file="LINK_HAND_L.obj" />
+    <mesh name="LINK_HAND_R" file="LINK_HAND_R.obj" />
     <mesh name="LINK_HEAD_PITCH" file="LINK_HEAD_PITCH.obj" />
     <mesh name="LINK_HEAD_YAW" file="LINK_HEAD_YAW.obj" />
   </asset>
@@ -197,7 +199,7 @@
                   <body name="LINK_WRIST_END_L" pos="0.029436 0.0124855 -0.13222151">
                     <inertial pos="0 0 0" mass="1e-3" diaginertia="1e-12 1e-12 1e-12" />
                     <!-- Fist collider sized to LINK_ELBOW_YAW visual hand (was r=0.05). -->
-                    <geom size="0.0375" pos="0.0173 -0.0323 -0.0697" class="collision_urdf" type="sphere" />
+                    <geom type="mesh" mesh="LINK_HAND_L" class="collision_urdf" density="0" />
                   </body>
                 </body>
               </body>
@@ -231,7 +233,7 @@
                   <body name="LINK_WRIST_END_R" pos="0.029436 -0.0124855 -0.13222151">
                     <inertial pos="0 0 0" mass="1e-3" diaginertia="1e-12 1e-12 1e-12" />
                     <!-- Fist collider sized to LINK_ELBOW_YAW visual hand (was r=0.05). -->
-                    <geom size="0.0375" pos="0.0173 0.0323 -0.0697" class="collision_urdf" type="sphere" />
+                    <geom type="mesh" mesh="LINK_HAND_R" class="collision_urdf" density="0" />
                   </body>
                 </body>
               </body>
