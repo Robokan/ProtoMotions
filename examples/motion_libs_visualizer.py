@@ -1218,6 +1218,102 @@ class MotionVisualizerSmoothness:
                             traceback.print_exc()
                             args.overlay_character = None
                     self._ov_n = getattr(self, "_ov_n", 0) + 1
+                    import os as _oskq
+                    if (self._overlay is not None
+                            and _oskq.environ.get("OVERLAY_SKELQ")
+                            and self._ov_n in (30, 60, 120)):
+                        # Ground truth: UsdSkel's own evaluated joint world
+                        # transforms vs the robot's body positions.
+                        try:
+                            import numpy as _np3
+                            import omni.usd as _ou
+                            from pxr import Usd as _U, UsdSkel as _US
+                            _st2 = _ou.get_context().get_stage()
+                            _skp = next(
+                                p for p in _U.PrimRange(
+                                    _st2.GetPrimAtPath("/World/overlay0"))
+                                if p.IsA(_US.Skeleton))
+                            _cache = _US.Cache()
+                            _q = _cache.GetSkelQuery(_US.Skeleton(_skp))
+                            from pxr import UsdGeom as _UG2
+                            _xc = _UG2.XformCache(_U.TimeCode.Default())
+                            _xf = _q.ComputeJointWorldTransforms(_xc)
+                            _jn = [j.split("/")[-1]
+                                   for j in _q.GetJointOrder()]
+                            _bn = list(
+                                self.simulator.robot_config
+                                .kinematic_info.body_names)
+                            _rp = rigid_body_pos[0].cpu().numpy()
+                            errs = []
+                            for _ji, _n in enumerate(_jn):
+                                if _n not in _bn:
+                                    continue
+                                _cw = _np3.array(_xf[_ji]).reshape(4, 4)[3, :3]
+                                _e = _cw - _rp[_bn.index(_n)]
+                                errs.append((float(_np3.linalg.norm(_e)), _n,
+                                             _np3.round(_e * 100, 1)))
+                            errs.sort(reverse=True)
+                            _mean = _np3.mean([e[0] for e in errs])
+                            print(f"[ov-skelq] n={self._ov_n} joints={len(errs)} "
+                                  f"mean err {_mean*100:.1f} cm; worst:",
+                                  flush=True)
+                            for e in errs[:4]:
+                                print(f"[ov-skelq]   {e[1]}: {e[0]*100:.1f} cm "
+                                      f"delta {tuple(e[2])}", flush=True)
+                            _anc = _skp.GetParent()
+                            while _anc and not _anc.IsA(_US.Root):
+                                _anc = _anc.GetParent()
+                            print(f"[ov-skelq]   live SkelRoot: "
+                                  f"{_anc.GetPath() if _anc else 'NONE'}",
+                                  flush=True)
+                            _aq2 = _q.GetAnimQuery()
+                            if _aq2 and "Spine1" in _jn:
+                                _si0 = _jn.index("Spine1")
+                                _al = _aq2.ComputeJointLocalTransforms(
+                                    _U.TimeCode.Default())
+                                _sl = _q.ComputeJointLocalTransforms(
+                                    _U.TimeCode.Default())
+                                print(f"[ov-skelq]   animq local[Spine1] "
+                                      f"rot={_US.DecomposeTransform(_al[_si0])[1]}",
+                                      flush=True)
+                                print(f"[ov-skelq]   skelq local[Spine1] "
+                                      f"rot={_US.DecomposeTransform(_sl[_si0])[1]}",
+                                      flush=True)
+                            _anim2 = _US.Animation(
+                                _skp.GetChild("OverlayAnim"))
+                            _rots2 = _anim2.GetRotationsAttr().Get()
+                            _restq2 = _US.Skeleton(_skp).GetRestTransformsAttr().Get()
+                            if _rots2 is not None and "Spine1" in _jn:
+                                _si = _jn.index("Spine1")
+                                from pxr import Gf as _Gf3
+                                _rq = _Gf3.Transform(
+                                    _restq2[_si]).GetRotation().GetQuat()
+                                print(f"[ov-skelq]   anim rot[Spine1]={_rots2[_si]} "
+                                      f"rest rot={_rq}", flush=True)
+                            _rr = rigid_body_rot[0].cpu().numpy()
+                            for _hn in ("Hips", "Spine1", "Tail1"):
+                                if _hn not in _jn or _hn not in _bn:
+                                    continue
+                                _ji = _jn.index(_hn)
+                                _m4 = _np3.array(_xf[_ji]).reshape(4, 4)
+                                _cw = _m4[3, :3]
+                                _rp2 = _rp[_bn.index(_hn)]
+                                _R = _m4[:3, :3].T
+                                _R = _R / _np3.cbrt(abs(_np3.linalg.det(_R)))
+                                _qx = _rr[_bn.index(_hn)]  # xyzw
+                                _w, _x, _y, _z = _qx[3], _qx[0], _qx[1], _qx[2]
+                                _Rr = _np3.array([
+                                    [1-2*(_y*_y+_z*_z), 2*(_x*_y-_z*_w), 2*(_x*_z+_y*_w)],
+                                    [2*(_x*_y+_z*_w), 1-2*(_x*_x+_z*_z), 2*(_y*_z-_x*_w)],
+                                    [2*(_x*_z-_y*_w), 2*(_y*_z+_x*_w), 1-2*(_x*_x+_y*_y)]])
+                                _E = _Rr.T @ _R
+                                _yaw = _np3.degrees(_np3.arctan2(_E[1, 0], _E[0, 0]))
+                                print(f"[ov-skelq]   {_hn}: pos err "
+                                      f"{_np3.linalg.norm(_cw-_rp2)*100:.1f} cm, "
+                                      f"rot err yaw {_yaw:.1f} deg", flush=True)
+                        except Exception:
+                            import traceback
+                            traceback.print_exc()
                     if args.snapshot_dir and self._ov_n in (30, 60, 120):
                         try:
                             import os as _os

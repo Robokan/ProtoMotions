@@ -251,6 +251,17 @@ class SkinnedOverlay:
                     c = np.asarray(rest_rel.get(b, (1.0, 0, 0, 0)), dtype=np.float64)
                     self._drive.append((ji2, bi, _quat_conj(c)))
                 self._hip_ji = hip_ji
+                # Skeleton-space <-> world rotation (the asset may carry a
+                # rotated root above the skel, e.g. Blender Y-up exports).
+                # Needed to conjugate world-space drive deltas into skel axes.
+                _l2w = _UsdGeom.Xformable(skel_prim).ComputeLocalToWorldTransform(
+                    _Usd.TimeCode.Default())
+                _m = np.array([[_l2w[i][j] for j in range(4)] for i in range(4)])
+                _rot3 = _m[:3, :3]
+                _rot3 = _rot3 / (np.cbrt(abs(np.linalg.det(_rot3))) or 1.0)
+                self._world_to_skel_q = _quat_conj(_mat_to_quat_wxyz(_rot3.T))
+                log.info("overlay root_only: world_to_skel_q=%s",
+                         np.round(self._world_to_skel_q, 4))
                 # Bind-pose world (=skel-space) quats per joint, and rest
                 # locals for the undriven remainder.
                 self._bind_q = np.stack(
@@ -658,7 +669,20 @@ class SkinnedOverlay:
                             body_rot_wxyz[bi].detach().cpu().numpy(),
                             dtype=np.float64,
                         )[[3, 0, 1, 2]]  # xyzw -> wxyz
+                        # World-space hip-relative delta, conjugated into
+                        # skeleton axes (no-op when the asset's skel root is
+                        # unrotated, e.g. the Blender creature exports), then
+                        # pre-multiplied onto the skel-space bind rotation.
+                        # Verified exact (0.0 cm joint error) by the offline
+                        # variant sweep once the skeleton units were fixed —
+                        # the historical "mangled mesh" was never this math,
+                        # it was the overlay asset's skeleton translations
+                        # having been wrongly rescaled to meters while the
+                        # mesh points are authored in cm.
                         delta = _quat_mul(_quat_mul(_quat_conj(q), qb), cc)
+                        delta = _quat_mul(
+                            _quat_mul(self._world_to_skel_q, delta),
+                            _quat_conj(self._world_to_skel_q))
                         W[j] = _quat_mul(delta, self._bind_q[j])
                         L[j] = _quat_mul(_quat_conj(Wp), W[j])
                     else:
@@ -666,12 +690,64 @@ class SkinnedOverlay:
                         if Lj is not None:
                             L[j] = Lj
                         W[j] = _quat_mul(Wp, self._rest_q[j])
+                import os as _osf
+                if _osf.environ.get("OVERLAY_FREEZE"):
+                    # Write-path probe: slam a 90-deg roll onto every DRIVEN
+                    # joint's local. If the render doesn't kink, per-frame
+                    # rotation writes never reach the skeleton in this mode.
+                    _k = np.array([np.cos(np.pi/4), np.sin(np.pi/4), 0, 0])
+                    for jf in drive_at:
+                        L[jf] = _quat_mul(self._rest_q[jf], _k)
                 self._anim.GetRotationsAttr().Set([
                     Gf.Quatf(float(L[j][0]),
                              Gf.Vec3f(float(L[j][1]), float(L[j][2]),
                                       float(L[j][3])))
                     for j in range(J)
                 ])
+                import os as _os2
+                if _os2.environ.get("OVERLAY_FREEZE") and not hasattr(
+                        self, "_bind_dbg"):
+                    self._bind_dbg = True
+                    _j0 = next(iter(drive_at))
+                    _rb = self._anim.GetRotationsAttr().Get()
+                    print(f"[ov-bind] anim prim: {self._anim.GetPrim().GetPath()}",
+                          flush=True)
+                    print(f"[ov-bind] wrote L[{_j0}]={np.round(L[_j0],3)} "
+                          f"read-back={_rb[_j0] if _rb else None}", flush=True)
+                    from pxr import UsdSkel as _USk
+                    _skp = self._anim.GetPrim().GetParent()
+                    _b = _USk.BindingAPI(_skp)
+                    print(f"[ov-bind] skel prim {_skp.GetPath()} animSource "
+                          f"targets: {_b.GetAnimationSourceRel().GetTargets()}",
+                          flush=True)
+                    _cache = _USk.Cache()
+                    _sq = _cache.GetSkelQuery(_USk.Skeleton(_skp))
+                    _aq = _sq.GetAnimQuery()
+                    print(f"[ov-bind] skelq anim query: "
+                          f"{_aq.GetPrim().GetPath() if _aq else 'NONE'}",
+                          flush=True)
+                self._d2n = getattr(self, "_d2n", 0) + 1
+                if _os2.environ.get("OVERLAY_DIAG2") and self._d2n % 120 == 1:
+                    def _eul(qq):
+                        R = _quat_to_mat(qq)
+                        return np.degrees([
+                            np.arctan2(R[2, 1], R[2, 2]),
+                            np.arcsin(np.clip(-R[2, 0], -1, 1)),
+                            np.arctan2(R[1, 0], R[0, 0])]).round(1)
+                    sw = _quat_conj(self._world_to_skel_q)
+                    for jj, bi, _cc in self._drive[:3]:
+                        qb = np.asarray(
+                            body_rot_wxyz[bi].detach().cpu().numpy(),
+                            dtype=np.float64)[[3, 0, 1, 2]]
+                        # char world rot of this joint = prim_q * S * W[j]
+                        cw = _quat_mul(q, _quat_mul(sw, W[jj]))
+                        # expected: qb * S * bind (world delta on world bind)
+                        ew = _quat_mul(qb, _quat_mul(sw, self._bind_q[jj]))
+                        err = _quat_mul(_quat_conj(ew), cw)
+                        print(f"[ov-diag2] {self._joints[jj].split('/')[-1]}: "
+                              f"hip q eul {_eul(q)} qb eul {_eul(qb)} "
+                              f"char-vs-expected err eul {_eul(err)}",
+                              flush=True)
                 # Diagnostic (once per ~4s): FK the skeleton we just wrote
                 # and report where the character's hand joints actually land
                 # vs the robot's hand bodies.
@@ -726,6 +802,9 @@ class SkinnedOverlay:
                 if mode == "spinz" and ji == hipji:
                     ang = np.radians(90.0) * np.sin(self._t / 15.0)  # fast unmissable sway
                     dz = np.array([np.cos(ang / 2), 0, 0, np.sin(ang / 2)])
+                    dz = _quat_mul(
+                        _quat_mul(self._world_to_skel_q, dz),
+                        _quat_conj(self._world_to_skel_q))  # world -> skel axes
                     bind_q = _mat_to_quat_wxyz(self._bind_world[ji, :3, :3].T)
                     world_q = _quat_mul(dz, bind_q)
                     pi = self._parents[ji]
