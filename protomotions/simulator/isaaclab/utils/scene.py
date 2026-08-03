@@ -1,3 +1,4 @@
+import re
 # SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
@@ -131,27 +132,36 @@ class SceneCfg(InteractiveSceneCfg):
             if robot_config.control.control_type == ControlType.BUILT_IN_PD
             else IdealPDActuatorCfg
         )
+        # One actuator per DOF costs a full Python-level actuator model
+        # evaluation per joint per physics step: on the 210-dof raptor that
+        # was 69% of inference wall-clock (py-spy), dwarfing physics (7%)
+        # and rendering (4%). DOFs sharing identical parameters behave
+        # identically, so bucket them into one vectorised actuator each.
+        _buckets = {}
         for dof_name, control_info in robot_config.control.control_info.items():
             stiffness = control_info.stiffness
             damping = control_info.damping
             if robot_config.control.control_type != ControlType.BUILT_IN_PD:
                 stiffness = 0.0
                 damping = 0.0
-            actuators[dof_name] = ActuatorConfig(
-                joint_names_expr=[dof_name],
-                # Only include non-None values in the kwargs
-                **{
-                    key: value
-                    for key, value in {
-                        "stiffness": stiffness,
-                        "damping": damping,
-                        "armature": control_info.armature,
-                        "effort_limit_sim": control_info.effort_limit,
-                        "velocity_limit_sim": control_info.velocity_limit,
-                        "friction": control_info.friction,
-                    }.items()
-                    if value is not None
-                },
+            kwargs = {
+                key: value
+                for key, value in {
+                    "stiffness": stiffness,
+                    "damping": damping,
+                    "armature": control_info.armature,
+                    "effort_limit_sim": control_info.effort_limit,
+                    "velocity_limit_sim": control_info.velocity_limit,
+                    "friction": control_info.friction,
+                }.items()
+                if value is not None
+            }
+            _buckets.setdefault(
+                tuple(sorted(kwargs.items())), []).append(dof_name)
+        for _key, _dofs in _buckets.items():
+            # Escape regex metacharacters: joint_names_expr is regex-matched.
+            actuators[f"group_{len(actuators)}"] = ActuatorConfig(
+                joint_names_expr=[re.escape(d) for d in _dofs], **dict(_key)
             )
 
         # articulation

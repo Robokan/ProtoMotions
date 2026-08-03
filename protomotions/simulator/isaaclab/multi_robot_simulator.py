@@ -1,3 +1,4 @@
+import re as _re
 # SPDX-FileCopyrightText: Copyright (c) 2025-2026 The ProtoMotions Developers
 # SPDX-License-Identifier: Apache-2.0
 
@@ -54,26 +55,33 @@ class MultiRobotSceneCfg(SceneCfg):
             if opp.control.control_type == ControlType.BUILT_IN_PD
             else IdealPDActuatorCfg
         )
+        # Bucket DOFs with identical parameters into one vectorised actuator
+        # (see utils/scene.py): per-DOF actuators cost a Python-level model
+        # evaluation per joint per physics step.
+        _buckets = {}
         for dof_name, control_info in opp.control.control_info.items():
             stiffness = control_info.stiffness
             damping = control_info.damping
             if opp.control.control_type != ControlType.BUILT_IN_PD:
                 stiffness = 0.0
                 damping = 0.0
-            actuators[dof_name] = ActuatorConfig(
-                joint_names_expr=[dof_name],
-                **{
-                    key: value
-                    for key, value in {
-                        "stiffness": stiffness,
-                        "damping": damping,
-                        "armature": control_info.armature,
-                        "effort_limit_sim": control_info.effort_limit,
-                        "velocity_limit_sim": control_info.velocity_limit,
-                        "friction": control_info.friction,
-                    }.items()
-                    if value is not None
-                },
+            kwargs = {
+                key: value
+                for key, value in {
+                    "stiffness": stiffness,
+                    "damping": damping,
+                    "armature": control_info.armature,
+                    "effort_limit_sim": control_info.effort_limit,
+                    "velocity_limit_sim": control_info.velocity_limit,
+                    "friction": control_info.friction,
+                }.items()
+                if value is not None
+            }
+            _buckets.setdefault(
+                tuple(sorted(kwargs.items())), []).append(dof_name)
+        for _key, _dofs in _buckets.items():
+            actuators[f"group_{len(actuators)}"] = ActuatorConfig(
+                joint_names_expr=[_re.escape(d) for d in _dofs], **dict(_key)
             )
 
         activate_contact_sensors = opp.contact_bodies is not None
