@@ -3,10 +3,12 @@
 
 """Tiger robot (fbx2robot import of the UE Animalia Tiger_M pack).
 
-38 bodies / 111 hinges (<Body>_x/_y/_z, world-aligned bind frames),
+70 bodies / 207 hinges (<Body>_x/_y/_z, world-aligned bind frames),
+4 digits x 2 segments on each paw (cats are digitigrade; the dewclaws
+and claw tips erode at the 0.14 m prune),
 200 kg, standing pelvis ~1.14 m (fbx2robot --min-bone-length 0.14 +
---drop-bones for whiskers/eyes/ears; anatomical densities: legs 80 kg,
-tail 10.9 kg, torso+head 109 kg, COM over the four ankles). Quadruped: all four ankles are contact feet;
+--drop-bones for whiskers/eyes/ears; anatomical densities: legs 70 kg,
+tail 8 kg, torso 122 kg, COM over the four paws). Quadruped: all four ankles are contact feet;
 front ankles double as the "hands" for the battle tables later (paw
 swipes), jaw is the bite. PD gains follow the dog_v2 translation
 (kp = 2*effort, kd = kp/10), efforts scaled for 200 kg.
@@ -48,6 +50,8 @@ CONTROL_OVERRIDES = {
     r"Rig[LR]FLeg2_[xyz]": _pd(200.0),   # elbow
     r"Rig[LR]FLeg3_[xyz]": _pd(140.0),   # carpus
     r"Rig[LR]FLegAnkle_[xyz]": _pd(80.0),
+    # digits: light, like the raptor's toes/fingers
+    r"Rig[LR][FB]LegDigit\d\d_[xyz]": _pd(8.0),
 }
 
 
