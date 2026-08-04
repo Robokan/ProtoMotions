@@ -640,24 +640,58 @@ def main():
                         f"/World/envs/env_{i}/Robot", False)
             log.info("Skinned overlays active on %d envs", _n)
 
-            _orig_step = env.simulator.step
-
+            # Hook the ACTUAL frame draw. IsaacLabSimulator._physics_step
+            # calls self._sim.render() inside its decimation loop, and only
+            # afterwards does step() call simulator.render() (which just
+            # moves the camera). Syncing anywhere later wrote the skin one
+            # frame behind the robot -- visible as the mesh trailing in fast
+            # motion. _scene.update() also runs after that draw, so refresh
+            # the read buffers here before sampling the pose.
             _ring_placed = [False]
+            _sim_ctx = env.simulator._sim
+            _orig_sim_render = _sim_ctx.render
 
-            def _step_with_overlays(*a, **kw):
-                out = _orig_step(*a, **kw)
-                st = env.simulator.get_bodies_state()
-                if not _ring_placed[0] and args.overlay_ambient > 0:
-                    _place_ring(st)
-                    _ring_placed[0] = True
-                for i, ov in enumerate(_overlays):
-                    try:
-                        ov.sync(st.rigid_body_pos[i], st.rigid_body_rot[i])
-                    except Exception:
-                        pass
+            def _sim_render_with_overlays(*a, **kw):
+                try:
+                    env.simulator._scene.update(
+                        dt=_sim_ctx.get_physics_dt())
+                    st = env.simulator.get_bodies_state()
+                    if not _ring_placed[0] and args.overlay_ambient > 0:
+                        _place_ring(st)
+                        _ring_placed[0] = True
+                    for i, ov in enumerate(_overlays):
+                        try:
+                            ov.sync(st.rigid_body_pos[i], st.rigid_body_rot[i])
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+                return _orig_sim_render(*a, **kw)
+
+            _sim_ctx.render = _sim_render_with_overlays
+
+            # A reset (R key) rewrites the robot pose outside the step/render
+            # cycle, and a windowed Kit app redraws continuously — so the
+            # viewport showed the teleported robot against a stale skin until
+            # the next render. reset_envs' state read-back is already fresh
+            # (verified: root AND limb transforms update immediately), so
+            # sync right there.
+            _orig_reset = env.simulator.reset_envs
+
+            def _reset_with_overlays(*a, **kw):
+                out = _orig_reset(*a, **kw)
+                try:
+                    st = env.simulator.get_bodies_state()
+                    for i, ov in enumerate(_overlays):
+                        try:
+                            ov.sync(st.rigid_body_pos[i], st.rigid_body_rot[i])
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
                 return out
 
-            env.simulator.step = _step_with_overlays
+            env.simulator.reset_envs = _reset_with_overlays
 
             # Same viewer keys as motion_libs_visualizer: 5 toggles the
             # robot's collision/visual body, 6 toggles the skinned mesh.
