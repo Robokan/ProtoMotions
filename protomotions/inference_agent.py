@@ -312,15 +312,21 @@ def main():
     _creature = next(
         (c for c in ("raptor", "tiger")
          if c in type(robot_config).__name__.lower()), None)
-    if _creature and not args.overlay_character:
-        _cusd = Path(f"protomotions/data/assets/overlay/{_creature}.usd")
-        if _cusd.exists():
-            args.overlay_character = [str(_cusd)]
+    if _creature:
+        if not args.overlay_character:
+            _cusd = Path(f"protomotions/data/assets/overlay/{_creature}.usd")
+            if _cusd.exists():
+                args.overlay_character = [str(_cusd)]
+                log.info("overlay: auto-skinning %s (keys 5=robot, 6=mesh)",
+                         _creature)
+            else:
+                log.warning("overlay: %s not found, capsules only", _cusd)
+        # A creature's character USD is built on the robot's own skeleton,
+        # so identity is right whether the USD came from the auto-default or
+        # from explicit --overlay-character paths (e.g. passing the purple
+        # and black raptors to colour the two fighters differently).
+        if args.overlay_skeleton == "cc":      # i.e. left at the default
             args.overlay_skeleton = "identity"
-            log.info("overlay: auto-skinning %s (keys 5=robot, 6=mesh)",
-                     _creature)
-        else:
-            log.warning("overlay: %s not found, showing capsules only", _cusd)
     simulator_config = resolved_configs["simulator"]
     terrain_config = resolved_configs.get("terrain")
     scene_lib_config = resolved_configs["scene_lib"]
