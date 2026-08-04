@@ -50,6 +50,16 @@ def tokens(name):
     return set(t for t in re.split(r"[_\W]+", n.lower()) if len(t) > 2)
 
 
+# GOTCHA (raptor, 2026-08-03): UE/FBX exports can scramble subset vs
+# material NAMES -- the GeomSubset called "DromaMESH_DromaBodyM" (8768
+# faces) is the body skin while the one called "DromaMESH_Material__26"
+# (1466 faces) is the feather cards, and each must bind to the material
+# named after the OTHER. Do not trust the names: after a rebuild, verify
+# that the CUTOUT texture (alpha < 1 somewhere, e.g. Feathers_D.png)
+# lands on the small subset and the opaque body texture on the large one,
+# and swap the bindings if not. Also note this pack ships a dedicated
+# feather texture that name-based fuzzy matching will NOT find, because
+# neither material name contains "feather".
 wired = 0
 for mat in bpy.data.materials:
     mtoks = tokens(mat.name)
