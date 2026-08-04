@@ -695,29 +695,36 @@ def main():
 
             # Same viewer keys as motion_libs_visualizer: 5 toggles the
             # robot's collision/visual body, 6 toggles the skinned mesh.
-            def _toggle_prim(path, label):
+            # One tracked flag per layer, applied identically to every env.
+            # Reading each prim's own visibility and inverting it made the
+            # envs drift out of phase the moment any two differed (and an
+            # ancestor-hidden prim reports 'invisible' while its own attr is
+            # unset, so the flip was a no-op for it) -- pressing 5 with
+            # several raptors then hid some and showed others.
+            _hidden = {"robot": False, "mesh": False}
+
+            def _set_layer(kind, paths):
                 from pxr import UsdGeom as _UG
-                prim = _stage.GetPrimAtPath(path)
-                if not prim or not prim.IsValid():
-                    print(f"[viewer] {label}: prim not found ({path})",
-                          flush=True)
-                    return
-                img = _UG.Imageable(prim)
-                hidden = img.ComputeVisibility() == _UG.Tokens.invisible
-                img.GetVisibilityAttr().Set(
-                    "inherited" if hidden else "invisible")
-                print(f"[viewer] {label} {'shown' if hidden else 'hidden'}",
-                      flush=True)
+                _hidden[kind] = not _hidden[kind]
+                token = "invisible" if _hidden[kind] else "inherited"
+                missing = 0
+                for path in paths:
+                    prim = _stage.GetPrimAtPath(path)
+                    if not prim or not prim.IsValid():
+                        missing += 1
+                        continue
+                    _UG.Imageable(prim).GetVisibilityAttr().Set(token)
+                state = "hidden" if _hidden[kind] else "shown"
+                note = f" ({missing} prim(s) missing)" if missing else ""
+                print(f"[viewer] {kind} {state} on {len(paths) - missing} "
+                      f"env(s){note}", flush=True)
 
             def _toggle_robots():
-                for i in range(_n):
-                    _toggle_prim(f"/World/envs/env_{i}/Robot",
-                                 f"robot {i}" if _n > 1 else "robot")
+                _set_layer("robot",
+                           [f"/World/envs/env_{i}/Robot" for i in range(_n)])
 
             def _toggle_meshes():
-                for i in range(_n):
-                    _toggle_prim(f"/World/overlay{i}",
-                                 f"mesh {i}" if _n > 1 else "mesh")
+                _set_layer("mesh", [f"/World/overlay{i}" for i in range(_n)])
 
             try:
                 env.simulator._register_custom_user_interface_keys(
