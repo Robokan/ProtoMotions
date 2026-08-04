@@ -55,16 +55,18 @@ CONTROL_OVERRIDES = {
 }
 
 
-# Rotor/gear inertia. fbx2robot writes armature="0.02" into the MJCF joint
-# default, but _pd() leaves ControlInfo.armature None and IsaacLab then
-# applies its own 0.0 — so the thin distal links (digits, jaw, tail tip)
-# would be driven with only their own inertia. A 1.4 g finger phalanx has
-# I ~ 1.5e-8 kg m2 against kp 12: omega ~ 28,000 rad/s, omega*dt ~ 143 at
-# 200 Hz, i.e. guaranteed divergence -> NaN observations -> dead policy.
-# Mirror the MJCF value so every joint is integrable.
+# NO armature, matching t800/dog_v2 (which train fine with armature=None).
+# BUILT_IN_PD maps to IsaacLab's ImplicitActuatorCfg: its PD is integrated
+# IMPLICITLY and is unconditionally stable, so the omega*dt criterion that
+# motivated an earlier flat 0.02 (which applies to EXPLICIT integration)
+# was never relevant. That 0.02 was 30x this robot's entire link inertia
+# and ~90,000x a finger phalanx's, so every limb dragged a flywheel: the
+# policy could stand but never accelerate a leg enough to walk or get up,
+# and both ASE and AMP stalled with the discriminator above 90% accuracy.
+# Creatures have no gearboxes, so zero is the physical answer too.
 from dataclasses import replace as _replace
 CONTROL_OVERRIDES = {
-    _k: _replace(_v, armature=0.02) for _k, _v in CONTROL_OVERRIDES.items()
+    _k: _replace(_v, armature=None) for _k, _v in CONTROL_OVERRIDES.items()
 }
 
 
