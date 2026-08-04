@@ -8,7 +8,7 @@ computations. They are separated from the ctx-taking wrappers in
 humanoid_obs_functions.py to keep the code organization clean.
 """
 
-from typing import List, Union
+from typing import List, Union, Optional
 
 import torch
 from torch import Tensor
@@ -143,6 +143,7 @@ def compute_historical_max_coords_from_state(
     observe_contacts: bool = False,
     w_last: bool = True,
     history_steps: Union[int, List[int]] = None,
+    body_ids: Optional[List[int]] = None,
 ) -> Tensor:
     """Compute historical max_coords observations from state history tensors.
     
@@ -211,6 +212,7 @@ def compute_historical_max_coords_from_state(
         root_height_obs=root_height_obs,
         observe_contacts=observe_contacts,
         w_last=w_last,
+        body_ids=body_ids,
     )
     
     obs_dim = flat_obs.shape[-1]
@@ -408,6 +410,7 @@ def compute_historical_max_coords_from_motion_lib(
     observe_contacts: bool = False,
     contact_body_ids: Tensor = None,
     history_steps: Union[int, List[int]] = None,
+    body_ids: Optional[List[int]] = None,
 ) -> Tensor:
     """Compute historical max_coords observations from motion library reference data.
     
@@ -497,6 +500,7 @@ def compute_historical_max_coords_from_motion_lib(
             root_height_obs=root_height_obs,
             observe_contacts=observe_contacts,
             w_last=True,
+            body_ids=body_ids,
         )
         all_obs.append(frame_obs)
     

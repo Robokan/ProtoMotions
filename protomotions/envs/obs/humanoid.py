@@ -6,7 +6,7 @@
 Provides functions for computing humanoid observations and transformations.
 """
 
-from typing import Dict
+from typing import Dict, Optional, List
 import torch
 from torch import Tensor
 
@@ -237,13 +237,30 @@ def compute_humanoid_max_coords_observations(
     root_height_obs: bool,
     observe_contacts: bool,
     w_last: bool,
+    body_ids: Optional[List[int]] = None,
 ) -> Tensor:
     """Compute humanoid max-coords observations from body state.
-    
+
     This is the helper function used for both training and ONNX export.
+
+    body_ids restricts the observation to a subset of bodies (the root is
+    always kept, since it supplies the heading frame and root height).
+    Used to keep an AMP discriminator off bodies whose motion cannot be
+    reproduced -- e.g. a raptor's 36 digit segments, 1.4 g each and driven
+    by 6 N.m actuators, which let the discriminator separate agent from
+    reference on jitter alone and never look at the gait.
     """
     if ground_height.dim() == 1:
         ground_height = ground_height.unsqueeze(-1)
+
+    if body_ids is not None:
+        idx = torch.as_tensor(body_ids, dtype=torch.long, device=body_pos.device)
+        body_pos = body_pos[:, idx]
+        body_rot = body_rot[:, idx]
+        body_vel = body_vel[:, idx]
+        body_ang_vel = body_ang_vel[:, idx]
+        if body_contacts is not None and observe_contacts:
+            body_contacts = body_contacts[:, idx]
 
     root_pos = body_pos[:, 0, :]
     root_rot = body_rot[:, 0, :]

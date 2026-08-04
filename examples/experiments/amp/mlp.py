@@ -6,6 +6,7 @@ from protomotions.simulator.base_simulator.config import SimulatorConfig
 from protomotions.envs.base_env.config import EnvConfig
 from protomotions.agents.amp.config import AMPAgentConfig
 import argparse
+import re
 
 
 # Dilated history steps for temporal context (used by actor and discriminator)
@@ -34,6 +35,32 @@ def motion_lib_config(args: argparse.Namespace):
     return MotionLibConfig(motion_file=args.motion_file)
 
 
+def _disc_body_ids(robot_cfg: RobotConfig):
+    """Body indices the AMP discriminator sees, or None for all bodies.
+
+    Uses robot_cfg.trackable_bodies_subset when present. The root is forced
+    in (it supplies the heading frame and root height) and order follows the
+    simulator's body ordering.
+    """
+    subset = getattr(robot_cfg, "trackable_bodies_subset", None)
+    if not subset:
+        return None
+    names = list(robot_cfg.kinematic_info.body_names)
+    keep = {0} | {names.index(b) for b in subset if b in names}
+    # Digit TIPS (the last phalanx of each finger/toe) are included even
+    # though the intermediate phalanges are not. Two reasons:
+    #  - the fingers genuinely articulate when fighting, so their pose is
+    #    part of the style we want imitated;
+    #  - a body the discriminator cannot see is a body the policy is free
+    #    to exploit. With all digits hidden, the first walking policy
+    #    promptly started planting its fingertips on the ground for extra
+    #    support at zero style cost. Contact termination is NOT an option
+    #    here because get-ups legitimately put the fingers on the floor.
+    # Only the tip goes in, so the cost is 12 bodies rather than 36.
+    keep |= {i for i, n in enumerate(names)
+             if re.search(r"(Index|Middle|Ring)3$", n)}
+    return sorted(keep)
+
 def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
     """Build environment configuration (training defaults).
     
@@ -52,12 +79,21 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
             root_height_obs=True,
             observe_contacts=False,
         ),
-        # Historical observations for AMP discriminator (from StateHistoryBuffer)
+        # Historical observations for AMP discriminator (from StateHistoryBuffer).
+        # Restricted to trackable_bodies_subset when the robot defines one:
+        # the discriminator should judge GAIT, and a body whose motion cannot
+        # be reproduced lets it win on jitter instead. The raptor's 36 digit
+        # segments (1.4 g, 6 N.m actuators, constantly hit by ground contact)
+        # made agent and reference trivially separable, so agent_acc sat at
+        # ~0.93 and style reward collapsed while the policy learned nothing
+        # about walking. The POLICY still senses every body (max_coords_obs
+        # above is untouched), so toes still inform balance.
         "historical_max_coords_obs": historical_max_coords_obs_factory(
             local_obs=True,
             root_height_obs=True,
             observe_contacts=False,
             history_steps=HISTORY_STEPS,
+            body_ids=_disc_body_ids(robot_cfg),
         ),
     }
 
@@ -161,7 +197,8 @@ def agent_config(
         "historical_max_coords_obs": MdpComponent(
             compute_func=compute_historical_max_coords_from_motion_lib,
             dynamic_vars={},  # All parameters injected by agent
-            static_params={"history_steps": HISTORY_STEPS},
+            static_params={"history_steps": HISTORY_STEPS,
+                           "body_ids": _disc_body_ids(robot_config)},
         ),
     }
 

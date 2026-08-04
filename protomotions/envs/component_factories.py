@@ -55,6 +55,7 @@ def max_coords_obs_factory(
     local_obs: bool = True,
     root_height_obs: bool = True,
     observe_contacts: bool = False,
+    body_ids: Optional[List[int]] = None,
 ) -> MdpComponent:
     """Factory for humanoid max-coords observations.
 
@@ -87,6 +88,7 @@ def max_coords_obs_factory(
             "root_height_obs": root_height_obs,
             "observe_contacts": observe_contacts,
             "w_last": True,
+            "body_ids": body_ids,
         },
     )
 
@@ -143,6 +145,7 @@ def historical_max_coords_obs_factory(
     root_height_obs: bool = True,
     observe_contacts: bool = False,
     history_steps: Optional[Union[int, list]] = None,
+    body_ids: Optional[List[int]] = None,
 ) -> MdpComponent:
     """Factory for historical max-coords observations.
 
@@ -166,6 +169,7 @@ def historical_max_coords_obs_factory(
         "root_height_obs": root_height_obs,
         "observe_contacts": observe_contacts,
         "w_last": True,
+        "body_ids": body_ids,
     }
     if history_steps is not None:
         params["history_steps"] = history_steps
