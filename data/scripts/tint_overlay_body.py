@@ -61,34 +61,57 @@ def body_texture_shader(stage):
     return shader, mat
 
 
-def main():
-    path = os.path.join(OVERLAY, args.out_usd)
-    stage = Usd.Stage.Open(path)
-    shader, mat = body_texture_shader(stage)
-    if shader is None:
-        raise SystemExit(f"no body texture shader found in {path}")
+def tint_shader(shader, label):
+    """Bake the gains into this shader's texture. RGB only -- the alpha
+    channel is left untouched so cutout masks (feather cards) survive."""
     src_rel = shader.GetInput("file").Get().path
     src = os.path.join(OVERLAY, src_rel.lstrip("./"))
     stem, ext = os.path.splitext(os.path.basename(src))
     stem = stem.split("_" + args.suffix)[0]          # don't stack suffixes
     src = os.path.join(os.path.dirname(src), stem + ext)
+    if not os.path.exists(src):
+        print(f"  {label}: source {os.path.basename(src)} missing, skipped")
+        return
     dst = os.path.join(os.path.dirname(src), f"{stem}_{args.suffix}{ext}")
-
     im = Image.open(src).convert("RGBA")
     a = np.asarray(im).astype(np.float32)
-    gains = np.array(list(args.gains) + [1.0], dtype=np.float32)
+    gains = np.array(list(args.gains) + [1.0], dtype=np.float32)  # alpha x1
     out = np.clip(a * gains, 0, 255).astype(np.uint8)
     Image.fromarray(out, "RGBA").save(dst)
-
     shader.GetInput("file").Set(
         Sdf.AssetPath(f"./textures/{os.path.basename(dst)}"))
-    stage.GetRootLayer().Save()
     before = a[..., :3].reshape(-1, 3).mean(0)
     after = out[..., :3].reshape(-1, 3).mean(0)
-    print(f"{args.out_usd}: {mat.GetName()} -> {os.path.basename(dst)}")
-    print(f"  gains {args.gains}  mean RGB {before.round(1)} -> {after.round(1)}")
-    print(f"  red-green {before[0]-before[1]:+.1f} -> {after[0]-after[1]:+.1f}, "
-          f"blue-green {before[2]-before[1]:+.1f} -> {after[2]-after[1]:+.1f}")
+    keep = "alpha preserved" if im.mode == "RGBA" else ""
+    print(f"  {label}: {os.path.basename(src)} -> {os.path.basename(dst)}  "
+          f"RGB {before.round(1)} -> {after.round(1)} {keep}")
+
+
+def main():
+    path = os.path.join(OVERLAY, args.out_usd)
+    stage = Usd.Stage.Open(path)
+    # Tint EVERY material's texture, not just the body: the raptor's feather
+    # cards are a separate material and looked untinted beside a purple body.
+    done = set()
+    print(f"{args.out_usd}  gains {args.gains}")
+    for prim in stage.Traverse():
+        if prim.GetTypeName() != "Material":
+            continue
+        for child in Usd.PrimRange(prim):
+            sh = UsdShade.Shader(child)
+            if not sh or sh.GetShaderId() != "UsdUVTexture":
+                continue
+            f = sh.GetInput("file")
+            if not f or not f.Get():
+                continue
+            key = str(child.GetPath())
+            if key in done:
+                continue
+            done.add(key)
+            tint_shader(sh, prim.GetName())
+    if not done:
+        raise SystemExit(f"no textured materials found in {path}")
+    stage.GetRootLayer().Save()
 
 
 main()
