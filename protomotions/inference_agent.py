@@ -85,9 +85,10 @@ def create_parser():
     parser.add_argument(
         "--overlay-skeleton",
         default="cc",
-        choices=["cc", "ue"],
-        help="Overlay rig family: 'cc' (Reallusion) or 'ue' (Epic UE5, e.g. "
-        "red samurai).",
+        choices=["cc", "ue", "identity"],
+        help="Overlay rig family: 'cc' (Reallusion), 'ue' (Epic UE5, e.g. "
+        "red samurai), or 'identity' (fbx2robot creatures, whose character "
+        "USD shares the robot's own skeleton). Auto-selected for raptor/tiger.",
     )
     parser.add_argument(
         "--overlay-fists",
@@ -304,6 +305,22 @@ def main():
     )
 
     robot_config = resolved_configs["robot"]
+
+    # fbx2robot creatures ship a character USD built on the robot's own
+    # skeleton, so skin them by default (same as motion_libs_visualizer):
+    # key 5 toggles the robot body, key 6 the mesh.
+    _creature = next(
+        (c for c in ("raptor", "tiger")
+         if c in type(robot_config).__name__.lower()), None)
+    if _creature and not args.overlay_character:
+        _cusd = Path(f"protomotions/data/assets/overlay/{_creature}.usd")
+        if _cusd.exists():
+            args.overlay_character = [str(_cusd)]
+            args.overlay_skeleton = "identity"
+            log.info("overlay: auto-skinning %s (keys 5=robot, 6=mesh)",
+                     _creature)
+        else:
+            log.warning("overlay: %s not found, showing capsules only", _cusd)
     simulator_config = resolved_configs["simulator"]
     terrain_config = resolved_configs.get("terrain")
     scene_lib_config = resolved_configs["scene_lib"]
@@ -519,11 +536,25 @@ def main():
             args.overlay_character = [
                 str(Path(p).resolve()) for p in args.overlay_character
             ]
-            if args.overlay_skeleton == "ue":
+            _bn = list(robot_config.kinematic_info.body_names)
+            if args.overlay_skeleton == "identity":
+                # fbx2robot creatures (raptor/tiger): the character USD IS
+                # the robot's skeleton, so the joint map is the identity and
+                # the parent chain comes from kinematic_info.
+                _ki = robot_config.kinematic_info
+                _map = {b: b for b in _bn}
+                _rel = None
+                _par = {
+                    b: (_bn[pi] if pi >= 0 else None)
+                    for b, pi in zip(_bn, list(_ki.parent_indices))
+                }
+                _tpose = None
+            elif args.overlay_skeleton == "ue":
                 _map, _rel, _par = SOMA23_TO_UE, UE_REST_REL, SOMA23_PARENT_UE
+                _tpose = SOMA23_TPOSE_POS
             else:
                 _map, _rel, _par = SOMA23_TO_CC, SOMA23_REST_REL, SOMA23_PARENT
-            _bn = list(robot_config.kinematic_info.body_names)
+                _tpose = SOMA23_TPOSE_POS
             _stage = omni.usd.get_context().get_stage()
             if args.overlay_ambient > 0:
                 from pxr import UsdLux, Gf as _Gf, UsdGeom as _UsdGeom
@@ -595,9 +626,12 @@ def main():
                     body_rest_rot_wxyz=np.zeros((len(_bn), 4)),
                     joint_map=_map,
                     root_only=True,
-                    drive_bodies=[b for b in _map if b != "Hips"],
+                    drive_bodies=[
+                        b for b in _map
+                        if b not in ("Hips", "Hip", "Pelvis", "RigPelvis")
+                    ],
                     rest_rel=_rel,
-                    tpose_pos=SOMA23_TPOSE_POS,
+                    tpose_pos=_tpose,
                     body_parents=_par,
                     fists=args.overlay_fists,
                 ))
@@ -624,6 +658,39 @@ def main():
                 return out
 
             env.simulator.step = _step_with_overlays
+
+            # Same viewer keys as motion_libs_visualizer: 5 toggles the
+            # robot's collision/visual body, 6 toggles the skinned mesh.
+            def _toggle_prim(path, label):
+                from pxr import UsdGeom as _UG
+                prim = _stage.GetPrimAtPath(path)
+                if not prim or not prim.IsValid():
+                    print(f"[viewer] {label}: prim not found ({path})",
+                          flush=True)
+                    return
+                img = _UG.Imageable(prim)
+                hidden = img.ComputeVisibility() == _UG.Tokens.invisible
+                img.GetVisibilityAttr().Set(
+                    "inherited" if hidden else "invisible")
+                print(f"[viewer] {label} {'shown' if hidden else 'hidden'}",
+                      flush=True)
+
+            def _toggle_robots():
+                for i in range(_n):
+                    _toggle_prim(f"/World/envs/env_{i}/Robot",
+                                 f"robot {i}" if _n > 1 else "robot")
+
+            def _toggle_meshes():
+                for i in range(_n):
+                    _toggle_prim(f"/World/overlay{i}",
+                                 f"mesh {i}" if _n > 1 else "mesh")
+
+            try:
+                env.simulator._register_custom_user_interface_keys(
+                    {"5": _toggle_robots, "6": _toggle_meshes})
+                log.info("overlay keys: 5 = robot on/off, 6 = mesh on/off")
+            except Exception as exc:  # noqa: BLE001
+                log.warning("could not register overlay keys: %s", exc)
         except Exception:
             import traceback
             log.error("overlay setup failed — continuing without skins:")
