@@ -310,7 +310,7 @@ def main():
     # skeleton, so skin them by default (same as motion_libs_visualizer):
     # key 5 toggles the robot body, key 6 the mesh.
     _creature = next(
-        (c for c in ("raptor", "tiger")
+        (c for c in ("utahraptor", "raptor", "tiger")
          if c in type(robot_config).__name__.lower()), None)
     if _creature:
         if not args.overlay_character:

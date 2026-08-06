@@ -34,7 +34,7 @@ parser.add_argument(
 parser.add_argument(
     "--robot",
     type=str,
-    choices=["g1", "rigv1", "h1_2", "smpl", "soma23", "atlas", "t800", "samurai", "raptor", "tiger", "go2", "anymal_d", "dog_v2"],
+    choices=["g1", "rigv1", "h1_2", "smpl", "soma23", "atlas", "t800", "samurai", "raptor", "utahraptor", "tiger", "go2", "anymal_d", "dog_v2"],
     default="g1",
     help="Robot to load (g1, rigv1, h1_2, smpl, soma23, atlas, or t800)",
 )
@@ -169,7 +169,7 @@ if args.robot == "samurai" and args.overlay_character is None:
         "protomotions/data/assets/overlay/red_samurai.usd")
     args.overlay_skeleton = "ue"
     args.overlay_root_only = True
-elif args.robot in ("raptor", "tiger") and args.overlay_character is None:
+elif args.robot in ("utahraptor", "raptor", "tiger") and args.overlay_character is None:
     # fbx2robot creatures: the character USD shares the robot's skeleton,
     # so the overlay map is the identity (derived from kinematic info).
     args.overlay_character = (
