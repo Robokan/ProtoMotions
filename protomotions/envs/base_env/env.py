@@ -1509,30 +1509,33 @@ class BaseEnv:
         # measured to -31.6 cm on the first run.
         root_z_rel = state.root_pos[:, 2] - low + 0.005
 
-        # A pose is only useful if the robot actually came to rest and is
-        # actually DOWN. Still-moving poses are mid-tumble, and ones that
-        # landed on their feet teach nothing about getting up.
+        # EVERY settled pose is banked -- no filtering. The settle time does
+        # the work: measured on the raptor, 3 steps (0.2 s) leaves all 512
+        # poses still in motion with roots up to 88 cm, while 50 steps
+        # (3.3 s = 0.32 s of fall + ~3 s of settling) leaves 1 of 512 moving
+        # and every root within 4-30 cm of its own lowest body.
+        #
+        # The handful that are still tumbling are deliberately KEPT. A robot
+        # knocked down in a fight is mid-tumble, so recovering from one is a
+        # skill worth having, and replay zeroes velocities anyway -- a
+        # tumbling capture becomes a stationary robot in a tumbled pose,
+        # which then falls naturally. Filtering them also meant needing a
+        # "keep everything" fallback when nothing passed, which silently
+        # banked mid-air poses on a misconfigured settle time.
         speed = state.root_vel.norm(dim=-1) if state.root_vel is not None \
             else torch.zeros(num, device=self.device)
-        settled = speed < 0.5
-        down = root_z_rel < 0.6 * drop_h
-        good = settled & down
-        if good.sum() < max(8, 0.05 * num):
-            print(f"[getup] WARNING: only {int(good.sum())}/{num} poses settled "
-                  f"and fell; keeping all of them instead", flush=True)
-            good = torch.ones_like(good)
-        keep = good.nonzero(as_tuple=True)[0]
-
         self._fall_states = {
-            "root_z_rel": root_z_rel[keep].clone(),
-            "root_rot": state.root_rot[keep].clone(),
-            "dof_pos": state.dof_pos[keep].clone(),
+            "root_z_rel": root_z_rel.clone(),
+            "root_rot": state.root_rot.clone(),
+            "dof_pos": state.dof_pos.clone(),
         }
-        print(f"[getup] fall-state bank: kept {len(keep)}/{num} settled fallen "
-              f"poses (rejected {int((~settled).sum())} still moving, "
-              f"{int((~down).sum())} left standing); root sits "
-              f"{root_z_rel[keep].min()*100:.0f}-{root_z_rel[keep].max()*100:.0f} cm "
-              f"above its lowest body (standing is {drop_h*100:.0f} cm)",
+        print(f"[getup] fall-state bank: {num} poses after "
+              f"{cfg.fall_state_settle_steps} settle steps "
+              f"({cfg.fall_state_settle_steps * 4 / 60:.1f} s); root sits "
+              f"{root_z_rel.min()*100:.0f}-{root_z_rel.max()*100:.0f} cm above "
+              f"its lowest body (standing is {drop_h*100:.0f} cm); "
+              f"{int((speed >= 0.5).sum())} still moving, "
+              f"{int((root_z_rel >= 0.6 * drop_h).sum())} landed upright",
               flush=True)
         self._current_context = None
 
