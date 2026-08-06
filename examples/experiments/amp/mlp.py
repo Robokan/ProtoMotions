@@ -38,11 +38,14 @@ def motion_lib_config(args: argparse.Namespace):
 def _disc_body_ids(robot_cfg: RobotConfig):
     """Body indices the AMP discriminator sees, or None for all bodies.
 
-    Uses robot_cfg.trackable_bodies_subset when present. The root is forced
+    Uses robot_cfg.disc_bodies_subset when the robot defines one.
+    NOT trackable_bodies_subset -- that means tracking targets and is
+    sized for a different job (t800 lists six bodies), so sharing it
+    would leave the discriminator judging almost nothing. The root is forced
     in (it supplies the heading frame and root height) and order follows the
     simulator's body ordering.
     """
-    subset = getattr(robot_cfg, "trackable_bodies_subset", None)
+    subset = getattr(robot_cfg, "disc_bodies_subset", None)
     if not subset:
         return None
     names = list(robot_cfg.kinematic_info.body_names)
@@ -80,7 +83,7 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
             observe_contacts=False,
         ),
         # Historical observations for AMP discriminator (from StateHistoryBuffer).
-        # Restricted to trackable_bodies_subset when the robot defines one:
+        # Restricted to disc_bodies_subset when the robot defines one:
         # the discriminator should judge GAIT, and a body whose motion cannot
         # be reproduced lets it win on jitter instead. The raptor's 36 digit
         # segments (1.4 g, 6 N.m actuators, constantly hit by ground contact)

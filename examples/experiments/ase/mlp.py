@@ -26,7 +26,7 @@ def _disc_body_ids(robot_cfg: RobotConfig):
 
     The POLICY still senses every body (max_coords_obs is untouched).
     """
-    subset = getattr(robot_cfg, "trackable_bodies_subset", None)
+    subset = getattr(robot_cfg, "disc_bodies_subset", None)
     if not subset:
         return None
     names = list(robot_cfg.kinematic_info.body_names)
