@@ -80,6 +80,10 @@ def main() -> None:
                     help="segments longer than this are detection failures, "
                          "not flight, and are left alone")
     ap.add_argument("--min-flight-frames", type=int, default=3)
+    ap.add_argument("--max-airborne-frac", type=float, default=0.6,
+                    help="if more than this fraction of a clip reads as "
+                         "flight, treat it as a detection failure and leave "
+                         "the clip alone")
     ap.add_argument("--report", type=int, default=10)
     args = ap.parse_args()
 
@@ -113,9 +117,29 @@ def main() -> None:
         # is lying down with its legs raised) and fling the corpse along a
         # parabola. The lowest body overall is the honest test.
         low = np.min(p[:, :, 2], axis=1)
+
+        # A clip that NEVER touches down has no takeoff or landing to anchor a
+        # parabola to, so "airborne" covers the whole thing and the correction
+        # flings it away. Observed: the 20cm leg-offset additive layers sit at
+        # 0.27 m throughout and were lifted to 1.20 m. Additive layers are not
+        # standalone motions -- leave them exactly as they are.
+        if low.min() > args.clearance:
+            shutil.copy(path, f"{args.out_dir}/{name}")
+            rows.append((name, 0, 0.0))
+            continue
+
         segs = airborne_segments(
             low, args.clearance, args.min_flight_frames,
             int(round(args.max_flight_s / dt)))
+
+        # Likewise, if most of the clip reads as flight the detector is wrong,
+        # not the animator: a knockdown tumbles with its lowest body above the
+        # threshold for 68% of its length and got shifted up 5 cm.
+        if sum(b - a + 1 for a, b in segs) > args.max_airborne_frac * len(low):
+            shutil.copy(path, f"{args.out_dir}/{name}")
+            rows.append((name, 0, 0.0))
+            continue
+
         if not segs:
             shutil.copy(path, f"{args.out_dir}/{name}")
             rows.append((name, 0, 0.0))

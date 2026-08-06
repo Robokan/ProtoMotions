@@ -539,8 +539,23 @@ def main():
             # Absolute character paths: a relative layer reference makes the
             # asset's own relative texture paths (@./textures/...@) resolve
             # against the wrong anchor -> untextured (black) characters.
+            # --overlay-character takes a PATH, not a character name. A bare
+            # name like "raptor" silently resolves to a non-existent file in
+            # the cwd, suppresses the creature auto-skin, and the viewer comes
+            # up with no mesh and no explanation. Fail loudly instead.
+            _missing = [p for p in args.overlay_character
+                        if not Path(p).expanduser().exists()]
+            if _missing:
+                _hint = ", ".join(
+                    str(q) for q in sorted(
+                        Path("protomotions/data/assets/overlay").glob("*.usd")))
+                raise FileNotFoundError(
+                    f"--overlay-character path(s) not found: {_missing}. "
+                    f"Pass a path to a .usd, not a character name. "
+                    f"Available: {_hint}")
             args.overlay_character = [
-                str(Path(p).resolve()) for p in args.overlay_character
+                str(Path(p).expanduser().resolve())
+                for p in args.overlay_character
             ]
             _bn = list(robot_config.kinematic_info.body_names)
             if args.overlay_skeleton == "identity":

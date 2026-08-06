@@ -82,9 +82,17 @@ class RaptorRobotConfig(RobotConfig):
     trackable_bodies_subset: List[str] = field(
         default_factory=lambda: [
             "Hips", "Spine1", "Head", "Jaw", "Tail3", "Tail5",
+            # legs: every link in the chain, so hip/knee/ankle are all pinned
             "LeftUpLeg", "LeftLeg", "LeftFoot", "LeftToeBase",
             "RightUpLeg", "RightLeg", "RightFoot", "RightToeBase",
-            "LeftArm", "LeftHand", "RightArm", "RightHand",
+            # arms: Shoulder and ForeArm are here for the same reason. An
+            # end-effector alone does NOT determine a limb's pose -- with
+            # only Arm and Hand observed, the elbow can sit anywhere on the
+            # circle around the shoulder-to-hand axis and the discriminator
+            # cannot tell, so the policy is free to reach the right hand
+            # position through an arbitrary (and usually ugly) elbow.
+            "LeftShoulder", "LeftArm", "LeftForeArm", "LeftHand",
+            "RightShoulder", "RightArm", "RightForeArm", "RightHand",
         ]
     )
 

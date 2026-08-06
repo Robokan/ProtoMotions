@@ -6,9 +6,38 @@ from protomotions.simulator.base_simulator.config import SimulatorConfig
 from protomotions.envs.base_env.config import EnvConfig
 from protomotions.agents.ase.config import ASEAgentConfig
 import argparse
+import re
 
 # Historical steps for discriminator reference observations
 HISTORY_STEPS = 8
+
+
+def _disc_body_ids(robot_cfg: RobotConfig):
+    """Body indices the ASE discriminator/encoder sees, or None for all.
+
+    Same restriction as examples/experiments/amp/mlp.py -- see the long note
+    there. Short version: the discriminator should judge GAIT, and a body
+    whose motion the policy cannot reproduce lets it win on jitter instead.
+    On the raptor, showing it all 71 bodies (including 36 digit segments at
+    ~1.4 g driven by 6 N.m actuators) made agent and reference trivially
+    separable; the policy learned to stand and nothing more. Restricting the
+    discriminator is what made AMP walk, and ASE has exactly the same
+    failure mode because its encoder reads the same historical obs.
+
+    The POLICY still senses every body (max_coords_obs is untouched).
+    """
+    subset = getattr(robot_cfg, "trackable_bodies_subset", None)
+    if not subset:
+        return None
+    names = list(robot_cfg.kinematic_info.body_names)
+    keep = {0} | {names.index(b) for b in subset if b in names}
+    # Digit TIPS only: the fingers genuinely articulate when fighting, and a
+    # body the discriminator cannot see is one the policy is free to exploit
+    # (hiding all digits taught the first walker to plant its fingertips for
+    # free support). Tips alone cost 12 bodies rather than 36.
+    keep |= {i for i, n in enumerate(names)
+             if re.search(r"(Index|Middle|Ring)3$", n)}
+    return sorted(keep)
 
 
 def terrain_config(args: argparse.Namespace):
@@ -58,6 +87,8 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
             local_obs=True,
             root_height_obs=True,
             observe_contacts=False,
+            history_steps=HISTORY_STEPS,
+            body_ids=_disc_body_ids(robot_cfg),
         ),
     }
 
@@ -280,6 +311,9 @@ def agent_config(
                 "history_steps": HISTORY_STEPS,
                 "local_obs": True,
                 "root_height_obs": True,
+                # must match the agent-side restriction above, or the
+                # discriminator compares different-length vectors
+                "body_ids": _disc_body_ids(robot_config),
             },
         ),
     }
