@@ -192,6 +192,10 @@ class BaseEnv:
         self._fall_reset_mask = torch.zeros(
             self.num_envs, device=self.device, dtype=torch.bool
         )
+        # Manual (R key) resets must override get-up termination immunity.
+        self._user_reset_buf = torch.zeros(
+            self.num_envs, device=self.device, dtype=torch.bool
+        )
 
         self.respawn_root_offset = torch.zeros(
             self.num_envs, 3, dtype=torch.float, device=self.device
@@ -925,6 +929,10 @@ class BaseEnv:
     def user_reset(self):
         """Force environments to reset on next check (triggered by user input)."""
         self.progress_buf[:] = 100000000000
+        # Recorded explicitly: a get-up episode suppresses the max-episode
+        # length reset for the duration of its recovery window, which would
+        # otherwise swallow this too and leave the R key doing nothing.
+        self._user_reset_buf[:] = True
 
     def compute_observations(self, env_ids=None, context: EnvContext = None):
         """Compute observations for specified environments.
@@ -981,6 +989,8 @@ class BaseEnv:
         if self._getup_enabled():
             keep = keep & (self.recovery_counter <= 0)
             reset_buf = reset_buf & (self.recovery_counter <= 0)
+            # ...but never swallow an explicit user reset.
+            reset_buf = reset_buf | self._user_reset_buf
 
         comp_reset, comp_terminate = (
             self.control_manager.check_resets_and_terminations()
@@ -1390,6 +1400,7 @@ class BaseEnv:
         self.control_manager.reset(env_ids)
 
         self.progress_buf[env_ids] = 0
+        self._user_reset_buf[env_ids] = False
         self.reset_buf[env_ids] = False
         self.terminate_buf[env_ids] = False
         self.prev_contact_force_magnitudes[env_ids] = 0.0
@@ -1458,6 +1469,7 @@ class BaseEnv:
         cfg = self.config
         num = self.num_envs
         all_ids = torch.arange(num, device=self.device)
+        drop_h = float(getattr(self.robot_config, "default_root_height", 0.5))
 
         new_states, new_object_states = self.compute_default_reset_state(
             all_ids, sample_flat=True
@@ -1465,7 +1477,10 @@ class BaseEnv:
         # uniform on SO(3): normalized Gaussian 4-vector
         q = torch.randn(num, 4, device=self.device)
         new_states.root_rot = q / q.norm(dim=-1, keepdim=True)
-        new_states.root_pos[:, 2] = new_states.root_pos[:, 2] * 2.0
+        # ADD the drop height rather than scaling the reset height: scaling
+        # would double the terrain offset too, dropping the robot from the
+        # wrong altitude on any non-flat terrain.
+        new_states.root_pos[:, 2] = new_states.root_pos[:, 2] + drop_h
         for attr in ("root_vel", "root_ang_vel", "dof_vel"):
             if getattr(new_states, attr, None) is not None:
                 setattr(new_states, attr, torch.zeros_like(getattr(new_states, attr)))
@@ -1483,15 +1498,41 @@ class BaseEnv:
             self.simulator.step(processed)
 
         state = self.simulator.get_robot_state()
-        self._fall_states = {
-            "root_pos": state.root_pos.clone(),
-            "root_rot": state.root_rot.clone(),
-            "dof_pos": state.dof_pos.clone(),
-        }
         low = state.rigid_body_pos[:, :, 2].min(dim=1).values
-        print(f"[getup] fall-state bank: {num} settled poses, "
-              f"lowest body {low.min()*100:.1f}-{low.max()*100:.1f} cm, "
-              f"root height {state.root_pos[:, 2].mean()*100:.1f} cm mean",
+
+        # Store the root height RELATIVE TO THE ROBOT'S OWN LOWEST BODY, not
+        # as an absolute z. Replay then places the root at
+        # (local ground + this), so the lowest body always lands just above
+        # the floor whatever the terrain. Storing absolute z instead let
+        # poses that had sunk during the drop be replayed embedded in the
+        # ground, which spawns the episode inside an explosive contact --
+        # measured to -31.6 cm on the first run.
+        root_z_rel = state.root_pos[:, 2] - low + 0.005
+
+        # A pose is only useful if the robot actually came to rest and is
+        # actually DOWN. Still-moving poses are mid-tumble, and ones that
+        # landed on their feet teach nothing about getting up.
+        speed = state.root_vel.norm(dim=-1) if state.root_vel is not None \
+            else torch.zeros(num, device=self.device)
+        settled = speed < 0.5
+        down = root_z_rel < 0.6 * drop_h
+        good = settled & down
+        if good.sum() < max(8, 0.05 * num):
+            print(f"[getup] WARNING: only {int(good.sum())}/{num} poses settled "
+                  f"and fell; keeping all of them instead", flush=True)
+            good = torch.ones_like(good)
+        keep = good.nonzero(as_tuple=True)[0]
+
+        self._fall_states = {
+            "root_z_rel": root_z_rel[keep].clone(),
+            "root_rot": state.root_rot[keep].clone(),
+            "dof_pos": state.dof_pos[keep].clone(),
+        }
+        print(f"[getup] fall-state bank: kept {len(keep)}/{num} settled fallen "
+              f"poses (rejected {int((~settled).sum())} still moving, "
+              f"{int((~down).sum())} left standing); root sits "
+              f"{root_z_rel[keep].min()*100:.0f}-{root_z_rel[keep].max()*100:.0f} cm "
+              f"above its lowest body (standing is {drop_h*100:.0f} cm)",
               flush=True)
         self._current_context = None
 
@@ -1534,10 +1575,19 @@ class BaseEnv:
             if f_mask.any():
                 idx = f_mask.nonzero(as_tuple=True)[0]
                 pick = torch.randint(
-                    0, self._fall_states["root_pos"].shape[0],
+                    0, self._fall_states["root_z_rel"].shape[0],
                     (idx.shape[0],), device=self.device)
-                # keep each env's own XY origin; only the fallen pose is copied
-                new_states.root_pos[idx, 2] = self._fall_states["root_pos"][pick, 2]
+                # Keep each env's own XY; the pose supplies orientation, joints
+                # and the root's height ABOVE ITS OWN LOWEST BODY. Adding the
+                # local ground height puts the robot on the floor wherever it
+                # is, instead of at whatever absolute z it happened to settle
+                # at in some other env.
+                ground = self.terrain.get_ground_heights(
+                    new_states.root_pos[idx, :2]
+                ).squeeze(-1)
+                new_states.root_pos[idx, 2] = (
+                    ground + self._fall_states["root_z_rel"][pick]
+                )
                 new_states.root_rot[idx] = self._fall_states["root_rot"][pick]
                 new_states.dof_pos[idx] = self._fall_states["dof_pos"][pick]
                 for a in ("root_vel", "root_ang_vel", "dof_vel"):

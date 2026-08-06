@@ -467,6 +467,12 @@ def _make_env(
     env._action_config_device_ready = False
     env.skip_height_correction = False
     env.is_getup_env = torch.zeros(num_envs, dtype=torch.bool)
+    # get-up training buffers (inert here: the stub config leaves
+    # fall_init_prob / recovery_episode_prob at 0, so _getup_enabled() is False)
+    env.recovery_counter = torch.zeros(num_envs, dtype=torch.long)
+    env._user_reset_buf = torch.zeros(num_envs, dtype=torch.bool)
+    env._fall_reset_mask = torch.zeros(num_envs, dtype=torch.bool)
+    env._fall_states = None
     env.inference_mode = False
     env.state_history = _StateHistory(num_envs) if history else None
     env.control_manager = _ControlManager()
