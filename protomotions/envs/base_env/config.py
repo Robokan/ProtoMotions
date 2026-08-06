@@ -110,7 +110,30 @@ class EnvConfig:
 
     random_getup_prob: float = field(
         default=0.0,
-        metadata={"help": "Fraction of resets that spawn robot in random orientation+joints for get-up training. 0 = disabled."}
+        metadata={"help": "DEPRECATED, prefer fall_init_prob. Fraction of resets that spawn robot in random orientation+joints for get-up training. 0 = disabled. Teleports to a SAMPLED pose (random quaternion, random joint angles within limits), which is generally not a pose the robot could actually be lying in -- limbs interpenetrate and the pose is not settled against the floor."}
+    )
+
+    # ---- get-up training (ported from IsaacLabASE AmpGetupEnv) -------------
+    # Rather than teleporting to an invented pose, a bank of GENUINELY FALLEN
+    # poses is built once at startup by dropping the robot from height with
+    # random orientation and letting physics settle it. Episodes then start
+    # from a sampled entry, with terminations held off long enough to stand
+    # back up.
+    fall_init_prob: float = field(
+        default=0.0,
+        metadata={"help": "Fraction of resets that start from a settled fallen pose sampled from the fall-state bank. 0 = disabled.", "min": 0.0, "max": 1.0}
+    )
+    recovery_episode_prob: float = field(
+        default=0.0,
+        metadata={"help": "Fraction of resets that instead CONTINUE from the pose the robot terminated in (only applies to envs that actually terminated), giving it a chance to recover from its own failures rather than only from sampled falls. 0 = disabled.", "min": 0.0, "max": 1.0}
+    )
+    recovery_steps: int = field(
+        default=100,
+        metadata={"help": "Control steps of termination immunity granted to a fall-init or recovery episode. Both termination AND timeout are suppressed while the counter runs, so the policy has time to stand up and rejoin the reference before it can be killed.", "min": 0}
+    )
+    fall_state_settle_steps: int = field(
+        default=50,
+        metadata={"help": "Control steps of physics used to settle the robot when building the fall-state bank.", "min": 1}
     )
 
     # Odometer corruption parameters.  Used by corrupted_xy_offset_factory to

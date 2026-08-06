@@ -302,6 +302,19 @@ class AMPTrainingComponent:
             >= self.config.amp_parameters.discriminator_max_cumulative_bad_transitions
         )
 
+        # An episode inside its get-up recovery window must survive this too.
+        # The env suppresses its own fall terminations, but the discriminator
+        # is a SEPARATE kill switch living in the agent, and a robot lying on
+        # its back scores below discriminator_reward_threshold on essentially
+        # every transition -- it would hit
+        # discriminator_max_cumulative_bad_transitions and die in well under a
+        # second, long before it could stand. Suppressing it here is what lets
+        # the recovery window mean anything for AMP/ASE.
+        env = getattr(self.agent, "env", None)
+        counter = getattr(env, "recovery_counter", None)
+        if counter is not None:
+            discriminator_termination = discriminator_termination & (counter <= 0)
+
         terminated = terminated | discriminator_termination
         dones = dones | terminated
 

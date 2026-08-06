@@ -182,6 +182,17 @@ class BaseEnv:
             self.num_envs, device=self.device, dtype=torch.bool
         )
 
+        # Get-up training (AmpGetupEnv port). recovery_counter counts down the
+        # steps of termination immunity an episode still has; the fall-state
+        # bank is built lazily on first reset because it needs a live sim.
+        self.recovery_counter = torch.zeros(
+            self.num_envs, device=self.device, dtype=torch.long
+        )
+        self._fall_states = None
+        self._fall_reset_mask = torch.zeros(
+            self.num_envs, device=self.device, dtype=torch.bool
+        )
+
         self.respawn_root_offset = torch.zeros(
             self.num_envs, 3, dtype=torch.float, device=self.device
         )
@@ -817,6 +828,7 @@ class BaseEnv:
         checks for resets, and stores raw robot state in extras for logging.
         """
         self.progress_buf += 1
+        self._update_recovery_count()
 
         if self.state_history is not None:
             current_state = self.simulator.get_robot_state()
@@ -961,6 +973,14 @@ class BaseEnv:
         # absolute tracking error (which they can neither observe nor recover) --
         # they run to max-episode-length. Normal tracking envs are unaffected.
         keep = ~self.is_getup_env
+
+        # An episode inside its recovery window is immune: it was deliberately
+        # started on the floor (or continued from a crash), so every fall-based
+        # termination would fire immediately and it would never get the chance
+        # to stand up. Timeout is suppressed too -- see below.
+        if self._getup_enabled():
+            keep = keep & (self.recovery_counter <= 0)
+            reset_buf = reset_buf & (self.recovery_counter <= 0)
 
         comp_reset, comp_terminate = (
             self.control_manager.check_resets_and_terminations()
@@ -1345,9 +1365,22 @@ class BaseEnv:
         if self.config.random_getup_prob > 0.0:
             self._apply_random_getup_reset(new_states, env_ids)
 
+        # Get-up resets: start from a settled fallen pose, or continue from the
+        # pose the robot terminated in. Both get termination immunity.
+        getup_mask = None
+        if self._getup_enabled():
+            if self._fall_states is None and self.config.fall_init_prob > 0.0:
+                self._generate_fall_states()
+            getup_mask = self._apply_getup_resets(new_states, env_ids)
+
         self.simulator.reset_envs(new_states, new_object_states, env_ids)
 
         default_mask = ~torch.isin(env_ids, ref_env_ids)
+        if getup_mask is not None and getup_mask.any():
+            # A fallen robot has no reference frames behind it, so its history
+            # is seeded by repeating the current pose (what the default path
+            # does) rather than by querying the motion lib at t-dt, t-2dt...
+            default_mask = default_mask | getup_mask
         if self.state_history is not None:
             self._reset_state_history(
                 env_ids, default_mask, ref_env_ids, motion_ids, motion_times
@@ -1398,6 +1431,128 @@ class BaseEnv:
         self.compute_observations(env_ids, context=self.context)
 
         return self.get_obs(), {}
+
+    def _getup_enabled(self) -> bool:
+        return (self.config.fall_init_prob > 0.0
+                or self.config.recovery_episode_prob > 0.0)
+
+    @torch.no_grad()
+    def _generate_fall_states(self):
+        """Build a bank of genuinely fallen poses by dropping the robot.
+
+        This is the part that makes get-up training work. Sampling a random
+        quaternion and random joint angles (see _apply_random_getup_reset)
+        produces poses that are not physically reachable -- limbs pass through
+        each other and nothing rests against the floor -- so the policy learns
+        to stand up from configurations it will never actually be in.
+
+        Instead every env is dropped from twice its standing height with a
+        uniformly random orientation, holding a constant random PD target, and
+        physics is stepped until it settles. Whatever it lands in IS a
+        reachable fallen pose by construction. The bank holds one entry per
+        env; resets sample from it.
+
+        Velocities are stored as zero: a replayed fall starts at rest, not
+        mid-tumble.
+        """
+        cfg = self.config
+        num = self.num_envs
+        all_ids = torch.arange(num, device=self.device)
+
+        new_states, new_object_states = self.compute_default_reset_state(
+            all_ids, sample_flat=True
+        )
+        # uniform on SO(3): normalized Gaussian 4-vector
+        q = torch.randn(num, 4, device=self.device)
+        new_states.root_rot = q / q.norm(dim=-1, keepdim=True)
+        new_states.root_pos[:, 2] = new_states.root_pos[:, 2] * 2.0
+        for attr in ("root_vel", "root_ang_vel", "dof_vel"):
+            if getattr(new_states, attr, None) is not None:
+                setattr(new_states, attr, torch.zeros_like(getattr(new_states, attr)))
+        self.simulator.reset_envs(new_states, new_object_states, all_ids)
+
+        # A constant random PD target during the drop, so limbs land in
+        # varied configurations rather than all in the default pose.
+        rand_action = (
+            torch.rand(num, self.robot_config.number_of_actions, device=self.device)
+            - 0.5
+        )
+        self._current_context = None
+        processed = self._process_action(rand_action, self.context)["processed_action"]
+        for _ in range(cfg.fall_state_settle_steps):
+            self.simulator.step(processed)
+
+        state = self.simulator.get_robot_state()
+        self._fall_states = {
+            "root_pos": state.root_pos.clone(),
+            "root_rot": state.root_rot.clone(),
+            "dof_pos": state.dof_pos.clone(),
+        }
+        low = state.rigid_body_pos[:, :, 2].min(dim=1).values
+        print(f"[getup] fall-state bank: {num} settled poses, "
+              f"lowest body {low.min()*100:.1f}-{low.max()*100:.1f} cm, "
+              f"root height {state.root_pos[:, 2].mean()*100:.1f} cm mean",
+              flush=True)
+        self._current_context = None
+
+    def _apply_getup_resets(self, new_states, env_ids):
+        """Three-way reset dispatch: recovery, fall-init, or normal.
+
+        Returns a bool mask over env_ids marking envs whose state history must
+        be seeded from their CURRENT (fallen) pose rather than from reference
+        motion -- a fallen robot has no reference frames to look back on.
+        """
+        n = env_ids.shape[0]
+        fall_mask = torch.zeros(n, device=self.device, dtype=torch.bool)
+        self.recovery_counter[env_ids] = 0
+
+        # 1. Recovery episodes CONTINUE from the pose the robot died in, so it
+        #    practises recovering from its own failures and not only from
+        #    sampled falls. Restricted to envs that actually terminated -- an
+        #    env that merely timed out did not fall over.
+        rec_mask = torch.zeros(n, device=self.device, dtype=torch.bool)
+        if self.config.recovery_episode_prob > 0.0:
+            draw = torch.rand(n, device=self.device) < self.config.recovery_episode_prob
+            rec_mask = draw & self.terminate_buf[env_ids]
+            if rec_mask.any():
+                # reset_envs() overwrites state, so "keep the crash pose" means
+                # writing the current pose back rather than skipping the write.
+                cur = self.simulator.get_robot_state(env_ids[rec_mask])
+                idx = rec_mask.nonzero(as_tuple=True)[0]
+                new_states.root_pos[idx] = cur.root_pos
+                new_states.root_rot[idx] = cur.root_rot
+                new_states.dof_pos[idx] = cur.dof_pos
+                for a in ("root_vel", "root_ang_vel", "dof_vel"):
+                    if getattr(new_states, a, None) is not None:
+                        getattr(new_states, a)[idx] = 0.0
+                self.recovery_counter[env_ids[rec_mask]] = self.config.recovery_steps
+
+        # 2. Fall-init: teleport to a settled pose from the bank.
+        if self.config.fall_init_prob > 0.0 and self._fall_states is not None:
+            draw = torch.rand(n, device=self.device) < self.config.fall_init_prob
+            f_mask = draw & ~rec_mask
+            if f_mask.any():
+                idx = f_mask.nonzero(as_tuple=True)[0]
+                pick = torch.randint(
+                    0, self._fall_states["root_pos"].shape[0],
+                    (idx.shape[0],), device=self.device)
+                # keep each env's own XY origin; only the fallen pose is copied
+                new_states.root_pos[idx, 2] = self._fall_states["root_pos"][pick, 2]
+                new_states.root_rot[idx] = self._fall_states["root_rot"][pick]
+                new_states.dof_pos[idx] = self._fall_states["dof_pos"][pick]
+                for a in ("root_vel", "root_ang_vel", "dof_vel"):
+                    if getattr(new_states, a, None) is not None:
+                        getattr(new_states, a)[idx] = 0.0
+                self.recovery_counter[env_ids[f_mask]] = self.config.recovery_steps
+                fall_mask = f_mask
+
+        self._fall_reset_mask[:] = False
+        self._fall_reset_mask[env_ids[fall_mask | rec_mask]] = True
+        return fall_mask | rec_mask
+
+    def _update_recovery_count(self):
+        if self._getup_enabled():
+            self.recovery_counter = (self.recovery_counter - 1).clamp_min(0)
 
     def _apply_random_getup_reset(self, new_states, env_ids):
         """Override a random fraction of envs with random orientation and joint positions.
