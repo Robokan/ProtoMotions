@@ -6,7 +6,6 @@ from protomotions.simulator.base_simulator.config import SimulatorConfig
 from protomotions.envs.base_env.config import EnvConfig
 from protomotions.agents.amp.config import AMPAgentConfig
 import argparse
-import re
 
 
 # Dilated history steps for temporal context (used by actor and discriminator)
@@ -49,20 +48,18 @@ def _disc_body_ids(robot_cfg: RobotConfig):
     if not subset:
         return None
     names = list(robot_cfg.kinematic_info.body_names)
-    keep = {0} | {names.index(b) for b in subset if b in names}
-    # Digit TIPS (the last phalanx of each finger/toe) are included even
-    # though the intermediate phalanges are not. Two reasons:
-    #  - the fingers genuinely articulate when fighting, so their pose is
-    #    part of the style we want imitated;
-    #  - a body the discriminator cannot see is a body the policy is free
-    #    to exploit. With all digits hidden, the first walking policy
-    #    promptly started planting its fingertips on the ground for extra
-    #    support at zero style cost. Contact termination is NOT an option
-    #    here because get-ups legitimately put the fingers on the floor.
-    # Only the tip goes in, so the cost is 12 bodies rather than 36.
-    keep |= {i for i, n in enumerate(names)
-             if re.search(r"(Index|Middle|Ring)3$", n)}
-    return sorted(keep)
+    missing = [b for b in subset if b not in names]
+    if missing:
+        raise ValueError(
+            f"disc_bodies_subset names bodies that do not exist on "
+            f"{type(robot_cfg).__name__}: {missing}")
+    # The list is EXPLICIT -- digit tips included by name. It used to append
+    # them with a regex for the raptor's Index/Middle/Ring3, which silently
+    # matched nothing on the tiger (whose tips are Digit<n>2), leaving every
+    # tiger toe unjudged. A body the discriminator cannot see is one the
+    # policy is free to exploit: hiding the raptor's digits taught the first
+    # walker to plant its fingertips for free support.
+    return sorted({0} | {names.index(b) for b in subset})
 
 def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
     """Build environment configuration (training defaults).

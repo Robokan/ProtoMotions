@@ -112,6 +112,14 @@ class RaptorRobotConfig(RobotConfig):
             "RightUpLeg", "RightLeg", "RightFoot", "RightToeBase",
             "LeftShoulder", "LeftArm", "LeftForeArm", "LeftHand",
             "RightShoulder", "RightArm", "RightForeArm", "RightHand",
+            # Digit TIPS by name. Intermediate phalanges stay hidden (they
+            # are ~1.4 g on 6 N.m actuators and the policy cannot reproduce
+            # them, which is what let the discriminator win on jitter), but
+            # the tips must be visible or planting them costs nothing.
+            "LeftHandIndex3", "LeftHandMiddle3", "LeftHandRing3",
+            "RightHandIndex3", "RightHandMiddle3", "RightHandRing3",
+            "LeftFootIndex3", "LeftFootMiddle3", "LeftFootRing3",
+            "RightFootIndex3", "RightFootMiddle3", "RightFootRing3",
         ]
     )
 

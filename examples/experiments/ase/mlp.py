@@ -30,14 +30,18 @@ def _disc_body_ids(robot_cfg: RobotConfig):
     if not subset:
         return None
     names = list(robot_cfg.kinematic_info.body_names)
-    keep = {0} | {names.index(b) for b in subset if b in names}
-    # Digit TIPS only: the fingers genuinely articulate when fighting, and a
-    # body the discriminator cannot see is one the policy is free to exploit
-    # (hiding all digits taught the first walker to plant its fingertips for
-    # free support). Tips alone cost 12 bodies rather than 36.
-    keep |= {i for i, n in enumerate(names)
-             if re.search(r"(Index|Middle|Ring)3$", n)}
-    return sorted(keep)
+    missing = [b for b in subset if b not in names]
+    if missing:
+        raise ValueError(
+            f"disc_bodies_subset names bodies that do not exist on "
+            f"{type(robot_cfg).__name__}: {missing}")
+    # The list is EXPLICIT -- digit tips included by name. It used to append
+    # them with a regex for the raptor's Index/Middle/Ring3, which silently
+    # matched nothing on the tiger (whose tips are Digit<n>2), leaving every
+    # tiger toe unjudged. A body the discriminator cannot see is one the
+    # policy is free to exploit: hiding the raptor's digits taught the first
+    # walker to plant its fingertips for free support.
+    return sorted({0} | {names.index(b) for b in subset})
 
 
 def terrain_config(args: argparse.Namespace):

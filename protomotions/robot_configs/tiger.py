@@ -95,6 +95,42 @@ class TigerRobotConfig(RobotConfig):
         ]
     )
 
+    # Bodies the AMP/ASE discriminator judges -- see raptor.py for why this
+    # is separate from trackable_bodies_subset. The tiger needs it for the
+    # same reason the raptor does: 32 digit segments the policy cannot
+    # reproduce let the discriminator win on jitter instead of on gait.
+    #
+    # Differs from trackable_bodies_subset above in two ways that matter:
+    #  - Leg3 is included. The chain is Leg1 -> Leg2 -> Leg3 -> Ankle, and
+    #    the tracking list skips Leg3, which would leave a link unjudged --
+    #    a paw position does not determine the leg's pose without it.
+    #  - the collarbones and shoulder blades are included, so the front
+    #    limbs are pinned at their base rather than floating off the chest.
+    disc_bodies_subset: List[str] = field(
+        default_factory=lambda: [
+            "RigPelvis", "RigSpine2", "RigChest", "RigNeck2",
+            "RigHead", "RigJaw1", "RigTail3", "RigTail5",
+            "RigLShoulderBlade1", "RigRShoulderBlade1",
+            # hind limbs: every link
+            "RigLBLeg1", "RigLBLeg2", "RigLBLeg3", "RigLBLegAnkle",
+            "RigRBLeg1", "RigRBLeg2", "RigRBLeg3", "RigRBLegAnkle",
+            # fore limbs: every link, from the collarbone down
+            "RigLFLegCollarbone", "RigLFLeg1", "RigLFLeg2", "RigLFLeg3",
+            "RigLFLegAnkle",
+            "RigRFLegCollarbone", "RigRFLeg1", "RigRFLeg2", "RigRFLeg3",
+            "RigRFLegAnkle",
+            # toe TIPS only (tiger toes are two segments: Digit<n>1 -> <n>2)
+            "RigLBLegDigit12", "RigLBLegDigit22", "RigLBLegDigit32",
+            "RigLBLegDigit42",
+            "RigRBLegDigit12", "RigRBLegDigit22", "RigRBLegDigit32",
+            "RigRBLegDigit42",
+            "RigLFLegDigit12", "RigLFLegDigit22", "RigLFLegDigit32",
+            "RigLFLegDigit42",
+            "RigRFLegDigit12", "RigRFLegDigit22", "RigRFLegDigit32",
+            "RigRFLegDigit42",
+        ]
+    )
+
     asset: RobotAssetConfig = field(
         default_factory=lambda: RobotAssetConfig(
             asset_file_name="mjcf/tiger.xml",
