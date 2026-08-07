@@ -675,6 +675,11 @@ class BaseEvaluator:
         Runs policy indefinitely, collecting running average of metrics.
         Press Ctrl+C to stop and print summary.
 
+        When the agent is AMP/ASE and
+        ``amp_parameters.discriminator_reward_threshold > 0``, also applies
+        the training-time discriminator kill switch and prints which envs
+        it resets (style drift / "too far from the discriminator").
+
         Args:
             collect_metrics: If True, collect and print average metrics on exit.
         """
@@ -685,6 +690,22 @@ class BaseEvaluator:
         # Running averages for metrics
         metric_sums: Dict[str, float] = {}
         metric_counts: Dict[str, int] = {}
+
+        amp_comp = None
+        amp_params = getattr(self.agent.config, "amp_parameters", None)
+        if (
+            amp_params is not None
+            and getattr(amp_params, "discriminator_reward_threshold", 0.0) > 0.0
+            and getattr(self.agent, "amp_component", None) is not None
+        ):
+            from protomotions.agents.amp.component import AMPTrainingComponent
+
+            amp_comp = AMPTrainingComponent.for_agent(self.agent)
+            print(
+                "AMP disc termination ON: "
+                f"threshold={amp_params.discriminator_reward_threshold}, "
+                f"max_bad={amp_params.discriminator_max_cumulative_bad_transitions}"
+            )
 
         print("Evaluating policy... (Ctrl+C to stop)")
         try:
@@ -701,7 +722,33 @@ class BaseEvaluator:
                     else model_outs["action"]
                 )
 
-                _, _, dones, _, extras = self.env.step(action)
+                next_obs, _, dones, terminated, extras = self.env.step(action)
+
+                if amp_comp is not None:
+                    next_obs = self.agent.add_agent_info_to_next_obs(next_obs)
+                    next_obs_td = self.agent.obs_dict_to_tensordict(next_obs)
+                    dones, terminated, extras = (
+                        amp_comp.apply_disc_termination_for_inference(
+                            next_obs_td, dones, terminated, extras
+                        )
+                    )
+                    disc_term = extras.get("amp_discriminator_termination")
+                    if disc_term is not None and bool(disc_term.any()):
+                        ids = disc_term.nonzero(as_tuple=False).squeeze(-1).tolist()
+                        if not isinstance(ids, list):
+                            ids = [ids]
+                        amp_r = extras.get("amp_rewards")
+                        r_str = ""
+                        if amp_r is not None:
+                            r_str = " amp_r=[" + ", ".join(
+                                f"{float(amp_r[i]):.3f}" for i in ids
+                            ) + "]"
+                        print(
+                            f"[AMP disc term] step={step} envs={ids}{r_str} "
+                            f"(streak>="
+                            f"{amp_params.discriminator_max_cumulative_bad_transitions})",
+                            flush=True,
+                        )
 
                 # Accumulate metrics
                 if collect_metrics and "eval_values" in extras:

@@ -809,6 +809,17 @@ class BaseEnv:
 
         self.simulator.step(processed_action, markers_callback=self.get_markers_state)
 
+        # Forensic tripwire, off unless PM_NAN_DEBUG=1 in the environment.
+        # The tiger dies rarely (epoch 4984, ~7 h in) with NaN surfacing at
+        # the policy's action distribution -- far downstream of the cause.
+        # This catches the FIRST non-finite physics state at its source and
+        # dumps who/when/why before the run dies.
+        if getattr(self, "_nan_dbg_on", None) is None:
+            import os as _os
+            self._nan_dbg_on = bool(_os.environ.get("PM_NAN_DEBUG"))
+        if self._nan_dbg_on:
+            self._nan_debug_probe()
+
         self.post_physics_step()
 
         if self.consume_reset_request():
@@ -1286,6 +1297,23 @@ class BaseEnv:
         ref_state = self.motion_lib.get_motion_state(motion_ids, motion_times)
         new_states = ResetState.from_robot_state(ref_state)
 
+        # Clamp RSI-written dof velocities to each joint's ControlInfo.velocity_limit
+        # (30 rad/s on the tiger). Jump clips can carry ~45 rad/s — above the
+        # robot's own ceiling — and writing those into PhysX on a heavy
+        # under-armatured animal is a known NaN precursor.
+        if new_states.dof_vel is not None:
+            ci = self.robot_config.control.control_info
+            lims = []
+            for name in self.robot_config.kinematic_info.dof_names:
+                info = ci.get(name)
+                vlim = None if info is None else info.velocity_limit
+                lims.append(30.0 if vlim is None else float(vlim))
+            lim = torch.as_tensor(
+                lims, device=new_states.dof_vel.device, dtype=new_states.dof_vel.dtype
+            )
+            if lim.numel() == new_states.dof_vel.shape[-1]:
+                new_states.dof_vel = new_states.dof_vel.clamp(min=-lim, max=lim)
+
         new_object_states = self.scene_lib.get_scene_pose(
             env_ids, motion_times, respawn_offset=self.config.ref_object_respawn_offset
         )
@@ -1507,7 +1535,32 @@ class BaseEnv:
         # poses that had sunk during the drop be replayed embedded in the
         # ground, which spawns the episode inside an explosive contact --
         # measured to -31.6 cm on the first run.
-        root_z_rel = state.root_pos[:, 2] - low + 0.005
+        #
+        # Height is stored RELATIVE TO THE GROUND THE POSE SETTLED ON, not
+        # relative to the robot's own lowest body.
+        #
+        # The lowest-body version was wrong and it is worth being precise
+        # about why, because the same mistake bit fix_motion_ground.py.
+        # rigid_body_pos holds joint CENTRES, and a collider reaches below
+        # its origin by as much as its own extent -- 48.6 cm for the tiger's
+        # RigRFLeg1, whose capsule hangs off one end. Placing the lowest
+        # ORIGIN just above the floor therefore buries the colliders, and the
+        # depenetration impulse produced
+        #     RuntimeError: normal expects all elements of std >= 0.0
+        # when the resulting NaN reached the policy's action distribution.
+        # A fixed clearance margin cannot fix it either: large enough to
+        # cover the worst collider means spawning half a metre in the air.
+        #
+        # Isolated by probe: fall_init_prob=0 ran past epoch 150, get-up
+        # enabled died at 104.
+        #
+        # The settled pose is already resting correctly on the ground, so its
+        # height above THAT ground is exactly right and needs no knowledge of
+        # collider geometry at all. Replay adds the local ground height back.
+        bank_ground = self.terrain.get_ground_heights(
+            state.root_pos[:, :2]
+        ).squeeze(-1)
+        root_z_rel = state.root_pos[:, 2] - bank_ground
 
         # EVERY settled pose is banked -- no filtering. The settle time does
         # the work: measured on the raptor, 3 steps (0.2 s) leaves all 512
@@ -1533,7 +1586,9 @@ class BaseEnv:
               f"{cfg.fall_state_settle_steps} settle steps "
               f"({cfg.fall_state_settle_steps * 4 / 60:.1f} s); root sits "
               f"{root_z_rel.min()*100:.0f}-{root_z_rel.max()*100:.0f} cm above "
-              f"its lowest body (standing is {drop_h*100:.0f} cm); "
+              f"the GROUND it settled on (standing is {drop_h*100:.0f} cm); "
+              f"lowest body origin {(state.root_pos[:, 2] - low).min()*100:.0f}"
+              f"-{(state.root_pos[:, 2] - low).max()*100:.0f} cm below the root; "
               f"{int((speed >= 0.5).sum())} still moving, "
               f"{int((root_z_rel >= 0.6 * drop_h).sum())} landed upright",
               flush=True)
@@ -1606,6 +1661,123 @@ class BaseEnv:
     def _update_recovery_count(self):
         if self._getup_enabled():
             self.recovery_counter = (self.recovery_counter - 1).clamp_min(0)
+
+    def _nan_debug_probe(self):
+        """Catch the first non-finite physics state at its source (PM_NAN_DEBUG=1).
+
+        The failure this hunts: hours into training, `normal expects all
+        elements of std >= 0.0` -- a NaN in the observations reaching the
+        policy. By then the causal event is long gone. This probe runs right
+        after every physics step, keeps a 64-step ring buffer of per-env
+        extremes, and on the FIRST non-finite value dumps, for each offending
+        env: which tensors/bodies/dofs went non-finite, the full previous
+        (finite) state, the action, whether the episode was a fall-init
+        (recovery_counter), time since reset, and which motion clip it was
+        imitating. Then it stops the run so the dump reflects the first event,
+        not the wreckage.
+        """
+        import os
+
+        st = self.simulator.get_robot_state()
+        dev = self.device
+        if not hasattr(self, "_ndbg"):
+            K, n = 64, self.num_envs
+            self._ndbg = {
+                "step": 0, "K": K,
+                "dv_val": torch.zeros(K, n, device=dev),
+                "dv_idx": torch.zeros(K, n, dtype=torch.long, device=dev),
+                "bv_val": torch.zeros(K, n, device=dev),
+                "bv_idx": torch.zeros(K, n, dtype=torch.long, device=dev),
+                "root_z": torch.zeros(K, n, device=dev),
+                "act": torch.zeros(K, n, device=dev),
+                "prev": None,
+            }
+        S = self._ndbg
+        k = S["step"] % S["K"]
+        dv = st.dof_vel.abs()
+        S["dv_val"][k], S["dv_idx"][k] = dv.max(dim=-1)
+        bv = st.rigid_body_vel.norm(dim=-1)
+        S["bv_val"][k], S["bv_idx"][k] = bv.max(dim=-1)
+        S["root_z"][k] = st.root_pos[:, 2]
+        S["act"][k] = self._current_processed_action.abs().max(dim=-1).values
+        S["step"] += 1
+
+        bad = torch.zeros(self.num_envs, dtype=torch.bool, device=dev)
+        parts = {}
+        for name in ("dof_pos", "dof_vel", "root_pos", "root_rot",
+                     "rigid_body_pos", "rigid_body_vel", "rigid_body_ang_vel"):
+            t = getattr(st, name, None)
+            if t is None:
+                continue
+            m = ~torch.isfinite(t)
+            if m.any():
+                envmask = m.reshape(m.shape[0], -1).any(dim=-1)
+                parts[name] = envmask
+                bad |= envmask
+        if not bad.any():
+            # snapshot survives to the dump as "the last finite state"
+            S["prev"] = {
+                "dof_pos": st.dof_pos.clone(), "dof_vel": st.dof_vel.clone(),
+                "rigid_body_pos": st.rigid_body_pos.clone(),
+                "rigid_body_vel": st.rigid_body_vel.clone(),
+            }
+            return
+
+        ids = bad.nonzero(as_tuple=True)[0]
+        dof_names = list(self.robot_config.control.control_info.keys())
+        body_names = list(self.robot_config.kinematic_info.body_names)
+        mm = getattr(self, "motion_manager", None)
+        dump = {
+            "probe_step": S["step"],
+            "bad_envs": ids.cpu(),
+            "nonfinite_fields": sorted(parts.keys()),
+            "nonfinite_env_by_field": {kk: vv[ids].cpu() for kk, vv in parts.items()},
+            "progress_buf": self.progress_buf[ids].cpu(),
+            "recovery_counter": getattr(self, "recovery_counter", None) is not None
+                and self.recovery_counter[ids].cpu() or None,
+            "motion_ids": (mm is not None and hasattr(mm, "motion_ids"))
+                and mm.motion_ids[ids].cpu() or None,
+            "motion_times": (mm is not None and hasattr(mm, "motion_times"))
+                and mm.motion_times[ids].cpu() or None,
+            "history_ring_head": k,
+            "history": {kk: S[kk][:, ids].cpu()
+                        for kk in ("dv_val", "dv_idx", "bv_val", "bv_idx",
+                                   "root_z", "act")},
+            "prev_state": {kk: vv[ids].cpu()
+                           for kk, vv in (S["prev"] or {}).items()},
+            "cur_dof_pos": st.dof_pos[ids].cpu(),
+            "cur_dof_vel": st.dof_vel[ids].cpu(),
+            "cur_body_pos": st.rigid_body_pos[ids].cpu(),
+            "cur_body_vel": st.rigid_body_vel[ids].cpu(),
+            "raw_action": self._current_raw_action[ids].cpu(),
+            "processed_action": self._current_processed_action[ids].cpu(),
+            "dof_names": dof_names,
+            "body_names": body_names,
+        }
+        out = os.path.abspath("nan_debug_dump.pt")
+        torch.save(dump, out)
+        e0 = int(ids[0])
+        print(f"[NAN-DEBUG] non-finite physics state, {len(ids)} env(s): "
+              f"{ids.tolist()[:8]}", flush=True)
+        print(f"[NAN-DEBUG] fields: {sorted(parts.keys())}", flush=True)
+        print(f"[NAN-DEBUG] env {e0}: progress={int(self.progress_buf[e0])} "
+              f"recovery_counter="
+              f"{int(self.recovery_counter[e0]) if hasattr(self, 'recovery_counter') else 'n/a'}",
+              flush=True)
+        if S["prev"] is not None:
+            pv = S["prev"]["dof_vel"][e0].abs()
+            top = pv.argmax()
+            print(f"[NAN-DEBUG] env {e0} last finite step: max|dof_vel|="
+                  f"{float(pv.max()):.1f} rad/s at dof "
+                  f"{dof_names[int(top)] if int(top) < len(dof_names) else int(top)}",
+                  flush=True)
+        hist = S["dv_val"][:, e0]
+        order = [(k - i) % S["K"] for i in range(min(10, S["step"]))]
+        print(f"[NAN-DEBUG] env {e0} max|dof_vel| last 10 steps (newest first): "
+              f"{[round(float(hist[j]), 1) for j in order]}", flush=True)
+        print(f"[NAN-DEBUG] dump saved: {out}", flush=True)
+        raise RuntimeError(
+            "PM_NAN_DEBUG tripwire: non-finite physics state; see nan_debug_dump.pt")
 
     def _apply_random_getup_reset(self, new_states, env_ids):
         """Override a random fraction of envs with random orientation and joint positions.

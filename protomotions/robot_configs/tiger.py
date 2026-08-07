@@ -10,25 +10,55 @@ and claw tips erode at the 0.14 m prune),
 --drop-bones for whiskers/eyes/ears; anatomical densities: legs 70 kg,
 tail 8 kg, torso 122 kg, COM over the four paws). Quadruped: all four ankles are contact feet;
 front ankles double as the "hands" for the battle tables later (paw
-swipes), jaw is the bite. PD gains follow the dog_v2 translation
-(kp = 2*effort, kd = kp/10), efforts scaled for 270 kg.
+swipes), jaw is the bite. Efforts scaled for 270 kg.
 # Rescaled 2026-08-06 when the body was fitted to the mesh and
 # scaled to a real large tiger: 3.05 m nose-to-tail, 270 kg at
 # water density. Lengths moved by 0.9261 and mass by 270/200, so
 # torque (m*g*L) moved by 1.2503 -- every effort below carries it.
 See RAPTOR_TIGER_PLAN.md.
+
+DAMPING / ARMATURE (2026-08-07 crash fix)
+  The tiger originally inherited dog_v2's kd = kp/10 and dog-sized
+  MJCF armature (0.0136). On a 271 kg body that is under-damped and
+  under-inertialed relative to the utahraptor, which uses kd/kp ≈ 0.13
+  (the √s damping correction) and armature 0.2918 (= 0.02 * s^5).
+  Combined with drive saturation turning off PhysX's implicit-PD
+  stability term, that produced mid-rollout NaNs. Fixes:
+    - MJCF/USD armature → 0.29179 (utahraptor's proven value)
+    - kd = 0.13 * kp via _pd() below
+  ControlInfo.armature stays None so IsaacLab reads the USD value.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace as _replace
 from typing import Dict, List
 
+from protomotions.components.pose_lib import ControlInfo
 from protomotions.robot_configs.base import (
     ControlConfig,
     ControlType,
     RobotAssetConfig,
     RobotConfig,
 )
-from protomotions.robot_configs.dog_v2 import _pd
+from protomotions.robot_configs.dog_v2 import VELOCITY_LIMIT
+
+
+# √s damping correction vs dog_v2's kd = kp/10. Matches utahraptor's
+# effective kd/kp = DAMPING_SCALE / (10 * TORQUE_SCALE) ≈ 0.1307.
+DAMPING_RATIO = 0.13
+
+
+def _pd(effort: float) -> ControlInfo:
+    """Peak-torque → PD gains with mass-scaled damping.
+
+    kp = 2 * effort (saturates at ~0.5 rad tracking error), kd = 0.13 * kp.
+    """
+    kp = 2.0 * effort
+    return ControlInfo(
+        stiffness=kp,
+        damping=DAMPING_RATIO * kp,
+        effort_limit=effort,
+        velocity_limit=VELOCITY_LIMIT,
+    )
 
 
 CONTROL_OVERRIDES = {
@@ -50,9 +80,6 @@ CONTROL_OVERRIDES = {
     #   Spine2 174 kg @ 73 cm -> 1247 N.m    Neck2 35.0 kg @ 33 cm -> 113 N.m
     #   Spine3 148 kg @ 54 cm ->  789 N.m    Neck3 29.5 kg @ 28 cm ->  82 N.m
     # Chest, Neck4 and Head already cleared 1.5x and keep their values.
-    # _pd() ties stiffness to effort (kp = 2 x effort); that is safe here
-    # because BUILT_IN_PD maps to ImplicitActuatorCfg, whose PD is integrated
-    # implicitly and is unconditionally stable at any gain.
     r"RigSpine[0-9]_[xyz]": _pd(625.1),
     r"RigSpine1_[xyz]": _pd(2667.1),
     r"RigSpine2_[xyz]": _pd(1870.1),
@@ -83,16 +110,7 @@ CONTROL_OVERRIDES = {
 }
 
 
-# NO armature, matching t800/dog_v2 (which train fine with armature=None).
-# BUILT_IN_PD maps to IsaacLab's ImplicitActuatorCfg: its PD is integrated
-# IMPLICITLY and is unconditionally stable, so the omega*dt criterion that
-# motivated an earlier flat 0.02 (which applies to EXPLICIT integration)
-# was never relevant. That 0.02 was 30x this robot's entire link inertia
-# and ~90,000x a finger phalanx's, so every limb dragged a flywheel: the
-# policy could stand but never accelerate a leg enough to walk or get up,
-# and both ASE and AMP stalled with the discriminator above 90% accuracy.
-# Creatures have no gearboxes, so zero is the physical answer too.
-from dataclasses import replace as _replace
+# armature=None → IsaacLab keeps the USD/MJCF armature (now 0.29179).
 CONTROL_OVERRIDES = {
     _k: _replace(_v, armature=None) for _k, _v in CONTROL_OVERRIDES.items()
 }

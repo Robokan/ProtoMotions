@@ -67,7 +67,11 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
     Uses MdpComponent-based component configuration with explicit context bindings:
         MdpComponent(compute_func=compute_fn, dynamic_vars={...}, static_params={...})
     """
-    from protomotions.envs.component_factories import max_coords_obs_factory, historical_max_coords_obs_factory
+    from protomotions.envs.component_factories import (
+        max_coords_obs_factory,
+        historical_max_coords_obs_factory,
+        pow_rew_factory,
+    )
     from protomotions.envs.motion_manager.config import MotionManagerConfig
     from protomotions.envs.action import make_pd_action_config
 
@@ -97,10 +101,17 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
         ),
     }
 
+    # Mechanical power penalty (|τ·q̇|): nudges get-ups / thrashing toward
+    # cheaper motions. Needs a non-zero agent task_reward_w to affect PPO.
+    reward_components = {
+        "pow_rew": pow_rew_factory(weight=-1e-5, min_value=-0.5),
+    }
+
     env_config: EnvConfig = EnvConfig(
         max_episode_length=300,  # Training default (eval override applied automatically)
         num_state_history_steps=max(HISTORY_STEPS),  # Store enough history for max dilation
         observation_components=observation_components,
+        reward_components=reward_components,
         action_config=make_pd_action_config(robot_cfg),
         motion_manager=MotionManagerConfig(
             init_start_prob=0.5  # Bias agent to start at the beginning of the motion to prevent getting stuck in a local-minima (standing still).
@@ -218,7 +229,8 @@ def agent_config(
         ),
         reference_obs_components=reference_obs_components,
         batch_size=args.batch_size,
-        task_reward_w=0.0,
+        # Small weight so pow_rew regularizes without drowning the disc style signal.
+        task_reward_w=0.1,
         training_max_steps=args.training_max_steps,
         gradient_clip_val=50.0,
         clip_critic_loss=True,

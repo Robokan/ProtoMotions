@@ -325,6 +325,69 @@ class AMPTrainingComponent:
         return dones, terminated, extras
 
     @torch.no_grad()
+    def apply_disc_termination_for_inference(
+        self,
+        next_obs_td,
+        dones,
+        terminated,
+        extras,
+    ):
+        """Score the latest transition and apply AMP disc kill (viewer path).
+
+        Training updates the bad-transition counter in ``record_rollout_step``
+        (which also touches the experience buffer / disc critic). The inference
+        viewer never builds that buffer, so this method does only the
+        discriminator score + cumulative kill logic, then ORs into dones.
+
+        Unlike training's check-then-update order, this updates the streak
+        first and terminates on the step that reaches the limit — clearer
+        when watching resets in the viewer.
+        """
+        params = self.config.amp_parameters
+        if params.discriminator_reward_threshold <= 0.0:
+            extras["amp_rewards"] = None
+            extras["amp_discriminator_termination"] = torch.zeros_like(
+                dones, dtype=torch.bool
+            )
+            extras["amp_cumulative_bad_transitions"] = (
+                self.num_cumulative_bad_transitions
+            )
+            return dones, terminated, extras
+
+        disc_logits = self.discriminator(next_obs_td)[
+            self.discriminator.module.config.out_keys[0]
+        ]
+        amp_rewards = self.discriminator.module.compute_disc_reward(
+            disc_logits
+        ).flatten()
+        bad_transition = amp_rewards < params.discriminator_reward_threshold
+        self.num_cumulative_bad_transitions[bad_transition] += 1
+        self.num_cumulative_bad_transitions[~bad_transition] = 0
+
+        discriminator_termination = (
+            self.num_cumulative_bad_transitions
+            >= params.discriminator_max_cumulative_bad_transitions
+        )
+        env = getattr(self.agent, "env", None)
+        counter = getattr(env, "recovery_counter", None)
+        if counter is not None:
+            discriminator_termination = discriminator_termination & (counter <= 0)
+
+        terminated = terminated | discriminator_termination
+        dones = dones | terminated
+
+        done_indices = dones.nonzero(as_tuple=False).squeeze(-1)
+        if done_indices.numel() > 0:
+            self.num_cumulative_bad_transitions[done_indices] = 0
+
+        extras["amp_rewards"] = amp_rewards
+        extras["amp_cumulative_bad_transitions"] = (
+            self.num_cumulative_bad_transitions.clone()
+        )
+        extras["amp_discriminator_termination"] = discriminator_termination
+        return dones, terminated, extras
+
+    @torch.no_grad()
     def record_rollout_step(
         self,
         next_obs_td,

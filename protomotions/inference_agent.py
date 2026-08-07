@@ -116,6 +116,19 @@ def create_parser():
         help="Run full evaluation instead of simple inference",
     )
     parser.add_argument(
+        "--amp-disc-term",
+        action="store_true",
+        default=False,
+        help=(
+            "Enable AMP/ASE discriminator kill during the viewer: restore "
+            "discriminator_reward_threshold to the training default (0.05) "
+            "if it was zeroed for inference, score each transition, and "
+            "reset envs that stay below threshold for "
+            "discriminator_max_cumulative_bad_transitions steps. Prints "
+            "[AMP disc term] when a kill fires."
+        ),
+    )
+    parser.add_argument(
         "--headless",
         action="store_true",
         default=False,
@@ -443,6 +456,22 @@ def main():
             terrain_config,
             motion_lib_config,
             scene_lib_config,
+        )
+
+    if args.amp_disc_term:
+        amp = getattr(agent_config, "amp_parameters", None)
+        if amp is None:
+            raise ValueError(
+                "--amp-disc-term requires an AMP/ASE agent with amp_parameters"
+            )
+        # Inference freezes threshold at 0.0; restore training default unless
+        # the user already set a positive value via --overrides.
+        if amp.discriminator_reward_threshold <= 0.0:
+            amp.discriminator_reward_threshold = 0.05
+        log.info(
+            "AMP disc termination enabled: threshold=%s max_bad=%s",
+            amp.discriminator_reward_threshold,
+            amp.discriminator_max_cumulative_bad_transitions,
         )
 
     if args.command_source:
