@@ -101,17 +101,32 @@ class RaptorRobotConfig(RobotConfig):
     # ground contact) instead of on gait, and the policy learned to stand
     # and nothing more.
     #
-    # Every link of every limb is listed. An end effector does NOT
-    # determine a limb's pose: with only Arm and Hand seen, the elbow can
-    # sit anywhere on the circle around the shoulder-to-hand axis at zero
-    # style cost.
+    # ARMS ARE DELIBERATELY UNDER-OBSERVED: Arm and Hand only, no Shoulder
+    # and no ForeArm. Adding those two per side (30 bodies -> 34) is exactly
+    # what broke a working walk. Over 7828 epochs the discriminator went to
+    # 95.5% accuracy and kept pulling away -- agent logit -4.60 -> -5.03 --
+    # while style reward sat at 0.058, and episodes were being terminated at
+    # ~4 s because nearly every transition scored under the 0.02 threshold.
+    #
+    # The reasoning that motivated adding them is sound in the abstract: an
+    # end effector does not determine a limb's pose, so with only Arm and
+    # Hand seen the elbow may sit anywhere on the circle around the
+    # shoulder-to-hand axis at zero style cost. It is wrong HERE for the same
+    # reason the digits are excluded: the raptor's forelimb bones are small
+    # and light, the animation flicks them faster than these actuators can
+    # follow, and a body whose motion the policy cannot reproduce is a free
+    # win for the discriminator rather than a constraint on gait.
+    #
+    # If the elbow pose ever matters (fighting), pay for it with a cost term
+    # or a torque-feasible reference, NOT by handing the discriminator a
+    # body it can separate on.
     disc_bodies_subset: List[str] = field(
         default_factory=lambda: [
             "Hips", "Spine1", "Head", "Jaw", "Tail3", "Tail5",
             "LeftUpLeg", "LeftLeg", "LeftFoot", "LeftToeBase",
             "RightUpLeg", "RightLeg", "RightFoot", "RightToeBase",
-            "LeftShoulder", "LeftArm", "LeftForeArm", "LeftHand",
-            "RightShoulder", "RightArm", "RightForeArm", "RightHand",
+            "LeftArm", "LeftHand",
+            "RightArm", "RightHand",
             # Digit TIPS by name. Intermediate phalanges stay hidden (they
             # are ~1.4 g on 6 N.m actuators and the policy cannot reproduce
             # them, which is what let the discriminator win on jitter), but

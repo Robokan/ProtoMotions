@@ -138,15 +138,25 @@ class TigerRobotConfig(RobotConfig):
         default_factory=lambda: [
             "RigPelvis", "RigSpine2", "RigChest", "RigNeck2",
             "RigHead", "RigJaw1", "RigTail3", "RigTail5",
-            "RigLShoulderBlade1", "RigRShoulderBlade1",
+            # ShoulderBlade1 and FLegCollarbone are OMITTED. They have the
+            # worst mass-to-effort ratios on this robot -- 421 and 314
+            # N.m/kg against 32 for RigLFLeg1 -- meaning the actuator can
+            # fling them far faster than physics would move them. That is the
+            # same profile as the raptor's ForeArm (60 N.m/kg), whose
+            # inclusion took its discriminator to 95.5% accuracy with a 0.058
+            # style reward and destroyed a walk that had worked. A body the
+            # policy cannot track is a free win for the discriminator, not a
+            # constraint on gait.
+            #
+            # The load-bearing limb chain IS fully observed below them, so the
+            # elbow/knee poses are still pinned; only the scapular attachment
+            # is hidden, and it mostly just translates with the chest.
             # hind limbs: every link
             "RigLBLeg1", "RigLBLeg2", "RigLBLeg3", "RigLBLegAnkle",
             "RigRBLeg1", "RigRBLeg2", "RigRBLeg3", "RigRBLegAnkle",
-            # fore limbs: every link, from the collarbone down
-            "RigLFLegCollarbone", "RigLFLeg1", "RigLFLeg2", "RigLFLeg3",
-            "RigLFLegAnkle",
-            "RigRFLegCollarbone", "RigRFLeg1", "RigRFLeg2", "RigRFLeg3",
-            "RigRFLegAnkle",
+            # fore limbs: every link below the collarbone
+            "RigLFLeg1", "RigLFLeg2", "RigLFLeg3", "RigLFLegAnkle",
+            "RigRFLeg1", "RigRFLeg2", "RigRFLeg3", "RigRFLegAnkle",
             # toe TIPS only (tiger toes are two segments: Digit<n>1 -> <n>2)
             "RigLBLegDigit12", "RigLBLegDigit22", "RigLBLegDigit32",
             "RigLBLegDigit42",

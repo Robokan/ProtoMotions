@@ -122,8 +122,14 @@ class UtahraptorRobotConfig(RobotConfig):
             "Hips", "Spine1", "Head", "Jaw", "Tail3", "Tail5",
             "LeftUpLeg", "LeftLeg", "LeftFoot", "LeftToeBase",
             "RightUpLeg", "RightLeg", "RightFoot", "RightToeBase",
-            "LeftShoulder", "LeftArm", "LeftForeArm", "LeftHand",
-            "RightShoulder", "RightArm", "RightForeArm", "RightHand",
+            # Shoulder and ForeArm are OMITTED, matching raptor.py -- see the
+            # long note there. Including them (30 bodies -> 34) took the
+            # raptor's discriminator to 95.5% accuracy with a 0.058 style
+            # reward and killed a walk that had previously worked. This body
+            # is the raptor scaled, so its forelimbs are the same small fast
+            # bones the policy cannot track.
+            "LeftArm", "LeftHand",
+            "RightArm", "RightHand",
             "LeftHandIndex3", "LeftHandMiddle3", "LeftHandRing3",
             "RightHandIndex3", "RightHandMiddle3", "RightHandRing3",
             "LeftFootIndex3", "LeftFootMiddle3", "LeftFootRing3",

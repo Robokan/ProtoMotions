@@ -8,68 +8,68 @@
         <joint name="RigLBLeg1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.2696 1.3781" limited="true" armature="0.0136245" frictionloss="0.0735583" />
         <joint name="RigLBLeg1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.5726 0.8350" limited="true" armature="0.0136245" frictionloss="0.0735583" />
         <joint name="RigLBLeg1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.6294 0.6459" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-        <geom name="g_RigLBLeg1" fromto="0.00484045 -0.0171579 -0.0443157 0.0354965 -0.12582 -0.324978" size="0.0824109" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+        <geom name="g_RigLBLeg1" fromto="0.00484045 -0.0171579 -0.0443157 0.0354965 -0.12582 -0.324978" size="0.0824109" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
         <body name="RigLBLeg2" pos="0.0403372 -0.142981 -0.369292">
           <joint name="RigLBLeg2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.9384 1.9533" limited="true" armature="0.0136245" frictionloss="0.0735583" />
           <joint name="RigLBLeg2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.2163 0.3522" limited="true" armature="0.0136245" frictionloss="0.0735583" />
           <joint name="RigLBLeg2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.2505 0.2096" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-          <geom name="g_RigLBLeg2" fromto="-0.00113457 0.0452354 -0.0395278 -0.00831999 0.331729 -0.289869" size="0.0556758" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+          <geom name="g_RigLBLeg2" fromto="-0.00113457 0.0452354 -0.0395278 -0.00831999 0.331729 -0.289869" size="0.0556758" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
           <body name="RigLBLeg3" pos="-0.00945455 0.37696 -0.329395">
             <joint name="RigLBLeg3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-2.0653 0.7891" limited="true" armature="0.0136245" frictionloss="0.0735583" />
             <joint name="RigLBLeg3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.2391 0.3146" limited="true" armature="0.0136245" frictionloss="0.0735583" />
             <joint name="RigLBLeg3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.3863 0.5635" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-            <geom name="g_RigLBLeg3" fromto="0.0029137 -0.00541796 -0.0336971 0.021367 -0.0397315 -0.247111" size="0.0429559" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+            <geom name="g_RigLBLeg3" fromto="0.0029137 -0.00541796 -0.0336971 0.021367 -0.0397315 -0.247111" size="0.0429559" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
             <body name="RigLBLegAnkle" pos="0.0242814 -0.0451492 -0.280812">
               <joint name="RigLBLegAnkle_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.6330 2.6263" limited="true" armature="0.0136245" frictionloss="0.0735583" />
               <joint name="RigLBLegAnkle_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.0120 0.7552" limited="true" armature="0.0136245" frictionloss="0.0735583" />
               <joint name="RigLBLegAnkle_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.0751 1.2180" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-              <geom name="g_RigLBLegAnkle" fromto="0.000602974 -0.00646853 -0.00260771 0.00442185 -0.0474358 -0.019123" size="0.0318979" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+              <geom name="g_RigLBLegAnkle" fromto="0.000602974 -0.00646853 -0.00260771 0.00442185 -0.0474358 -0.019123" size="0.05967" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
               <body name="RigLBLegDigit11" pos="0.00502483 -0.0539046 -0.0217309">
                 <joint name="RigLBLegDigit11_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.6402 1.3340" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                 <joint name="RigLBLegDigit11_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.4922 0.4323" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                 <joint name="RigLBLegDigit11_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.5796 0.5628" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                <geom name="g_RigLBLegDigit11" fromto="0 0 0 -0.0597353 -0.0084301 -0.014337" size="0.01978" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                <geom name="g_RigLBLegDigit11" fromto="0 0 0 -0.0457661 -0.00810409 -0.0296025" size="0.03492" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                 <body name="RigLBLegDigit12" pos="-0.0597353 -0.0084301 -0.014337">
                   <joint name="RigLBLegDigit12_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.5909 1.6077" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                   <joint name="RigLBLegDigit12_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.3731 0.2219" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                   <joint name="RigLBLegDigit12_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.4860 0.2751" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                  <geom name="g_RigLBLegDigit12" fromto="-0.00535295 -0.000755438 -0.00128478 -0.0392555 -0.00553984 -0.00942214" size="0.0148334" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                  <geom name="g_RigLBLegDigit12" fromto="0 0 0 -0.0043592 -0.0690307 -0.0231485" size="0.02670" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                 </body>
               </body>
               <body name="RigLBLegDigit21" pos="0.00502483 -0.0539037 -0.0217309">
                 <joint name="RigLBLegDigit21_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.6402 1.4642" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                 <joint name="RigLBLegDigit21_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.3756 0.3010" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                 <joint name="RigLBLegDigit21_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.5814 0.5466" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                <geom name="g_RigLBLegDigit21" fromto="0 0 0 -0.0194333 -0.0272681 -0.0138767" size="0.0283842" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                <geom name="g_RigLBLegDigit21" fromto="0 0 0 -0.00622653 -0.0204384 -0.0264044" size="0.04578" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                 <body name="RigLBLegDigit22" pos="-0.0194333 -0.0272681 -0.0138767">
                   <joint name="RigLBLegDigit22_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.5931 1.6085" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                   <joint name="RigLBLegDigit22_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.2200 0.2135" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                   <joint name="RigLBLegDigit22_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.3037 0.1764" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                  <geom name="g_RigLBLegDigit22" fromto="-0.00297926 -0.00418023 -0.00212734 -0.0124134 -0.0174181 -0.0088638" size="0.0212915" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                  <geom name="g_RigLBLegDigit22" fromto="0 0 0 0.00576757 -0.0835359 -0.0239309" size="0.03333" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                 </body>
               </body>
               <body name="RigLBLegDigit31" pos="0.00502483 -0.0539046 -0.0217309">
                 <joint name="RigLBLegDigit31_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.6402 1.4522" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                 <joint name="RigLBLegDigit31_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.2913 0.6580" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                 <joint name="RigLBLegDigit31_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.5821 0.5506" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                <geom name="g_RigLBLegDigit31" fromto="0 0 0 0.0267235 -0.0258836 -0.0134044" size="0.0287834" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                <geom name="g_RigLBLegDigit31" fromto="0 0 0 0.0201163 -0.0170192 -0.0239019" size="0.04581" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                 <body name="RigLBLegDigit32" pos="0.0267235 -0.0258836 -0.0134044">
                   <joint name="RigLBLegDigit32_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.5868 1.6062" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                   <joint name="RigLBLegDigit32_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.2506 0.3933" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                   <joint name="RigLBLegDigit32_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.3366 0.2699" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                  <geom name="g_RigLBLegDigit32" fromto="0.00375497 -0.00363707 -0.0018835 0.0156455 -0.0151547 -0.00784796" size="0.0215859" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                  <geom name="g_RigLBLegDigit32" fromto="0 0 0 0.0163934 -0.07986 -0.0226659" size="0.03312" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                 </body>
               </body>
               <body name="RigLBLegDigit41" pos="0.00502474 -0.0539037 -0.0217309">
                 <joint name="RigLBLegDigit41_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.6402 1.3133" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                 <joint name="RigLBLegDigit41_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.2913 0.6547" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                 <joint name="RigLBLegDigit41_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.5815 0.5955" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                <geom name="g_RigLBLegDigit41" fromto="0 0 0 0.0708559 0.00342351 -0.0110613" size="0.0224234" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                <geom name="g_RigLBLegDigit41" fromto="0 0 0 0.0604285 0.00809759 -0.0223178" size="0.03667" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                 <body name="RigLBLegDigit42" pos="0.0708559 0.00342351 -0.0110613">
                   <joint name="RigLBLegDigit42_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.5832 1.6049" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                   <joint name="RigLBLegDigit42_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.2689 0.4785" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                   <joint name="RigLBLegDigit42_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.3759 0.4712" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                  <geom name="g_RigLBLegDigit42" fromto="0.0054839 0.000264957 -0.000856068 0.0228497 0.001104 -0.00356697" size="0.016816" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                  <geom name="g_RigLBLegDigit42" fromto="0 0 0 0.0166463 -0.067256 -0.0249106" size="0.02770" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                 </body>
               </body>
             </body>
@@ -120,13 +120,13 @@
                         <joint name="RigHead_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.9154 0.6509" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                         <joint name="RigHead_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.5226 0.5226" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                         <joint name="RigHead_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.6058 0.6058" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                        <geom name="g_RigHead" type="sphere" pos="-2.23689e-06 -0.135715 -0.0348406" size="0.19500" density="559.6" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                        <geom name="g_RigHead_snout" fromto="-2.23689e-06 -0.180715 -0.0308406 -2.23689e-06 -0.392847 -0.242973" size="0.06500" density="559.6" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                        <geom name="g_RigHead" type="sphere" pos="-2.23689e-06 -0.073715 -0.0348406" size="0.16694" density="838.9" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                        <geom name="g_RigHead_snout" fromto="-2.23689e-06 -0.110715 0.0041594 -2.23689e-06 -0.291825 -0.17695" size="0.06500" density="838.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                         <body name="RigJaw1" pos="-2.92611e-08 -0.0416291 -0.0754373">
                           <joint name="RigJaw1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.4887 0.9330" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                           <joint name="RigJaw1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.2443 0.2443" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                           <joint name="RigJaw1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.2021 0.2021" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                          <geom name="g_RigJaw1" fromto="-2.20763e-06 -0.0690863 -0.0654033 -2.20763e-06 -0.238792 -0.235109" size="0.05000" density="559.6" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                          <geom name="g_RigJaw1" fromto="-2.20763e-06 -0.0690863 -0.0654033 -2.20763e-06 -0.149172 -0.193567" size="0.05000" density="838.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                         </body>
                       </body>
                     </body>
@@ -137,73 +137,73 @@
                 <joint name="RigLFLegCollarbone_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.8597 0.6757" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                 <joint name="RigLFLegCollarbone_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.8976 1.0391" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                 <joint name="RigLFLegCollarbone_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.7295 0.9063" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                <geom name="g_RigLFLegCollarbone" fromto="0.0237545 6.68042e-06 -0.00665468 0.174199 4.89898e-05 -0.0488008" size="0.0319568" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                <geom name="g_RigLFLegCollarbone" fromto="0.0237545 6.68042e-06 -0.00665468 0.174199 4.89898e-05 -0.0488008" size="0.0319568" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                 <body name="RigLFLeg1" pos="0.197954 5.56706e-05 -0.0554558">
                   <joint name="RigLFLeg1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.6689 2.2602" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                   <joint name="RigLFLeg1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.1235 1.0210" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                   <joint name="RigLFLeg1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.1329 0.7629" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                  <geom name="g_RigLFLeg1" fromto="-0.00335063 0.017782 -0.0565199 -0.0245713 0.130404 -0.414476" size="0.0710521" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                  <geom name="g_RigLFLeg1" fromto="-0.00335063 0.017782 -0.0565199 -0.0245713 0.130404 -0.414476" size="0.0710521" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                   <body name="RigLFLeg2" pos="-0.0279219 0.148185 -0.470996">
                     <joint name="RigLFLeg2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-2.3123 0.6095" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                     <joint name="RigLFLeg2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.3806 0.2380" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                     <joint name="RigLFLeg2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.3570 0.2669" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                    <geom name="g_RigLFLeg2" fromto="0.000613597 -0.00762171 -0.0511291 0.00449973 -0.055892 -0.37495" size="0.0573443" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                    <geom name="g_RigLFLeg2" fromto="0.000613597 -0.00762171 -0.0511291 0.00449973 -0.055892 -0.37495" size="0.0573443" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                     <body name="RigLFLeg3" pos="0.00511328 -0.0635138 -0.42608">
                       <joint name="RigLFLeg3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.5969 2.7009" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                       <joint name="RigLFLeg3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.3483 1.1842" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                       <joint name="RigLFLeg3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.5524 1.4434" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                      <geom name="g_RigLFLeg3" fromto="-0.000284359 -0.00395445 -0.0162114 -0.0020853 -0.028999 -0.118883" size="0.0434532" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                      <geom name="g_RigLFLeg3" fromto="-0.000284359 -0.00395445 -0.0162114 -0.0020853 -0.028999 -0.118883" size="0.0434532" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                       <body name="RigLFLegAnkle" pos="-0.0023697 -0.0329534 -0.13509">
                         <joint name="RigLFLegAnkle_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.8243 2.6602" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                         <joint name="RigLFLegAnkle_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.6204 1.6217" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                         <joint name="RigLFLegAnkle_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.0397 1.2792" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                        <geom name="g_RigLFLegAnkle" fromto="0.00211382 -0.00634619 -0.00248065 0.015502 -0.0465393 -0.0181914" size="0.0338085" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                        <geom name="g_RigLFLegAnkle" fromto="0.00211382 -0.00634619 -0.00248065 0.015502 -0.0465393 -0.0181914" size="0.05698" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                         <body name="RigLFLegDigit11" pos="0.0176153 -0.0528849 -0.0206706">
                           <joint name="RigLFLegDigit11_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.9465 1.1521" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                           <joint name="RigLFLegDigit11_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.7232 0.7492" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                           <joint name="RigLFLegDigit11_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.5587 0.2725" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                          <geom name="g_RigLFLegDigit11" fromto="0 0 0 -0.0602863 -0.023948 -0.011529" size="0.0207353" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                          <geom name="g_RigLFLegDigit11" fromto="0 0 0 -0.0546048 -0.0150618 -0.0150953" size="0.03336" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                           <body name="RigLFLegDigit12" pos="-0.0602863 -0.023948 -0.011529">
                             <joint name="RigLFLegDigit12_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.6085 2.9521" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                             <joint name="RigLFLegDigit12_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.8041 0.8127" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                             <joint name="RigLFLegDigit12_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.7549 0.6283" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                            <geom name="g_RigLFLegDigit12" fromto="-0.00508438 -0.00201973 -0.000972312 -0.0211845 -0.00841547 -0.00405141" size="0.0155531" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                            <geom name="g_RigLFLegDigit12" fromto="0 0 0 0.0121956 -0.0512824 0.000830942" size="0.03320" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                           </body>
                         </body>
                         <body name="RigLFLegDigit21" pos="0.0176153 -0.0528849 -0.0206706">
                           <joint name="RigLFLegDigit21_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.9465 0.6572" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                           <joint name="RigLFLegDigit21_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.6741 0.3193" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                           <joint name="RigLFLegDigit21_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.5587 0.2704" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                          <geom name="g_RigLFLegDigit21" fromto="0 0 0 -0.0149954 -0.0251686 -0.0106196" size="0.0262643" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                          <geom name="g_RigLFLegDigit21" fromto="0 0 0 -0.0108846 -0.0110494 0.015241" size="0.04221" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                           <body name="RigLFLegDigit22" pos="-0.0149954 -0.0251686 -0.0106196">
                             <joint name="RigLFLegDigit22_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.5991 2.9603" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                             <joint name="RigLFLegDigit22_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.5709 0.7362" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                             <joint name="RigLFLegDigit22_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.7549 0.4813" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                            <geom name="g_RigLFLegDigit22" fromto="-0.00267384 -0.00448788 -0.0018936 -0.0196083 -0.0329108 -0.0138869" size="0.0197015" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                            <geom name="g_RigLFLegDigit22" fromto="0 0 0 0.0145211 -0.0710333 0.000906454" size="0.03907" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                           </body>
                         </body>
                         <body name="RigLFLegDigit31" pos="0.0176163 -0.0528849 -0.0206752">
                           <joint name="RigLFLegDigit31_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.9465 0.6508" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                           <joint name="RigLFLegDigit31_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.4967 0.3373" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                           <joint name="RigLFLegDigit31_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.5587 0.2704" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                          <geom name="g_RigLFLegDigit31" fromto="0 0 0 0.0330775 -0.00688453 -0.0108363" size="0.00261727" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                          <geom name="g_RigLFLegDigit31" fromto="0 0 0 0.0178942 -0.00124434 0.0146265" size="0.04393" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                           <body name="RigLFLegDigit32" pos="0.0330775 -0.00688453 -0.0108363">
                             <joint name="RigLFLegDigit32_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.5917 2.9675" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                             <joint name="RigLFLegDigit32_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.3101 1.2218" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                             <joint name="RigLFLegDigit32_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.9547 0.4973" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                            <geom name="g_RigLFLegDigit32" fromto="0.00518014 -0.00107817 -0.00169699 0.0379877 -0.00790658 -0.0124449" size="0.0270429" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                            <geom name="g_RigLFLegDigit32" fromto="0 0 0 0.0216202 -0.0653907 -0.00122432" size="0.03910" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                           </body>
                         </body>
                         <body name="RigLFLegDigit41" pos="0.0176153 -0.0528849 -0.0206706">
                           <joint name="RigLFLegDigit41_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.9465 0.6564" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                           <joint name="RigLFLegDigit41_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.4967 0.3273" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                           <joint name="RigLFLegDigit41_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.5587 0.2704" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                          <geom name="g_RigLFLegDigit41" fromto="0 0 0 0.0670339 0.025051 -0.0136535" size="0.0225477" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                          <geom name="g_RigLFLegDigit41" fromto="0 0 0 0.0525949 0.0430096 -0.0141013" size="0.03506" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                           <body name="RigLFLegDigit42" pos="0.0670339 0.025051 -0.0136535">
                             <joint name="RigLFLegDigit42_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.5777 2.9789" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                             <joint name="RigLFLegDigit42_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.3475 0.9323" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                             <joint name="RigLFLegDigit42_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.9877 0.4680" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                            <geom name="g_RigLFLegDigit42" fromto="0.00511281 0.00191073 -0.0010414 0.0213031 0.00796122 -0.00433906" size="0.0169075" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                            <geom name="g_RigLFLegDigit42" fromto="0 0 0 0.0134207 -0.0523824 0.00230776" size="0.03187" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                           </body>
                         </body>
                       </body>
@@ -215,73 +215,73 @@
                 <joint name="RigRFLegCollarbone_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.8597 0.6757" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                 <joint name="RigRFLegCollarbone_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.0391 0.8976" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                 <joint name="RigRFLegCollarbone_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.7755 0.7295" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                <geom name="g_RigRFLegCollarbone" fromto="-0.0237545 6.64801e-06 -0.0066544 -0.174199 4.87527e-05 -0.048799" size="0.0319568" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                <geom name="g_RigRFLegCollarbone" fromto="-0.0237545 6.64801e-06 -0.0066544 -0.174199 4.87527e-05 -0.048799" size="0.0319568" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                 <body name="RigRFLeg1" pos="-0.197954 5.54002e-05 -0.0554539">
                   <joint name="RigRFLeg1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.6689 2.2602" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                   <joint name="RigRFLeg1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.0210 1.1796" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                   <joint name="RigRFLeg1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.7629 1.0970" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                  <geom name="g_RigRFLeg1" fromto="0.00332285 0.0177858 -0.0565199 0.0243675 0.130432 -0.414476" size="0.0710719" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                  <geom name="g_RigRFLeg1" fromto="0.00332285 0.0177858 -0.0565199 0.0243675 0.130432 -0.414476" size="0.0710719" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                   <body name="RigRFLeg2" pos="0.0276904 0.148213 -0.470996">
                     <joint name="RigRFLeg2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-2.3123 0.6095" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                     <joint name="RigRFLeg2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.2380 0.3806" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                     <joint name="RigRFLeg2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.2669 0.3570" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                    <geom name="g_RigRFLeg2" fromto="-0.000593343 -0.0076243 -0.0511291 -0.00435119 -0.0559114 -0.37495" size="0.0573443" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                    <geom name="g_RigRFLeg2" fromto="-0.000593343 -0.0076243 -0.0511291 -0.00435119 -0.0559114 -0.37495" size="0.0573443" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                     <body name="RigRFLeg3" pos="-0.00494454 -0.063536 -0.426071">
                       <joint name="RigRFLeg3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.5969 2.7009" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                       <joint name="RigRFLeg3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.1842 0.3447" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                       <joint name="RigRFLeg3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.4434 0.5609" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                      <geom name="g_RigRFLeg3" fromto="0.000296676 -0.00395658 -0.0162105 0.00217559 -0.0290147 -0.118874" size="0.0434466" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                      <geom name="g_RigRFLeg3" fromto="0.000296676 -0.00395658 -0.0162105 0.00217559 -0.0290147 -0.118874" size="0.0434466" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                       <body name="RigRFLegAnkle" pos="0.00247232 -0.032971 -0.135081">
                         <joint name="RigRFLegAnkle_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.8243 2.6602" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                         <joint name="RigRFLegAnkle_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.6217 0.5804" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                         <joint name="RigRFLegAnkle_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.2792 1.0131" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                        <geom name="g_RigRFLegAnkle" fromto="-0.00211614 -0.00634536 -0.00248084 -0.0155187 -0.0465328 -0.0181923" size="0.0338085" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                        <geom name="g_RigRFLegAnkle" fromto="-0.00211614 -0.00634536 -0.00248084 -0.0155187 -0.0465328 -0.0181923" size="0.05699" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                         <body name="RigRFLegDigit11" pos="-0.0176348 -0.0528785 -0.0206724">
                           <joint name="RigRFLegDigit11_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.9465 1.1521" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                           <joint name="RigRFLegDigit11_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.7492 0.7237" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                           <joint name="RigRFLegDigit11_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.2725 0.5587" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                          <geom name="g_RigRFLegDigit11" fromto="0 0 0 0.0602863 -0.023948 -0.011529" size="0.0186218" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                          <geom name="g_RigRFLegDigit11" fromto="0 0 0 0.0545467 -0.0150551 -0.0150877" size="0.03337" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                           <body name="RigRFLegDigit12" pos="0.0602863 -0.023948 -0.011529">
                             <joint name="RigRFLegDigit12_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.5639 2.9521" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                             <joint name="RigRFLegDigit12_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.8127 0.8041" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                             <joint name="RigRFLegDigit12_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.6283 0.7549" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                            <geom name="g_RigRFLegDigit12" fromto="0.00508438 -0.00201973 -0.000972312 0.0372857 -0.0148111 -0.00713051" size="0.0139696" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                            <geom name="g_RigRFLegDigit12" fromto="0 0 0 -0.0122233 -0.051292 0.000811352" size="0.03319" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                           </body>
                         </body>
                         <body name="RigRFLegDigit21" pos="-0.0176348 -0.0528785 -0.0206724">
                           <joint name="RigRFLegDigit21_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.9465 0.6572" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                           <joint name="RigRFLegDigit21_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.3193 0.6743" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                           <joint name="RigRFLegDigit21_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.2704 0.5587" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                          <geom name="g_RigRFLegDigit21" fromto="0 0 0 0.0149954 -0.0251686 -0.0106196" size="0.0285805" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                          <geom name="g_RigRFLegDigit21" fromto="0 0 0 0.0108647 -0.0110495 0.0152239" size="0.04220" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                           <body name="RigRFLegDigit22" pos="0.0149954 -0.0251686 -0.0106196">
                             <joint name="RigRFLegDigit22_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.5487 2.9603" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                             <joint name="RigRFLegDigit22_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.7362 0.5709" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                             <joint name="RigRFLegDigit22_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.4813 0.7549" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                            <geom name="g_RigRFLegDigit22" fromto="0.00267384 -0.00448779 -0.0018936 0.011141 -0.0186989 -0.00789009" size="0.0214354" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                            <geom name="g_RigRFLegDigit22" fromto="0 0 0 -0.0145257 -0.0710312 0.000909641" size="0.03906" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                           </body>
                         </body>
                         <body name="RigRFLegDigit31" pos="-0.0176348 -0.0528785 -0.020677">
                           <joint name="RigRFLegDigit31_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.9465 0.6508" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                           <joint name="RigRFLegDigit31_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.3373 0.4974" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                           <joint name="RigRFLegDigit31_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.2704 0.5587" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                          <geom name="g_RigRFLegDigit31" fromto="0 0 0 -0.0330775 -0.00688453 -0.0108363" size="0.00261727" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                          <geom name="g_RigRFLegDigit31" fromto="0 0 0 -0.0179082 -0.00123281 0.01463" size="0.04394" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                           <body name="RigRFLegDigit32" pos="-0.0330775 -0.00688453 -0.0108363">
                             <joint name="RigRFLegDigit32_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.5672 2.9675" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                             <joint name="RigRFLegDigit32_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.2218 0.2991" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                             <joint name="RigRFLegDigit32_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.4973 0.9547" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                            <geom name="g_RigRFLegDigit32" fromto="-0.00518014 -0.00107817 -0.00169699 -0.0215837 -0.00449233 -0.00707096" size="0.0293722" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                            <geom name="g_RigRFLegDigit32" fromto="0 0 0 -0.0216431 -0.0653987 -0.00123223" size="0.03908" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                           </body>
                         </body>
                         <body name="RigRFLegDigit41" pos="-0.0176348 -0.0528785 -0.0206724">
                           <joint name="RigRFLegDigit41_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.9465 0.6564" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                           <joint name="RigRFLegDigit41_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.3273 0.4974" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                           <joint name="RigRFLegDigit41_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.2704 0.5587" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                          <geom name="g_RigRFLegDigit41" fromto="0 0 0 -0.0670339 0.025051 -0.0136535" size="0.0225412" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                          <geom name="g_RigRFLegDigit41" fromto="0 0 0 -0.0526622 0.0430356 -0.0141314" size="0.03506" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                           <body name="RigRFLegDigit42" pos="-0.0670339 0.025051 -0.0136535">
                             <joint name="RigRFLegDigit42_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.5910 2.9789" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                             <joint name="RigRFLegDigit42_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.9322 0.3552" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                             <joint name="RigRFLegDigit42_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.4680 0.9877" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                            <geom name="g_RigRFLegDigit42" fromto="-0.00511281 0.00191064 -0.0010414 -0.0213031 0.00796113 -0.00433906" size="0.0169075" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                            <geom name="g_RigRFLegDigit42" fromto="0 0 0 -0.0134373 -0.0524122 0.00230576" size="0.03186" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                           </body>
                         </body>
                       </body>
@@ -345,68 +345,68 @@
         <joint name="RigRBLeg1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.2017 1.3652" limited="true" armature="0.0136245" frictionloss="0.0735583" />
         <joint name="RigRBLeg1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.8350 0.8065" limited="true" armature="0.0136245" frictionloss="0.0735583" />
         <joint name="RigRBLeg1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.5588 0.6294" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-        <geom name="g_RigRBLeg1" fromto="-0.00484239 -0.0171579 -0.0443148 -0.0355113 -0.125829 -0.324978" size="0.0823" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+        <geom name="g_RigRBLeg1" fromto="-0.00484239 -0.0171579 -0.0443148 -0.0355113 -0.125829 -0.324978" size="0.0823" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
         <body name="RigRBLeg2" pos="-0.040353 -0.142981 -0.369292">
           <joint name="RigRBLeg2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.9384 1.9533" limited="true" armature="0.0136245" frictionloss="0.0735583" />
           <joint name="RigRBLeg2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.3522 0.2163" limited="true" armature="0.0136245" frictionloss="0.0735583" />
           <joint name="RigRBLeg2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.2096 0.2505" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-          <geom name="g_RigRBLeg2" fromto="0.00113632 0.0452354 -0.0395269 0.00833323 0.331729 -0.28986" size="0.0556823" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+          <geom name="g_RigRBLeg2" fromto="0.00113632 0.0452354 -0.0395269 0.00833323 0.331729 -0.28986" size="0.0556823" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
           <body name="RigRBLeg3" pos="0.00946937 0.376969 -0.329395">
             <joint name="RigRBLeg3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-2.0653 0.7891" limited="true" armature="0.0136245" frictionloss="0.0735583" />
             <joint name="RigRBLeg3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.3128 0.2391" limited="true" armature="0.0136245" frictionloss="0.0735583" />
             <joint name="RigRBLeg3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.5677 0.3864" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-            <geom name="g_RigRBLeg3" fromto="-0.00291416 -0.00541815 -0.0336971 -0.0213707 -0.0397334 -0.247111" size="0.0429559" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+            <geom name="g_RigRBLeg3" fromto="-0.00291416 -0.00541815 -0.0336971 -0.0213707 -0.0397334 -0.247111" size="0.0429559" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
             <body name="RigRBLegAnkle" pos="-0.0242842 -0.0451511 -0.280812">
               <joint name="RigRBLegAnkle_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.6330 2.6263" limited="true" armature="0.0136245" frictionloss="0.0735583" />
               <joint name="RigRBLegAnkle_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.2591 1.0120" limited="true" armature="0.0136245" frictionloss="0.0735583" />
               <joint name="RigRBLegAnkle_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.0438 1.0751" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-              <geom name="g_RigRBLegAnkle" fromto="-0.000606299 -0.00646798 -0.00260836 -0.00444621 -0.0474311 -0.0191277" size="0.0318979" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+              <geom name="g_RigRBLegAnkle" fromto="-0.000606299 -0.00646798 -0.00260836 -0.00444621 -0.0474311 -0.0191277" size="0.05967" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
               <body name="RigRBLegDigit11" pos="-0.00505252 -0.053899 -0.0217365">
                 <joint name="RigRBLegDigit11_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.6402 1.3340" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                 <joint name="RigRBLegDigit11_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.4323 0.4936" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                 <joint name="RigRBLegDigit11_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.5615 0.5787" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                <geom name="g_RigRBLegDigit11" fromto="0 0 0 0.0597353 -0.00843001 -0.014337" size="0.0197734" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                <geom name="g_RigRBLegDigit11" fromto="0 0 0 0.0457839 -0.00809329 -0.0295995" size="0.03492" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                 <body name="RigRBLegDigit12" pos="0.0597353 -0.00843001 -0.014337">
                   <joint name="RigRBLegDigit12_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.5909 1.6077" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                   <joint name="RigRBLegDigit12_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.2219 0.3731" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                   <joint name="RigRBLegDigit12_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.2751 0.4860" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                  <geom name="g_RigRBLegDigit12" fromto="0.00535295 -0.000755429 -0.00128478 0.0392555 -0.00553984 -0.00942214" size="0.0148268" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                  <geom name="g_RigRBLegDigit12" fromto="0 0 0 0.00438248 -0.0690329 -0.0231503" size="0.02670" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                 </body>
               </body>
               <body name="RigRBLegDigit21" pos="-0.00505252 -0.053899 -0.0217365">
                 <joint name="RigRBLegDigit21_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.6402 1.4642" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                 <joint name="RigRBLegDigit21_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.2985 0.3751" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                 <joint name="RigRBLegDigit21_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.5477 0.5801" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                <geom name="g_RigRBLegDigit21" fromto="0 0 0 0.0194333 -0.0272681 -0.0138767" size="0.0283842" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                <geom name="g_RigRBLegDigit21" fromto="0 0 0 0.00623835 -0.020434 -0.0264006" size="0.04578" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                 <body name="RigRBLegDigit22" pos="0.0194333 -0.0272681 -0.0138767">
                   <joint name="RigRBLegDigit22_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.5931 1.6085" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                   <joint name="RigRBLegDigit22_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.2135 0.2200" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                   <joint name="RigRBLegDigit22_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.1764 0.3037" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                  <geom name="g_RigRBLegDigit22" fromto="0.00297926 -0.00418023 -0.00212734 0.0124134 -0.0174181 -0.0088638" size="0.0212849" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                  <geom name="g_RigRBLegDigit22" fromto="0 0 0 -0.00574433 -0.083537 -0.0239325" size="0.03333" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                 </body>
               </body>
               <body name="RigRBLegDigit31" pos="-0.00505243 -0.053899 -0.0217365">
                 <joint name="RigRBLegDigit31_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.6402 1.4522" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                 <joint name="RigRBLegDigit31_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.6526 0.2965" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                 <joint name="RigRBLegDigit31_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.5516 0.5805" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                <geom name="g_RigRBLegDigit31" fromto="0 0 0 -0.0267235 -0.0258836 -0.0134044" size="0.0287769" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                <geom name="g_RigRBLegDigit31" fromto="0 0 0 -0.0201026 -0.0170241 -0.0239119" size="0.04580" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                 <body name="RigRBLegDigit32" pos="-0.0267235 -0.0258836 -0.0134044">
                   <joint name="RigRBLegDigit32_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.5868 1.6062" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                   <joint name="RigRBLegDigit32_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.3933 0.2506" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                   <joint name="RigRBLegDigit32_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.2699 0.3366" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                  <geom name="g_RigRBLegDigit32" fromto="-0.00375497 -0.00363707 -0.0018835 -0.0156455 -0.0151547 -0.00784786" size="0.0215859" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                  <geom name="g_RigRBLegDigit32" fromto="0 0 0 -0.0163716 -0.0798695 -0.0226697" size="0.03311" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                 </body>
               </body>
               <body name="RigRBLegDigit41" pos="-0.00505243 -0.0538999 -0.0217356">
                 <joint name="RigRBLegDigit41_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.6402 1.3133" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                 <joint name="RigRBLegDigit41_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.6527 0.2965" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                 <joint name="RigRBLegDigit41_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.5956 0.5801" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                <geom name="g_RigRBLegDigit41" fromto="0 0 0 -0.0708559 0.00342333 -0.0110613" size="0.0202511" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                <geom name="g_RigRBLegDigit41" fromto="0 0 0 -0.0603862 0.00808408 -0.0223114" size="0.03667" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                 <body name="RigRBLegDigit42" pos="-0.0708559 0.00342333 -0.0110613">
                   <joint name="RigRBLegDigit42_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.5832 1.6049" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                   <joint name="RigRBLegDigit42_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.4785 0.2689" limited="true" armature="0.0136245" frictionloss="0.0735583" />
                   <joint name="RigRBLegDigit42_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.4712 0.3759" limited="true" armature="0.0136245" frictionloss="0.0735583" />
-                  <geom name="g_RigRBLegDigit42" fromto="-0.0054839 0.000264948 -0.000856068 -0.040215 0.00194296 -0.00627785" size="0.0151867" density="1250.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                  <geom name="g_RigRBLegDigit42" fromto="0 0 0 -0.0166221 -0.0672555 -0.0249115" size="0.02770" density="1000.5" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                 </body>
               </body>
             </body>

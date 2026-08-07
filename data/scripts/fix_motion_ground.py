@@ -50,6 +50,8 @@ def main() -> None:
                     help="height the deepest body should end up at")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--report", type=int, default=12)
+    ap.add_argument("--stride", type=int, default=3,
+                    help="sample every Nth frame when measuring surfaces")
     args = ap.parse_args()
 
     out_dir = args.out_dir or args.in_dir
@@ -59,12 +61,44 @@ def main() -> None:
     if not args.dry_run:
         os.makedirs(out_dir, exist_ok=True)
 
+    # Measure the lowest COLLIDER SURFACE, not the lowest body origin.
+    # rigid_body_pos holds joint centres; a toe's origin can sit above the
+    # floor while its capsule -- and the skin around it -- reach well below.
+    # Measured on tiger walk clips: origins at +0.50 cm, surfaces at -3.50 cm,
+    # the offender being RigLFLegDigit32, a toe tip. Fixing to the origin left
+    # the feet visibly buried.
+    import mujoco
+    mj = mujoco.MjModel.from_xml_path(
+        f"protomotions/data/assets/mjcf/{args.robot}.xml")
+    md = mujoco.MjData(mj)
+
+    def lowest_surface(dof_row, root_pos, root_rot_xyzw):
+        md.qpos[:3] = root_pos
+        md.qpos[3:7] = root_rot_xyzw[[3, 0, 1, 2]]     # xyzw -> wxyz
+        md.qpos[7:] = dof_row
+        mujoco.mj_forward(mj, md)
+        lo = 1e9
+        for g in range(mj.ngeom):
+            r = mj.geom_size[g, 0]
+            z = md.geom_xpos[g][2]
+            if mj.geom_type[g] == mujoco.mjtGeom.mjGEOM_CAPSULE:
+                ax = md.geom_xmat[g].reshape(3, 3)[:, 2]
+                s = z - (abs(ax[2]) * mj.geom_size[g, 1] + r)
+            else:
+                s = z - r
+            lo = min(lo, s)
+        return lo
+
     rows = []
     for path in sorted(glob.glob(f"{args.in_dir}/*.motion")):
         name = os.path.basename(path)
         d = torch.load(path, weights_only=False, map_location="cpu")
         pos = d["rigid_body_pos"]
-        low = float(pos[:, :, 2].min())
+        dof = d["dof_pos"].numpy()
+        rp = pos.numpy()
+        rr = d["rigid_body_rot"].numpy()
+        low = min(lowest_surface(dof[t], rp[t, 0], rr[t, 0])
+                  for t in range(0, len(dof), args.stride))
         dz = args.clearance - low
         if dz <= 1e-6:                      # already clear
             rows.append((name, low, 0.0))
