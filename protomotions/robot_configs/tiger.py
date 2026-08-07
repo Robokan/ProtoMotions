@@ -35,9 +35,33 @@ CONTROL_OVERRIDES = {
     # Catch-all FIRST (later matches override): digits, claws, tongue,
     # ears, whiskers and every other small bone of the full skeleton.
     r".*_[xyz]": _pd(12.5),
+    # Spine and neck are sized PER JOINT from the static cantilever load, not
+    # from one blanket value. Measured on the 271 kg body: the mass forward of
+    # RigSpine1 is 199 kg on a 91 cm lever, so merely HOLDING the pose wants
+    # 1778 N.m against the 625 N.m it had -- a 0.35x margin, meaning the
+    # actuator could not support the animal unaided, let alone accelerate it.
+    # The legs carry most of that load on a quadruped, so it was not fatal,
+    # but it left nothing for a sprint, and the sprint and jump clips ranked
+    # worst in scan_actuator_feasibility.py.
+    #
+    # Each value is 1.5x its own static demand, so the margin is uniform down
+    # the chain rather than generous at the tail and absent at the root:
+    #   Spine1 199 kg @ 91 cm -> 1778 N.m    Neck1 40.5 kg @ 38 cm -> 150 N.m
+    #   Spine2 174 kg @ 73 cm -> 1247 N.m    Neck2 35.0 kg @ 33 cm -> 113 N.m
+    #   Spine3 148 kg @ 54 cm ->  789 N.m    Neck3 29.5 kg @ 28 cm ->  82 N.m
+    # Chest, Neck4 and Head already cleared 1.5x and keep their values.
+    # _pd() ties stiffness to effort (kp = 2 x effort); that is safe here
+    # because BUILT_IN_PD maps to ImplicitActuatorCfg, whose PD is integrated
+    # implicitly and is unconditionally stable at any gain.
     r"RigSpine[0-9]_[xyz]": _pd(625.1),
+    r"RigSpine1_[xyz]": _pd(2667.1),
+    r"RigSpine2_[xyz]": _pd(1870.1),
+    r"RigSpine3_[xyz]": _pd(1183.1),
     r"RigChest_[xyz]": _pd(625.1),
     r"RigNeck[0-9]_[xyz]": _pd(112.5),
+    r"RigNeck1_[xyz]": _pd(225.5),
+    r"RigNeck2_[xyz]": _pd(170.0),
+    r"RigNeck3_[xyz]": _pd(122.6),
     r"RigHead_[xyz]": _pd(75.0),
     r"RigJaw1_[xyz]": _pd(62.5),
     r"RigTail[0-9]_[xyz]": _pd(25.0),
