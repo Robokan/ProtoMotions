@@ -31,12 +31,28 @@ parser.add_argument(
     default="isaacgym",
     help="Simulator to use (isaacgym, isaaclab, newton)",
 )
+def _known_robots():
+    """Robot names the factory can build, from robot_configs/*.py.
+
+    Derived rather than hand-listed: this used to be a literal that drifted
+    from ROBOT_SPECS below, so adding utahraptor to one and not the other got
+    past argparse and then died with KeyError after a 14-second Isaac boot.
+    """
+    from pathlib import Path
+
+    d = Path(__file__).resolve().parent.parent / "protomotions" / "robot_configs"
+    return sorted(
+        p.stem for p in d.glob("*.py")
+        if p.stem not in ("__init__", "base", "factory")
+    )
+
+
 parser.add_argument(
     "--robot",
     type=str,
-    choices=["g1", "rigv1", "h1_2", "smpl", "soma23", "atlas", "t800", "samurai", "raptor", "utahraptor", "tiger", "go2", "anymal_d", "dog_v2"],
+    choices=_known_robots(),
     default="g1",
-    help="Robot to load (g1, rigv1, h1_2, smpl, soma23, atlas, or t800)",
+    help="Robot to load (any robot_configs/<name>.py)",
 )
 parser.add_argument("--headless", action="store_true", help="Run in headless mode")
 parser.add_argument(
@@ -169,16 +185,24 @@ if args.robot == "samurai" and args.overlay_character is None:
         "protomotions/data/assets/overlay/red_samurai.usd")
     args.overlay_skeleton = "ue"
     args.overlay_root_only = True
-elif args.robot in ("utahraptor", "raptor", "tiger") and args.overlay_character is None:
+elif args.robot in ("utahraptor", "raptor", "tiger"):
     # fbx2robot creatures: the character USD shares the robot's skeleton,
     # so the overlay map is the identity (derived from kinematic info).
-    args.overlay_character = (
-        f"protomotions/data/assets/overlay/{args.robot}.usd")
-    args.overlay_skeleton = "identity"
+    #
+    # This runs even when --overlay-character was given EXPLICITLY. It used to
+    # be gated on `overlay_character is None`, so naming the file by hand --
+    # which you must do to pick e.g. the black raptor -- silently left
+    # overlay_skeleton at its "cc" default. That is the Reallusion HUMANOID
+    # map, which matches no bone on a quadruped, so every body went undriven
+    # and the mesh stood frozen while the robot moved. inference_agent.py
+    # always applied identity for creatures; this file did not.
+    if args.overlay_character is None:
+        args.overlay_character = (
+            f"protomotions/data/assets/overlay/{args.robot}.usd")
+    if args.overlay_skeleton == "cc":          # i.e. left at the default
+        args.overlay_skeleton = "identity"
     args.overlay_root_only = True
     if not args.overlay_drive.strip():
-        args.overlay_drive = "all"
-    if not args.overlay_drive:
         args.overlay_drive = "all"
     args.overlay_offset = 0.0
 
@@ -443,7 +467,10 @@ class MotionVisualizerSmoothness:
     ):
         self.motion_files = [Path(f) for f in motion_files]
         self.robot_name = robot_name
-        self.robot_spec = ROBOT_SPECS[robot_name]
+        # Absent entries mean "no extra body markers", not an error -- every
+        # ROBOT_SPECS entry is an empty viz_bodies list anyway, so a missing
+        # one is indistinguishable from a present one in behaviour.
+        self.robot_spec = ROBOT_SPECS.get(robot_name, RobotSpec(viz_bodies=[]))
         self.num_envs = len(motion_files)
         self.simulator_type = simulator_type
         self.headless = headless

@@ -11,7 +11,11 @@ and claw tips erode at the 0.14 m prune),
 tail 8 kg, torso 122 kg, COM over the four paws). Quadruped: all four ankles are contact feet;
 front ankles double as the "hands" for the battle tables later (paw
 swipes), jaw is the bite. PD gains follow the dog_v2 translation
-(kp = 2*effort, kd = kp/10), efforts scaled for 200 kg.
+(kp = 2*effort, kd = kp/10), efforts scaled for 270 kg.
+# Rescaled 2026-08-06 when the body was fitted to the mesh and
+# scaled to a real large tiger: 3.05 m nose-to-tail, 270 kg at
+# water density. Lengths moved by 0.9261 and mass by 270/200, so
+# torque (m*g*L) moved by 1.2503 -- every effort below carries it.
 See RAPTOR_TIGER_PLAN.md.
 """
 
@@ -30,28 +34,28 @@ from protomotions.robot_configs.dog_v2 import _pd
 CONTROL_OVERRIDES = {
     # Catch-all FIRST (later matches override): digits, claws, tongue,
     # ears, whiskers and every other small bone of the full skeleton.
-    r".*_[xyz]": _pd(10.0),
-    r"RigSpine[0-9]_[xyz]": _pd(500.0),
-    r"RigChest_[xyz]": _pd(500.0),
-    r"RigNeck[0-9]_[xyz]": _pd(90.0),
-    r"RigHead_[xyz]": _pd(60.0),
-    r"RigJaw1_[xyz]": _pd(50.0),
-    r"RigTail[0-9]_[xyz]": _pd(20.0),
-    r"RigTail1_[xyz]": _pd(120.0),
-    r"RigTail2_[xyz]": _pd(75.0),
-    r"RigTail3_[xyz]": _pd(45.0),
-    r"Rig[LR]BLeg1_[xyz]": _pd(280.0),   # hind hip
-    r"Rig[LR]BLeg2_[xyz]": _pd(240.0),   # hind knee
-    r"Rig[LR]BLeg3_[xyz]": _pd(160.0),   # hock
-    r"Rig[LR]BLegAnkle_[xyz]": _pd(80.0),
-    r"Rig[LR]FLegCollarbone_[xyz]": _pd(200.0),
-    r"Rig[LR]ShoulderBlade1_[xyz]": _pd(200.0),
-    r"Rig[LR]FLeg1_[xyz]": _pd(240.0),   # shoulder
-    r"Rig[LR]FLeg2_[xyz]": _pd(200.0),   # elbow
-    r"Rig[LR]FLeg3_[xyz]": _pd(140.0),   # carpus
-    r"Rig[LR]FLegAnkle_[xyz]": _pd(80.0),
+    r".*_[xyz]": _pd(12.5),
+    r"RigSpine[0-9]_[xyz]": _pd(625.1),
+    r"RigChest_[xyz]": _pd(625.1),
+    r"RigNeck[0-9]_[xyz]": _pd(112.5),
+    r"RigHead_[xyz]": _pd(75.0),
+    r"RigJaw1_[xyz]": _pd(62.5),
+    r"RigTail[0-9]_[xyz]": _pd(25.0),
+    r"RigTail1_[xyz]": _pd(150.0),
+    r"RigTail2_[xyz]": _pd(93.8),
+    r"RigTail3_[xyz]": _pd(56.3),
+    r"Rig[LR]BLeg1_[xyz]": _pd(350.1),   # hind hip
+    r"Rig[LR]BLeg2_[xyz]": _pd(300.1),   # hind knee
+    r"Rig[LR]BLeg3_[xyz]": _pd(200.0),   # hock
+    r"Rig[LR]BLegAnkle_[xyz]": _pd(100.0),
+    r"Rig[LR]FLegCollarbone_[xyz]": _pd(250.0),
+    r"Rig[LR]ShoulderBlade1_[xyz]": _pd(250.0),
+    r"Rig[LR]FLeg1_[xyz]": _pd(300.1),   # shoulder
+    r"Rig[LR]FLeg2_[xyz]": _pd(250.0),   # elbow
+    r"Rig[LR]FLeg3_[xyz]": _pd(175.0),   # carpus
+    r"Rig[LR]FLegAnkle_[xyz]": _pd(100.0),
     # digits: light, like the raptor's toes/fingers
-    r"Rig[LR][FB]LegDigit\d\d_[xyz]": _pd(8.0),
+    r"Rig[LR][FB]LegDigit\d\d_[xyz]": _pd(10.0),
 }
 
 
@@ -140,7 +144,7 @@ class TigerRobotConfig(RobotConfig):
         )
     )
 
-    default_root_height: float = 1.14
+    default_root_height: float = 1.0558
     contact_bodies: List[str] = None
 
     control: ControlConfig = field(
