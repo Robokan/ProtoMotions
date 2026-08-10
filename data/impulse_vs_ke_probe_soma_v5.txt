@@ -1,0 +1,12 @@
+hit events measured: 4585   window 80 ms
+
+quantity                    median        mean         p90         max
+impulse  [N.s]               5.130       6.412      12.666      52.422
+current KE  [J]              0.004       0.039       0.088       2.813
+closing speed [m/s]          0.093       0.171       0.416       2.320
+
+impulse / KE              1057.628   58904.260   48002.57010245759.147
+
+A damage_to_health for impulse that keeps today's median hit unchanged:
+  0.05 HP/J x median KE 0.00 J = 0.000 HP
+  -> impulse HP/(N.s) = 0.0000

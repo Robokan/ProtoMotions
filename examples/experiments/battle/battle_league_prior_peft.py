@@ -77,6 +77,17 @@ def configure_robot_and_simulator(
 ):
     # Contact sensors on every strike/damage body so the hit integrator sees
     # net forces there (feet stay included for ground contact bookkeeping).
+    #
+    # The robot's DAMAGE TABLE is appended explicitly: a damage body with
+    # no sensor reads a constant 0 N and can never score, which had
+    # silently happened to the pelvis row on every robot and to SOMA's
+    # Spine1/Spine2 liver-shot rows. Deriving from the same table
+    # BattleControlConfig consumes makes the invariant structural.
+    from protomotions.envs.battle.robot_tables import battle_table_kwargs
+    _damage_rows = battle_table_kwargs(robot_cfg, args.robot_name).get(
+        "damage_body_names",
+        ["Head", "Chest", "Spine2", "Spine1", "Hips"],  # BattleControlConfig default
+    )
     robot_cfg.update_fields(
         contact_bodies=[
             "all_left_foot_bodies",
@@ -85,8 +96,9 @@ def configure_robot_and_simulator(
             "all_right_hand_bodies",
             "head_body_name",
             "torso_body_name",
-        ],
+        ] + list(_damage_rows),
     )
+    robot_cfg.contact_bodies = list(dict.fromkeys(robot_cfg.contact_bodies))
     # Match partners share an arena: envs must be allowed to collide.
     if hasattr(simulator_cfg, "filter_env_collisions"):
         simulator_cfg.filter_env_collisions = False

@@ -116,12 +116,30 @@ BATTLE_CONTACT_BODIES = [
 ]
 
 
+def _contact_bodies_for(cfg: RobotConfig, robot_name: str):
+    """The shared semantic list plus THIS robot's damage table.
+
+    A damage body without a contact sensor reads a constant 0 N and can
+    never score — which had silently happened to the pelvis row on every
+    robot (Hips / Waist / LINK_BASE / RigPelvis) and SOMA's Spine1/Spine2.
+    Deriving from the same table BattleControlConfig consumes makes the
+    invariant structural: a future damage row cannot forget its sensor."""
+    from protomotions.envs.battle.robot_tables import battle_table_kwargs
+    damage_rows = battle_table_kwargs(cfg, robot_name).get(
+        "damage_body_names",
+        ["Head", "Chest", "Spine2", "Spine1", "Hips"],  # BattleControlConfig default
+    )
+    return BATTLE_CONTACT_BODIES + list(damage_rows)
+
+
 def configure_robot_and_simulator(
     robot_cfg: RobotConfig, simulator_cfg: SimulatorConfig, args: argparse.Namespace
 ):
     # Contact sensors on strike/damage bodies (semantic names resolve
     # per robot). Same list as the GPC battle league.
-    robot_cfg.update_fields(contact_bodies=BATTLE_CONTACT_BODIES)
+    robot_cfg.update_fields(
+        contact_bodies=_contact_bodies_for(robot_cfg, args.robot_name))
+    robot_cfg.contact_bodies = list(dict.fromkeys(robot_cfg.contact_bodies))
     if hasattr(simulator_cfg, "filter_env_collisions"):
         simulator_cfg.filter_env_collisions = False
 
@@ -130,7 +148,9 @@ def configure_robot_and_simulator(
         # two-articulation simulator.
         from protomotions.robot_configs.factory import robot_config as build_robot
         opp_cfg = build_robot(_arena_body(args))
-        opp_cfg.update_fields(contact_bodies=BATTLE_CONTACT_BODIES)
+        opp_cfg.update_fields(
+            contact_bodies=_contact_bodies_for(opp_cfg, _arena_body(args)))
+        opp_cfg.contact_bodies = list(dict.fromkeys(opp_cfg.contact_bodies))
         simulator_cfg.opponent_robot_config = opp_cfg
         simulator_cfg._target_ = (
             "protomotions.simulator.isaaclab.multi_robot_simulator."
@@ -207,10 +227,16 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
     battle_control = BattleControlConfig(
         arena_size=ARENA_SIZE,
         arena_spacing=ARENA_SPACING,
-        raw_health_damage=True,
-        damage_to_health=0.005,
+        # IMPULSE damage model (2026-08-10) — same switch and constants as
+        # battle_league_ase.py; see the comment there and HitStateConfig.
+        # This league is the one that PROVED the problem: under the KE gate
+        # it trained to health_mean 1.0000 (nobody ever landed a scoring
+        # hit) and its exhibited fighters keep 2-4 m apart.
+        impulse_damage=True,
+        damage_per_impulse=0.004,
+        stun_raw_impulse_ref=40.0,
         max_hp_per_hit=0.25,
-        hit_state=HitStateConfig(strike_min_speed=1.5, ke_reward_ref=5.0),
+        hit_state=HitStateConfig(impulse_window=0.08, impulse_reward_ref=12.0),
         stun_gates_ko=True,
         **battle_table_kwargs(robot_cfg, args.robot_name),
     )

@@ -32,21 +32,27 @@ turns into a shove would keep scoring (this is how an earlier
 force-based model drained 100% health in 3 s of guard-grinding).
 Integration is therefore bounded to --window-ms after each event onset.
 
-FINDING (2026-08-04, first run on soma_battle_league_v5): impulse cannot
-be measured on most damage bodies yet. Contact sensors are created only
-for ``robot_config.contact_bodies`` -- for soma23 that is 8 bodies
-(feet, toes, hands, head, chest) -- while the battle damage set is
-larger. The probe logged hit events on ``LeftShin`` with
-``sensor=NO``: no sensor, so no force, so no impulse. Sensored bodies
-also showed ``force_matrix_w`` with a single filter (the ground) and
-``|net| = 0`` between strikes, i.e. the residual channel works but has
-nothing to report where there is no sensor.
+FINDING (2026-08-04) — RETRACTED 2026-08-08. The first run reported hit
+events on ``LeftShin`` with ``sensor=NO`` and concluded that most damage
+bodies lack sensors. That was a bug in this probe, not a property of the
+system: ``damage_body_ids`` index the COMMON body order while the hook
+printed them through ``sim._robot.data.body_names`` (SIMULATOR order) and
+built its force tensor in simulator order too. The events were real hits
+on sensored bodies, mislabeled. An event can only fire where
+``f_mag > force_on``, which is itself proof the body had a live sensor.
 
-Before an impulse model can be calibrated, the damage bodies need
-sensors: extend ``contact_bodies`` to cover them (costs one sensor per
-body per env) and re-run this probe. Worth noting the same gap affects
-the CURRENT model, which needs contact force on a damage body to fire a
-hit at all.
+CORRECTED FINDING (2026-08-08): head and torso — the rows that decide
+fights — are sensored on every battle robot, which is why the leagues
+train. The one real gap is the PELVIS damage row (Hips / Waist /
+LINK_BASE / RigPelvis: always the robot's root body), absent from the
+semantic sensor list on all six robots, plus SOMA's Spine1/Spine2. Those
+rows read a constant 0 N and have never been able to score.
+``probe_impulse_hook.install()`` now injects those sensors into replayed
+configs, and the battle experiments sensor them for future runs. The
+``force_matrix_w`` residual channel (opponent = net - ground) works on
+every sensored body; sensors already record per-physics-step history
+(``history_length=decimation``), so impulse integration has full
+resolution.
 
 Run (headless is fine; a fight needs no display):
 

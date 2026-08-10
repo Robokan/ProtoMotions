@@ -150,6 +150,23 @@ class BattleControlConfig(ControlComponentConfig):
     # only genuine strikes concuss. False (default): the original
     # log-normalized damage model every existing frozen config was built with.
     raw_health_damage: bool = False
+    # IMPULSE damage model (supersedes both of the above when True; mutually
+    # exclusive with raw_health_damage). Reward and health both come from the
+    # contact impulse integrated over hit_state.impulse_window after each
+    # contact onset — the solver's own measure of momentum transferred, which
+    # includes the whole kinetic chain behind the strike. Motivation and the
+    # 2026-08-10 soma calibration live in HitStateConfig. There is NO impact-
+    # speed gate in this mode: the 2.5 m/s KE gate is what taught the atlas
+    # HLC league keep-away (health_mean 1.0000 over its whole training life).
+    impulse_damage: bool = False
+    # HP removed per N.s of region-weighted windowed impulse. Calibrated on
+    # the soma distribution (median 5.2 / p90 12.8 / max 52.4 N.s): a firm
+    # p90 hit removes ~5%, the hardest measured slam ~21% (head hits double
+    # via the region multiplier, into the max_hp_per_hit cap).
+    damage_per_impulse: float = 0.004
+    # N.s counting as one full unit of stun input in impulse mode — set near
+    # a genuine slam so only committed head hits concuss.
+    stun_raw_impulse_ref: float = 40.0
     # KE (joules) counting as "one full unit" of stun input in KE mode — set
     # near a solid strike's energy so one clean head hit concusses briefly and
     # body hits barely register.
@@ -396,9 +413,14 @@ class BattleControl(ControlComponent):
             # KE mode uses the same per-event physics for the dense reward
             # (continuous, ungated log1p(KE/ref)) as for health (speed-gated).
             reward_from_event_ke=config.raw_health_damage,
+            reward_from_event_impulse=config.impulse_damage,
             damage_mask=self._damage_mask,
             strike_mask=self._strike_mask,
         )
+        if config.impulse_damage and config.raw_health_damage:
+            raise ValueError(
+                "impulse_damage and raw_health_damage are mutually exclusive"
+            )
         self._stun_region_weights = self._stun_region_weights * self._damage_mask
 
         # Fight state
@@ -781,7 +803,7 @@ class BattleControl(ControlComponent):
                     torch.ones_like(self.strike_body_ids, dtype=torch.float)
                 )
 
-        taken, taken_by_group, taken_per_body, ke_per_body = self.hit_state.step(
+        taken, taken_by_group, taken_per_body, dmg_per_body = self.hit_state.step(
             contact_forces=contact_forces,
             body_pos=body_pos,
             body_vel=body_vel,
@@ -792,13 +814,23 @@ class BattleControl(ControlComponent):
         # REWARD stream: log-normalized hit energy (stable magnitudes).
         self.hit_energy_taken = taken
         self.hit_energy_dealt = taken[partner]
-        # HEALTH: in KE mode, one deposit per qualifying strike —
-        # damage_to_health (HP/joule) x KE x region multiplier, each hit capped
-        # at max_hp_per_hit. Otherwise the original log-normalized model.
-        if cfg.raw_health_damage:
+        # HEALTH — three models, one shape:
+        #  impulse mode: one deposit of windowed impulse (N.s) per bout,
+        #    damage_per_impulse x J x region multiplier, capped per hit;
+        #  KE mode: one deposit per qualifying strike, damage_to_health
+        #    (HP/joule) x KE x region multiplier, capped per hit;
+        #  legacy: log-normalized accumulated energy stream.
+        if cfg.impulse_damage:
+            hp_per_hit = (
+                cfg.damage_per_impulse
+                * dmg_per_body
+                * self.hit_state.damage_multipliers
+            ).clamp_max(cfg.max_hp_per_hit)
+            self.health = (self.health - hp_per_hit.sum(dim=-1)).clamp_min(0.0)
+        elif cfg.raw_health_damage:
             hp_per_hit = (
                 cfg.damage_to_health
-                * ke_per_body
+                * dmg_per_body
                 * self.hit_state.damage_multipliers
             ).clamp_max(cfg.max_hp_per_hit)
             hp_loss = hp_per_hit.sum(dim=-1)
@@ -813,9 +845,14 @@ class BattleControl(ControlComponent):
         # KE mode: stun comes from the same per-hit kinetic energy as health
         # (normalized by stun_raw_energy_ref), so pushes and taps deposit zero
         # stun and the stun_gates_ko concussion gate means what it says.
-        if cfg.raw_health_damage:
+        if cfg.impulse_damage:
             stun_input = (
-                (ke_per_body / max(cfg.stun_raw_energy_ref, 1e-6))
+                (dmg_per_body / max(cfg.stun_raw_impulse_ref, 1e-6))
+                * self._stun_region_weights
+            ).sum(dim=-1)
+        elif cfg.raw_health_damage:
+            stun_input = (
+                (dmg_per_body / max(cfg.stun_raw_energy_ref, 1e-6))
                 * self._stun_region_weights
             ).sum(dim=-1)
         else:

@@ -70,6 +70,21 @@ def configure_robot_and_simulator(
 ):
     # Contact sensors on strike/damage bodies (semantic names resolve
     # per robot). Same list as the GPC battle league.
+    #
+    # THE DAMAGE TABLE IS APPENDED EXPLICITLY. A damage body without a
+    # contact sensor reads a constant 0 N and can never score a hit — and
+    # that had silently happened on every robot: the semantic list below
+    # has no pelvis entry, while every derived damage table has a pelvis
+    # row (Hips / Waist / LINK_BASE / RigPelvis), and SOMA's mid-torso
+    # liver-shot rows (Spine1/Spine2) shipped without sensors too.
+    # Deriving from the same table BattleControlConfig consumes makes the
+    # invariant structural: a future damage row cannot forget its sensor.
+    from protomotions.envs.battle.robot_tables import battle_table_kwargs
+    _damage_rows = battle_table_kwargs(robot_cfg, args.robot_name).get(
+        "damage_body_names",
+        # BattleControlConfig defaults (soma-family) as the fallback
+        ["Head", "Chest", "Spine2", "Spine1", "Hips"],
+    )
     robot_cfg.update_fields(
         contact_bodies=[
             "all_left_foot_bodies",
@@ -78,8 +93,10 @@ def configure_robot_and_simulator(
             "all_right_hand_bodies",
             "head_body_name",
             "torso_body_name",
-        ],
+        ] + list(_damage_rows),
     )
+    # semantics + damage rows overlap (Head, Chest); one sensor per body
+    robot_cfg.contact_bodies = list(dict.fromkeys(robot_cfg.contact_bodies))
     if hasattr(simulator_cfg, "filter_env_collisions"):
         simulator_cfg.filter_env_collisions = False
 
@@ -119,10 +136,19 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
     battle_control = BattleControlConfig(
         arena_size=ARENA_SIZE,
         arena_spacing=ARENA_SPACING,
-        raw_health_damage=True,
-        damage_to_health=0.005,
+        # IMPULSE damage model (2026-08-10): reward and health from the
+        # windowed contact impulse — the solver's momentum transfer, whole
+        # kinetic chain included. Replaces KE-at-onset, whose 70 J-scale
+        # reward and speed gating paid ~nothing at the closing speeds real
+        # fights produce (soma exhibition: 4155 events, ALL under 2.5 m/s)
+        # and trained the atlas HLC league into keep-away (health 1.0000
+        # for its entire life). Constants from that soma calibration; see
+        # HitStateConfig for the full derivation.
+        impulse_damage=True,
+        damage_per_impulse=0.004,
+        stun_raw_impulse_ref=40.0,
         max_hp_per_hit=0.25,
-        hit_state=HitStateConfig(strike_min_speed=0.0, ke_reward_ref=5.0),
+        hit_state=HitStateConfig(impulse_window=0.08, impulse_reward_ref=12.0),
         stun_gates_ko=True,
         **battle_table_kwargs(robot_cfg, args.robot_name),
     )

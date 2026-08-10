@@ -18,9 +18,82 @@ import torch
 _STATE = {}
 
 
+def _install_pelvis_sensor() -> None:
+    """Extend the replayed config's contact sensors to the pelvis damage row.
+
+    The probe replays a RESOLVED config from an old training run, and those
+    runs sensored hands/feet/head/torso only — every robot's pelvis damage
+    body (Hips / Waist / LINK_BASE / RigPelvis: always the root) reads a
+    constant 0 N, so pelvis hits can neither score in the FSM nor be
+    measured here. Wrapping SceneCfg.__init__ appends the root body (plus
+    Waist/Spine1/Spine2 where they exist) to contact_bodies before the
+    sensors are built. The env sizes contact_body_ids from the same mutated
+    config object, so both sides stay consistent. Policy obs are unaffected
+    (these experiments run observe_contacts=False).
+
+    TIMING: install() runs before Isaac Sim boots, and the scene module
+    transitively imports pxr, which only exists once the SimulationApp is
+    up — importing it here crashes with ModuleNotFoundError. isaaclab.app
+    is the one isaaclab module that IS importable pre-boot (it is the
+    bootstrap), so the scene patch is deferred to just after
+    AppLauncher.__init__ finishes.
+    """
+    from isaaclab.app import AppLauncher
+
+    if getattr(AppLauncher, "_probe_pelvis_deferred", False):
+        return
+    orig_launch = AppLauncher.__init__
+
+    def launch_then_patch(self, *args, **kwargs):
+        orig_launch(self, *args, **kwargs)
+        _apply_scene_patch()
+
+    AppLauncher.__init__ = launch_then_patch
+    AppLauncher._probe_pelvis_deferred = True
+
+
+def _apply_scene_patch() -> None:
+    """Wrap SceneCfg.__init__ — only callable once the app is running.
+
+    The idempotence marker lives on the MODULE, never on SceneCfg:
+    InteractiveScene._add_entities_from_cfg iterates every attribute of the
+    scene config as an asset definition, and a stray `_probe_pelvis_installed
+    = True` on the class dies with "Unknown asset config type".
+    """
+    from protomotions.simulator.isaaclab.utils import scene as scene_mod
+
+    if getattr(scene_mod, "_probe_pelvis_installed", False):
+        return
+    orig = scene_mod.SceneCfg.__init__
+
+    def patched(self, config, robot_config, *args, **kwargs):
+        cb = getattr(robot_config, "contact_bodies", None)
+        if cb is not None:
+            body_names = list(robot_config.kinematic_info.body_names)
+            # Pelvis damage row per known battle robot: usually the root
+            # body, EXCEPT atlas, whose root is Hip while its damage row is
+            # Waist (so "root" alone missed it). Production experiments now
+            # derive this from battle_table_kwargs; the probe replays OLD
+            # resolved configs where the robot name is not at hand, so it
+            # enumerates the known pelvis/mid-torso rows instead.
+            extra = [body_names[0]]
+            extra += [b for b in ("Waist", "Spine1", "Spine2")
+                      if b in body_names]
+            added = [b for b in extra if b not in cb]
+            if added:
+                cb.extend(added)
+                print(f"[probe] added contact sensors for: {added}", flush=True)
+        return orig(self, config, robot_config, *args, **kwargs)
+
+    scene_mod.SceneCfg.__init__ = patched
+    scene_mod._probe_pelvis_installed = True
+
+
 def install() -> None:
     """Monkeypatch BattleControl.step to measure alongside it."""
     import protomotions.envs.battle.control as control_mod
+
+    _install_pelvis_sensor()
 
     Control = control_mod.BattleControl
     if getattr(Control, "_impulse_probe_installed", False):
@@ -35,12 +108,21 @@ def install() -> None:
         Every contact sensor is configured with filter_prim_paths_expr
         (ground + objects), so force_matrix_w holds exactly what those
         contribute; the residual is the opponent.
+
+        ORDER MATTERS: hit_state's damage_body_ids index the COMMON body
+        order (robot_config.kinematic_info.body_names), not the simulator's.
+        The first version of this hook built the tensor in simulator order
+        and gathered it with common-order ids — wrong columns — and its
+        event printout mapped common ids through simulator names, which is
+        how a real Head/Chest hit got reported as "LeftShin, sensor=NO" and
+        a false "damage bodies have no sensors" finding was born. The
+        sensor map is keyed by NAME, so building in common order is enough.
         """
         sim = self.env.simulator
         smap = getattr(sim, "_contact_sensor_map", None)
         if not smap:
             return None
-        names = list(sim._robot.data.body_names)
+        names = list(self.env.robot_config.kinematic_info.body_names)  # COMMON
         out = torch.zeros(sim.num_envs, len(names), 3, device=sim.device)
         for bi, bn in enumerate(names):
             sensor = smap.get(bn)
@@ -105,7 +187,10 @@ def install() -> None:
                 e, dq = fired.nonzero(as_tuple=False).tolist()[0]
                 bi = int(d_ids[e, dq])
                 sim = self.env.simulator
-                bn = list(sim._robot.data.body_names)[bi]
+                # damage_body_ids are COMMON-order — resolve the name in the
+                # same order (see _opponent_forces docstring for the bug this
+                # fixes).
+                bn = list(self.env.robot_config.kinematic_info.body_names)[bi]
                 sen = sim._contact_sensor_map.get(bn)
                 nf = (sen.data.net_forces_w[e, 0].norm().item()
                       if sen is not None else float("nan"))
@@ -125,7 +210,26 @@ def install() -> None:
             st["left"] = (st["left"] - 1).clamp_min(0)
             st["steps"] += 1
             if st["steps"] % 100 == 0:
-                print(f"[probe] step {st['steps']} events={len(st['rows'])}", flush=True)
+                # Fight telemetry: distinguishes "fighting but no qualifying
+                # hits" from "fallen/flailing and never engaging" (the two
+                # explanations for events=0). Rows [N:2N] are the partners
+                # of [0:N] in the paired-env layout.
+                try:
+                    rs = self.env.simulator.get_robot_state()
+                    root = rs.root_pos
+                    n2 = root.shape[0] // 2
+                    pair_d = (root[:n2, :2] - root[n2:, :2]).norm(dim=-1)
+                    print(
+                        f"[probe] step {st['steps']} events={len(st['rows'])} "
+                        f"| root z mean {float(root[:, 2].mean()):.2f} "
+                        f"min {float(root[:, 2].min()):.2f} "
+                        f"| pair dist mean {float(pair_d.mean()):.2f} "
+                        f"min {float(pair_d.min()):.2f} m",
+                        flush=True,
+                    )
+                except Exception:
+                    print(f"[probe] step {st['steps']} events={len(st['rows'])}",
+                          flush=True)
                 _dump(st, out_path, window_ms)
         except Exception as exc:
             if not _STATE.get("warned"):

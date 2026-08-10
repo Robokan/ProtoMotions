@@ -57,6 +57,37 @@ class HitStateConfig:
     # mode only), on top of log1p(KE/ref). Makes "land a touch" compete with
     # dense facing while KE still ranks hardness. 0 = off (legacy).
     hit_flat: float = 0.0
+    # --- IMPULSE damage model -------------------------------------------
+    # Contact impulse J = integral |F| dt over the first impulse_window
+    # seconds after a contact ONSET (the FSM rising edge), one deposit per
+    # bout. The articulated solver resolves the effective mass of the whole
+    # kinetic chain, so J captures "arm and torso behind the punch" that
+    # KE-with-striker-mass structurally cannot (a T800 fist collider on a
+    # 0.001 kg wrist frame scores ~0 J for any punch; its impulse is real).
+    #
+    # WHY THIS EXISTS (measured, 2026-08-10, soma_battle_league_v5
+    # exhibition, 4155 contact events): real fights make contact at
+    # 0.09 m/s median / 2.32 m/s max closing speed — every single event
+    # below the 2.5 m/s KE health gate and worth ~0 on the 70 J KE reward
+    # reference. Under those incentives the atlas HLC league trained to
+    # health_mean == 1.0000 for its entire life and converged to keep-away.
+    # The same events carry a well-shaped impulse distribution: median
+    # 5.2 N.s, p90 12.8, max 52.4 — contact is measurable and rankable
+    # exactly where KE is blind.
+    #
+    # Push/grind protection is STRUCTURAL, not a penalty: one onset opens
+    # one window (~1-2 control steps); after it closes nothing accrues
+    # until contact force drops below force_off AND the per-body cooldown
+    # expires. A sustained push is one small deposit, ever. (This is what
+    # killed the old F*v model: it kept accruing during sustained contact
+    # and guard-grinding drained 100% health in 3 s.)
+    impulse_window: float = 0.08  # s; a real impact lasts ~50-100 ms
+    # log1p reference: reward = log1p(J / impulse_reward_ref). p90 of the
+    # soma calibration -> a firm touch (5 N.s) pays ~0.35, the hardest
+    # measured slam (52 N.s) ~1.7. log1p (not tanh) so harder still ranks
+    # higher; squashing bounds any depenetration artifact to ~one reward
+    # unit -- the accepted price for stability.
+    impulse_reward_ref: float = 12.0  # N.s (soma p90, 2026-08-10)
 
 
 class BattleHitState:
@@ -81,6 +112,7 @@ class BattleHitState:
         strike_multipliers: Tensor = None,
         strike_body_masses: Tensor = None,
         reward_from_event_ke: bool = False,
+        reward_from_event_impulse: bool = False,
         damage_mask: Tensor = None,
         strike_mask: Tensor = None,
         e0_block_split: int = None,
@@ -147,6 +179,15 @@ class BattleHitState:
         # True: reward = log1p(per-event KE / ke_reward_ref), continuous and
         # ungated, replacing the accumulated-F*v log-delta stream.
         self.reward_from_event_ke = reward_from_event_ke
+        # True: reward AND damage come from the windowed contact impulse
+        # (see HitStateConfig.impulse_window). Mutually exclusive with the
+        # KE mode — the caller enforces it.
+        self.reward_from_event_impulse = reward_from_event_impulse
+        if reward_from_event_ke and reward_from_event_impulse:
+            raise ValueError(
+                "reward_from_event_ke and reward_from_event_impulse are "
+                "mutually exclusive damage models"
+            )
         # Per-block e0 EMAs when the two sides are different robots (a heavier
         # robot's energies would compress the lighter one's log scale). None
         # keeps the single global EMA (exact legacy numerics).
@@ -159,6 +200,12 @@ class BattleHitState:
         self._cooldown = torch.zeros(num_envs, num_damage, device=device)
         self._e0 = 1.0  # global log-normalization scale (python float EMA)
         self._steps_cool = max(1, int(round(config.cooldown_time / dt)))
+        # Impulse mode: per-(env, damage body) integration window opened at
+        # each contact onset. At the battle control rate (dt ~ 66.7 ms) an
+        # 80 ms window is 1-2 steps; the deposit lands when it closes.
+        self._steps_impulse = max(1, int(round(config.impulse_window / dt)))
+        self._imp_accum = torch.zeros(num_envs, num_damage, device=device)
+        self._imp_left = torch.zeros(num_envs, num_damage, device=device)
         # Diagnostics for the last step's contact-onset events (pre-speed-gate),
         # used by the calibration probe: impact speed, kinetic energy, and
         # attributed striker index per (env, damage body); zero where no event
@@ -185,6 +232,8 @@ class BattleHitState:
         self._e_accum[env_ids] = 0.0
         self._e_prev[env_ids] = 0.0
         self._cooldown[env_ids] = 0.0
+        self._imp_accum[env_ids] = 0.0
+        self._imp_left[env_ids] = 0.0
 
     @torch.no_grad()
     def step(
@@ -262,6 +311,36 @@ class BattleHitState:
         end = ((f_mag < cfg.force_off) | ~include) & self._active
         self._active = (self._active & ~end & (f_mag >= cfg.force_off)) | start
 
+        # --- windowed contact impulse (impulse damage model) --------------
+        # One onset opens one window; |F| dt integrates while it runs; ONE
+        # deposit per bout, when the window closes or the bout ends early.
+        # Nothing re-arms until force drops below force_off AND the cooldown
+        # expires, so a push scores its first ~80 ms and then never again.
+        # Strike-group multipliers scale the raw impulse, mirroring d_energy
+        # above, so configured limb boosts (e.g. legs 2x) carry over.
+        self._imp_left = torch.where(
+            start,
+            torch.full_like(self._imp_left, float(self._steps_impulse)),
+            self._imp_left,
+        )
+        self._imp_accum = torch.where(
+            start, torch.zeros_like(self._imp_accum), self._imp_accum
+        )
+        imp_open = self._imp_left > 0
+        j_step = f_mag * self.dt * imp_open
+        if self.strike_multipliers is not None:
+            j_step = j_step * self.strike_multipliers.gather(1, nearest_s)
+        self._imp_accum = self._imp_accum + j_step
+        imp_closing = imp_open & ((self._imp_left <= 1) | end)
+        imp_event = self._imp_accum * imp_closing  # [2N, D] N.s deposits
+        self._imp_accum = torch.where(
+            imp_closing, torch.zeros_like(self._imp_accum), self._imp_accum
+        )
+        self._imp_left = torch.where(
+            imp_closing, torch.zeros_like(self._imp_left), self._imp_left
+        )
+        self._imp_left = (self._imp_left - 1.0).clamp_min(0.0)
+
         self._e_accum = self._e_accum + d_energy * self._active
 
         # Global scale: EMA of the batch percentile of accumulated energy.
@@ -328,6 +407,9 @@ class BattleHitState:
         ke_event = torch.where(
             warmup.unsqueeze(-1), torch.zeros_like(ke_event), ke_event
         )
+        imp_event = torch.where(
+            warmup.unsqueeze(-1), torch.zeros_like(imp_event), imp_event
+        )
 
         # REWARD: in KE mode, a continuous UNGATED function of the same
         # per-event energy — log1p(KE/ref) — so even a light tap earns a
@@ -337,11 +419,20 @@ class BattleHitState:
         # applies only to health/wins: taps teach, but they never score HP.
         if self.reward_from_event_ke:
             r_per_body = torch.log1p((ke * event) / max(cfg.ke_reward_ref, 1e-6))
+        # IMPULSE mode: reward and health both come from the windowed
+        # impulse. Deliberately NO speed gate anywhere — the 2.5 m/s KE gate
+        # is what taught the atlas HLC league keep-away (health 1.0000 for
+        # its entire training life; see HitStateConfig). Grind protection is
+        # the window + hysteresis + cooldown, not a gate.
+        if self.reward_from_event_impulse:
+            r_per_body = torch.log1p(
+                imp_event / max(cfg.impulse_reward_ref, 1e-6)
+            )
 
         # Region multipliers, warm-up gating, reduce over bodies
         r_weighted = r_per_body * self.damage_multipliers  # [2N, D]
         r_taken = r_weighted.sum(dim=-1)
-        if self.reward_from_event_ke:
+        if self.reward_from_event_ke or self.reward_from_event_impulse:
             hit_flat = float(getattr(cfg, "hit_flat", 0.0) or 0.0)
             if hit_flat > 0.0:
                 # One flat deposit per env per step that has any onset — not
@@ -368,7 +459,12 @@ class BattleHitState:
             warmup.unsqueeze(-1), torch.zeros_like(r_weighted), r_weighted
         )
 
-        return r_taken, taken_by_group, taken_per_body, ke_event
+        # 4th value drives HEALTH in the caller: windowed impulse deposits
+        # (N.s) in impulse mode, speed-gated KE (J) otherwise. The caller's
+        # per-mode scale (damage_per_impulse vs damage_to_health) converts it
+        # to HP.
+        dmg_event = imp_event if self.reward_from_event_impulse else ke_event
+        return r_taken, taken_by_group, taken_per_body, dmg_event
 
 
 def resolve_body_ids(body_names: List[str], all_body_names: List[str]) -> Tensor:
