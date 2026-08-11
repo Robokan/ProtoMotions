@@ -25,6 +25,28 @@ velocity by finite differences would instead replace the retarget's own
 (smoother) velocities everywhere with numerical ones — a silent
 regression on 30 untouched DOFs to fix 2.
 
+MEASURED OUTCOME on the full atlas_v11 set (135 clips, 23555 frames), which
+corrects an earlier claim made from a 4-clip sample that 65 deg "clears
+every clip" -- it does not:
+
+    frames pitch-corrected  20297 (86.2%)
+    largest correction      65.0 deg  <- THE CAP IS SATURATED
+    unfixable feet          57
+    deepest point           -13.47 -> -7.28 cm
+
+Read that per-clip residual carefully before raising the cap. 40% of CLIPS
+end with at least one penetrating frame, which sounds alarming, but per
+FRAME the survivors are 44/23555 (0.19%) past 1 cm, 29 (0.12%) past 3 cm,
+9 (0.04%) past 5 cm -- a handful of extreme airborne kick poses, against
+93.4% of frames penetrating before. The per-clip minimum is a worst-frame
+statistic and badly overstates the damage.
+
+Raising the cap is NOT the obvious fix. The joint range is +-80 deg and
+only 4 of 47110 ankle dofs sit at a limit, so there is headroom, but a
+70-80 deg ankle rotation to save one frame buys a fraction of a percent of
+frames at the cost of a pose the discriminator has to treat as reference.
+The residual is small enough to leave alone.
+
     python data/scripts/fix_foot_clips.py --robot atlas \\
         --in-dir data/motions/atlas_v11 --dry-run
 """
