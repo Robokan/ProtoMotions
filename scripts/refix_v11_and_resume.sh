@@ -1,21 +1,23 @@
 #!/usr/bin/env bash
-# Rebuild atlas_v11 from the pristine retarget with tremor filtering, then
-# resume the ASE LLC pretrain on the corrected corpus.
+# Rebuild atlas_v11 from the pristine retarget with the foot correction only,
+# then resume the ASE LLC pretrain on the corrected corpus.
 #
-# Eric reported leg vibration and correctly said it predated the foot fix.
-# Measured on the untouched retarget: dof_vel carries 21.0% of its spectral
-# energy above 8 Hz vs 7.4% for dof_pos, so the tremor is mostly in the
-# VELOCITY channels -- invisible in playback, fully visible to the AMP
-# discriminator, which then rewards the policy for reproducing it.
+# Fixes exactly ONE defect: the per-frame ankle-pitch snap that fix_foot_clips
+# used to introduce (110 deg inside a single frame, 3300 deg/s), now a
+# rate-limited shortest path over the delta grid.
 #
-# Two independent defects are fixed here:
-#   1. retarget tremor          -> lowpass_motion_clips.py (8 Hz, zero-phase)
-#   2. my per-frame pitch snap  -> fix_foot_clips.py rate-limited shortest path
+# NO OUTPUT LOW-PASS. An earlier version of this script also ran
+# lowpass_motion_clips.py, which was wrong twice over: Eric vetoed filtering
+# GMR output on 2026-07-24, and the upstream filter is ALREADY APPLIED
+# (lowpass_bvh.py / convert_manny_npy_to_soma --lowpass-hz 8, landed for v9 and
+# inherited by v10/v11 -- v11 source clips measure 8.61% of dof_pos energy
+# above 8 Hz vs 8.55% for the known-filtered f8 clips). Filtering again would
+# have been a second pass over already-filtered data. The residual jitter Eric
+# sees is long-standing and belongs upstream in BVH emission, not here.
 #
-# ORDER IS LOAD-BEARING. Filtering moves the root and every body, so it
-# re-buries the feet; the foot correction must run last and have the final say
-# on ground clearance. Input is atlas_v11_pre_footfix (the pristine retarget),
-# NOT the current atlas_v11, which already carries the snap.
+# Input is atlas_v11_pre_footfix (the pristine retarget), NOT the current
+# atlas_v11, which is a MIX of old-snap and double-filtered clips from the
+# aborted run.
 #
 # Resume (not restart) is deliberate: the discriminator adapts to the new
 # reference distribution, so the ~14 h of policy already learned is kept. The
@@ -26,7 +28,6 @@ cd /home/bizon/sparkpack/ProtoMotions
 LOG=results/atlas_v11_refix.log
 PY=/home/bizon/sparkpack/.venv-isaacsim5/bin/python
 SRC=data/motions/atlas_v11_pre_footfix
-SMOOTH=data/motions/atlas_v11_smooth
 DST=data/motions/atlas_v11
 CORPUS=data/atlas_pretrain_corpus_v11.pt
 EXP=atlas_ase_pretrain_v11
@@ -38,28 +39,21 @@ n=$(ls "$SRC"/*.motion 2>/dev/null | wc -l)
 [ "$n" -eq 135 ] || die "expected 135 pristine clips in $SRC, found $n"
 say "source: $n pristine retarget clips"
 
-say "step 1/4: 8 Hz zero-phase low-pass -> $SMOOTH"
-rm -rf "$SMOOTH"
-PYTHONPATH=data/scripts $PY data/scripts/lowpass_motion_clips.py \
-    --in-dir "$SRC" --out-dir "$SMOOTH" --cutoff 8 >> "$LOG" 2>&1 \
-    || die "low-pass failed"
-grep -q "^written to" "$LOG" || die "low-pass did not report a write"
-
-say "step 2/4: rate-limited foot correction -> $DST"
+say "step 1/3: rate-limited foot correction, pristine -> $DST"
+rm -f "$DST"/*.motion
 PYTHONPATH=data/scripts $PY data/scripts/fix_foot_clips.py \
-    --robot atlas --in-dir "$SMOOTH" --out-dir "$DST" >> "$LOG" 2>&1 \
+    --robot atlas --in-dir "$SRC" --out-dir "$DST" >> "$LOG" 2>&1 \
     || die "foot fix failed"
 m=$(ls "$DST"/*.motion 2>/dev/null | wc -l)
 [ "$m" -eq 135 ] || die "expected 135 corrected clips, found $m"
 
-say "step 3/4: rebuild $CORPUS"
+say "step 2/3: rebuild $CORPUS"
 $PY -m protomotions.components.motion_lib \
     --motion-path "$DST" --output-file "$CORPUS" --device cpu >> "$LOG" 2>&1 \
     || die "corpus rebuild failed"
 
-# Validate, INCLUDING the two things this whole exercise is about: the
-# velocity channels must be quieter than the retarget's and no channel may
-# have gone non-finite.
+# Validate before spending GPU time: clip count, no fall clips, nothing
+# non-finite, and velocity magnitudes still inside the actuator envelope.
 $PY - >> "$LOG" 2>&1 <<'PYCHK'
 import sys, numpy as np, torch
 d = torch.load("data/atlas_pretrain_corpus_v11.pt", weights_only=False,
@@ -79,7 +73,7 @@ if n != 135 or falls or bad:
 PYCHK
 [ $? -eq 0 ] || die "corpus validation failed"
 
-say "step 4/4: stop and resume $EXP on GPU 1"
+say "step 3/3: stop and resume $EXP on GPU 1"
 # SIGTERM wedges Isaac trainers holding VRAM, so go straight to -9 and verify.
 pid=$(pgrep -f "experiment-name $EXP" | head -1)
 if [ -n "$pid" ]; then

@@ -3,6 +3,27 @@
 
 """Zero-phase low-pass of retargeted .motion clips to remove retarget tremor.
 
+DO NOT USE THIS IN THE ATLAS PIPELINE. It filters GMR *output*, which Eric
+vetoed on 2026-07-24 -- it looked worse and was reverted, and the agreed
+principle is to fix jitter upstream in BVH emission. That upstream fix already
+exists and is already applied: lowpass_bvh.py (BVH euler channels, filtered in
+quaternion space) and convert_manny_npy_to_soma.py --lowpass-hz 8, both landed
+for corpus v9 and inherited by v10/v11. Verified on shared stems -- the v11
+source clips carry 8.61% of dof_pos energy above 8 Hz against 8.55% for the
+known-filtered atlas_seed_f8 clips, i.e. indistinguishable. Running this on top
+is a SECOND filter over already-filtered data.
+
+Kept only because the analysis in it is reusable for a source family that has
+no upstream filter yet. Before reaching for it, check whether the corpus was
+built through lowpass_bvh / --lowpass-hz first; for atlas the answer is yes.
+
+A related caution: an earlier version of this file's docstring claimed GMR's IK
+roughly halves the source tremor (17.4% -> 9.4%). That measurement was
+CONFOUNDED -- it compared unfiltered bvh_combatviewer sources against clips
+built from filtered sources, so the drop was mostly the upstream filter, not
+the IK. GMR's contribution is unmeasured.
+
+
 Eric spotted leg vibration in atlas_pretrain_corpus_v11 and correctly said it
 predates the foot correction. Measured on the untouched retarget output
 (135 clips, 30 fps):

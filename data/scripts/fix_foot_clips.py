@@ -121,7 +121,9 @@ def main() -> None:
             continue
         jid = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, pitch)
         feet[b] = dict(geom=gi, V=V, hull=_hull_vertices(V),
-                       dof=dof_names.index(pitch), jid=jid)
+                       dof=dof_names.index(pitch), jid=jid,
+                       vlim=float(getattr(rc.control.control_info[pitch],
+                                          "velocity_limit", np.inf)))
         # bodies whose ORIENTATION the pitch joint moves: the joint's own
         # body and every descendant of it
         jb = m.jnt_bodyid[jid]
@@ -155,7 +157,8 @@ def main() -> None:
             os.makedirs(backup, exist_ok=True)
 
     tot = dict(clips=0, frames=0, corrected=0, unfixable=0,
-               before=0.0, after=0.0, maxdelta=0.0, maxjump=0.0)
+               before=0.0, after=0.0, maxdelta=0.0, maxjump=0.0,
+               vclamped=0)
     tot["before"] = tot["after"] = 1e9
     for path in paths:
         name = os.path.basename(path)
@@ -319,6 +322,17 @@ def main() -> None:
             dvel[:, f["dof"]] += xdot
             for bi in f["subtree"]:
                 avel[:, bi] += xdot[:, None] * axw[b]
+            # The corpus is built with convert_gmr_pkl_to_proto --clamp-dof-vel
+            # 0.95, so every source dof_vel sits at or under 0.95x its actuator
+            # limit. Adding d(correction)/dt can breach that, and a reference
+            # demanding more than the actuator can deliver is untrackable by
+            # construction -- so re-assert the invariant here rather than
+            # silently exporting an infeasible target.
+            cap = 0.95 * f["vlim"]
+            if np.isfinite(cap):
+                n_cl = int((np.abs(dvel[:, f["dof"]]) > cap).sum())
+                tot["vclamped"] += n_cl
+                np.clip(dvel[:, f["dof"]], -cap, cap, out=dvel[:, f["dof"]])
 
         tot["clips"] += 1
         tot["frames"] += T
@@ -345,6 +359,7 @@ def main() -> None:
     print(f"  largest correction     {np.degrees(tot['maxdelta']):.1f} deg")
     print(f"  largest 1-frame jump   {np.degrees(tot['maxjump']):.1f} deg")
     print(f"  unfixable feet         {tot['unfixable']}")
+    print(f"  dof_vel clamped to .95 {tot['vclamped']}")
     print(f"  deepest point          {tot['before']*100:+.2f} -> "
           f"{tot['after']*100:+.2f} cm")
     if args.dry_run:
