@@ -48,6 +48,9 @@ torques, ankle restructure, root-quat bake `ATLAS_ROOT_BAKE_QUAT =
 (meshdir `../mesh/Atlas/`, drop viewer-only headlight/skybox)
 → `usd_convert/flatten_mjcf.py` → `usd_convert/convert_robot_mjcf_to_usda.py`
 (in container) → `usd_convert/patch_atlas_usd_bindings.py`
+→ **`usd_convert/apply_mjcf_contact_excludes.py`** (the IsaacLab MJCF
+converter silently DROPS `<contact><exclude>`; atlas.xml carries 2 of them
+for `Leg4_*`/`Foot_*` and they are lost on every regen unless this is re-run)
 → verify with `usd_convert/inspect_atlas_joints.py`
 (**must** print `revolute=30 d6=0 with_drive=30`).
 
