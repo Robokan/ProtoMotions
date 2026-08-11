@@ -5,28 +5,25 @@
 
 70 bodies / 207 hinges (<Body>_x/_y/_z, world-aligned bind frames),
 4 digits x 2 segments on each paw (cats are digitigrade; the dewclaws
-and claw tips erode at the 0.14 m prune),
-200 kg, standing pelvis ~1.14 m (fbx2robot --min-bone-length 0.14 +
---drop-bones for whiskers/eyes/ears; anatomical densities: legs 70 kg,
-tail 8 kg, torso 122 kg, COM over the four paws). Quadruped: all four ankles are contact feet;
-front ankles double as the "hands" for the battle tables later (paw
-swipes), jaw is the bite. Efforts scaled for 270 kg.
-# Rescaled 2026-08-06 when the body was fitted to the mesh and
-# scaled to a real large tiger: 3.05 m nose-to-tail, 270 kg at
-# water density. Lengths moved by 0.9261 and mass by 270/200, so
-# torque (m*g*L) moved by 1.2503 -- every effort below carries it.
-See RAPTOR_TIGER_PLAN.md.
+and claw tips erode at the 0.14 m prune). Quadruped: all four ankles are
+contact feet; front ankles double as the "hands" for battle tables later
+(paw swipes), jaw is the bite. See RAPTOR_TIGER_PLAN.md.
 
-DAMPING / ARMATURE (2026-08-07 crash fix)
-  The tiger originally inherited dog_v2's kd = kp/10 and dog-sized
-  MJCF armature (0.0136). On a 271 kg body that is under-damped and
-  under-inertialed relative to the utahraptor, which uses kd/kp ≈ 0.13
-  (the √s damping correction) and armature 0.2918 (= 0.02 * s^5).
-  Combined with drive saturation turning off PhysX's implicit-PD
-  stability term, that produced mid-rollout NaNs. Fixes:
-    - MJCF/USD armature → 0.29179 (utahraptor's proven value)
-    - kd = 0.13 * kp via _pd() below
-  ControlInfo.armature stays None so IsaacLab reads the USD value.
+MASS / SCALE (2026-08-07)
+  Caudal density bump (pelvis/spine1/hind 1540, tail 1600) put the body at
+  323 kg with ~58% fore load. Then geometrically scaled to a 260 kg target
+  via scale_robot_mjcf.py:
+
+      SCALE = (260 / 323.44)^(1/3) = 0.929804
+      torque  s^4 = 0.747    armature s^5 = 0.695
+
+  Effort numbers below are the pre-scale (323 kg) peaks; _pd multiplies by
+  TORQUE_SCALE. Motions must be Froude-scaled by the same LENGTH scale.
+
+DAMPING / ARMATURE
+  kd/kp follows utahraptor's Froude correction (≈0.13 on the pre-scale
+  body, then *sqrt(SCALE) for this shrink). ControlInfo.armature stays
+  None so IsaacLab reads the MJCF/USD value.
 """
 
 from dataclasses import dataclass, field, replace as _replace
@@ -42,22 +39,26 @@ from protomotions.robot_configs.base import (
 from protomotions.robot_configs.dog_v2 import VELOCITY_LIMIT
 
 
-# √s damping correction vs dog_v2's kd = kp/10. Matches utahraptor's
-# effective kd/kp = DAMPING_SCALE / (10 * TORQUE_SCALE) ≈ 0.1307.
-DAMPING_RATIO = 0.13
+# Length scale: 323.44 kg (caudal-density) body → 260 kg target.
+SCALE = 0.929804
+TORQUE_SCALE = SCALE ** 4          # 0.747420  -- m*g*L
+# Pre-scale kd/kp was 0.13; Froude wants one more sqrt(s) when shrinking.
+DAMPING_RATIO = 0.13 * (SCALE ** 0.5)  # ≈ 0.12535
 
 
 def _pd(effort: float) -> ControlInfo:
-    """Peak-torque → PD gains with mass-scaled damping.
+    """Peak-torque (pre-scale) → PD gains on the 260 kg body.
 
-    kp = 2 * effort (saturates at ~0.5 rad tracking error), kd = 0.13 * kp.
+    effort is the 323 kg peak; TORQUE_SCALE brings it down with s^4.
     """
-    kp = 2.0 * effort
+    e = effort * TORQUE_SCALE
+    kp = 2.0 * e
     return ControlInfo(
         stiffness=kp,
         damping=DAMPING_RATIO * kp,
-        effort_limit=effort,
-        velocity_limit=VELOCITY_LIMIT,
+        effort_limit=e,
+        # smaller animal cycles limbs faster (1/sqrt(s))
+        velocity_limit=VELOCITY_LIMIT / (SCALE ** 0.5),
     )
 
 
@@ -65,21 +66,8 @@ CONTROL_OVERRIDES = {
     # Catch-all FIRST (later matches override): digits, claws, tongue,
     # ears, whiskers and every other small bone of the full skeleton.
     r".*_[xyz]": _pd(12.5),
-    # Spine and neck are sized PER JOINT from the static cantilever load, not
-    # from one blanket value. Measured on the 271 kg body: the mass forward of
-    # RigSpine1 is 199 kg on a 91 cm lever, so merely HOLDING the pose wants
-    # 1778 N.m against the 625 N.m it had -- a 0.35x margin, meaning the
-    # actuator could not support the animal unaided, let alone accelerate it.
-    # The legs carry most of that load on a quadruped, so it was not fatal,
-    # but it left nothing for a sprint, and the sprint and jump clips ranked
-    # worst in scan_actuator_feasibility.py.
-    #
-    # Each value is 1.5x its own static demand, so the margin is uniform down
-    # the chain rather than generous at the tail and absent at the root:
-    #   Spine1 199 kg @ 91 cm -> 1778 N.m    Neck1 40.5 kg @ 38 cm -> 150 N.m
-    #   Spine2 174 kg @ 73 cm -> 1247 N.m    Neck2 35.0 kg @ 33 cm -> 113 N.m
-    #   Spine3 148 kg @ 54 cm ->  789 N.m    Neck3 29.5 kg @ 28 cm ->  82 N.m
-    # Chest, Neck4 and Head already cleared 1.5x and keep their values.
+    # Spine and neck sized from static cantilever load on the 271–323 kg
+    # body (1.5x static demand). TORQUE_SCALE applied inside _pd.
     r"RigSpine[0-9]_[xyz]": _pd(625.1),
     r"RigSpine1_[xyz]": _pd(2667.1),
     r"RigSpine2_[xyz]": _pd(1870.1),
@@ -110,7 +98,7 @@ CONTROL_OVERRIDES = {
 }
 
 
-# armature=None → IsaacLab keeps the USD/MJCF armature (now 0.29179).
+# armature=None → IsaacLab keeps the MJCF/USD armature (scaled with s^5).
 CONTROL_OVERRIDES = {
     _k: _replace(_v, armature=None) for _k, _v in CONTROL_OVERRIDES.items()
 }
@@ -196,7 +184,8 @@ class TigerRobotConfig(RobotConfig):
         )
     )
 
-    default_root_height: float = 1.0558
+    # Was 1.0558 on the 323 kg body; * SCALE for the 260 kg shrink.
+    default_root_height: float = 0.9817
     contact_bodies: List[str] = None
 
     control: ControlConfig = field(
