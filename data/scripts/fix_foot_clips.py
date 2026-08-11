@@ -11,41 +11,47 @@ per-clip .motion files instead of a packaged corpus — because
 packaged corpus leaves velocities describing the OLD ankle angles. The AMP
 discriminator reads velocities, so that inconsistency would be trained on.
 
-VELOCITIES ARE RECOMPUTED SURGICALLY, not wholesale. The correction is a
-pure rotation of the ankle about its own origin plus a constant per-clip
-lift, so exactly two things change and nothing else may be touched:
+VELOCITIES ARE UPDATED ADDITIVELY, not recomputed. Run AFTER
+lowpass_motion_clips.py, whose whole point is that the tremor lives in the
+velocity channels (dof_vel carries 21.0% of its energy above 8 Hz against
+7.4% for dof_pos -- which is why playback looks clean while the AMP
+discriminator sees a buzz). Overwriting dof_vel with np.gradient would throw
+that filtering away on exactly the DOFs this script touches and substitute
+finite-difference noise; an earlier version did, driving ankle dof_vel from
+20.8 to 27.5 rad/s. Differentiation is linear, so adding d(correction)/dt
+instead keeps positions and velocities consistent AND keeps the filter:
 
-  * dof_vel of the ankle pitch DOFs        -> central differences
-  * rigid_body_ang_vel of Ankle_*/Foot_*   -> from the corrected quats
+  * dof_vel of the ankle pitch DOF  += d(correction)/dt
+  * ang_vel of that joint's subtree += d(correction)/dt * world joint axis
 
-Body ORIGINS do not move (Ankle and Foot share an origin with the joint
-anchor, so pitching rotates them in place), and a constant lift has zero
-derivative, so rigid_body_vel is provably unchanged. Recomputing every
-velocity by finite differences would instead replace the retarget's own
-(smoother) velocities everywhere with numerical ones — a silent
-regression on 30 untouched DOFs to fix 2.
+rigid_body_vel is untouched, provably: the ankle rotates about its own
+origin so body origins do not move, and a constant per-clip lift has zero
+derivative.
 
-MEASURED OUTCOME on the full atlas_v11 set (135 clips, 23555 frames), which
-corrects an earlier claim made from a 4-clip sample that 65 deg "clears
-every clip" -- it does not:
+THE PITCH TRAJECTORY IS A SHORTEST PATH, NOT A PER-FRAME CHOICE. Picking
+the smallest clearing angle at each frame independently is what caused the
+leg vibration Eric reported. The feasible set is frequently two DISJOINT
+bands (pitch the toe up, or rotate far the other way so the heel clears),
+so neighbouring frames could sit in different bands: measured 110 deg of
+correction inside a single frame (3300 deg/s) and ankle chatter 1.4x the
+retarget's own, 3.6x on the worst clip. No amount of smoothing repairs it,
+because under a hard per-frame clearance constraint no continuous path
+exists.
 
-    frames pitch-corrected  20297 (86.2%)
-    largest correction      65.0 deg  <- THE CAP IS SATURATED
-    unfixable feet          57
-    deepest point           -13.47 -> -7.28 cm
+So the priority is inverted: the frame-to-frame rate limit is the HARD
+constraint (--max-rate-deg, default 10 deg/frame = 300 deg/s, within real
+ankle capability) and penetration becomes a quadratic COST. A uniform delta
+grid makes each step's predecessor set a fixed window, so the DP is a
+sliding-window minimum per frame -- O(T*K) via minimum_filter1d. Isolated
+frames that would need an impossible swing keep a few mm of penetration
+instead, which is invisible and, unlike a 98 deg snap, is not something the
+discriminator will reward reproducing.
 
-Read that per-clip residual carefully before raising the cap. 40% of CLIPS
-end with at least one penetrating frame, which sounds alarming, but per
-FRAME the survivors are 44/23555 (0.19%) past 1 cm, 29 (0.12%) past 3 cm,
-9 (0.04%) past 5 cm -- a handful of extreme airborne kick poses, against
-93.4% of frames penetrating before. The per-clip minimum is a worst-frame
-statistic and badly overstates the damage.
+Rate limit vs residual penetration, measured on the four worst clips:
 
-Raising the cap is NOT the obvious fix. The joint range is +-80 deg and
-only 4 of 47110 ankle dofs sit at a limit, so there is headroom, but a
-70-80 deg ankle rotation to save one frame buys a fraction of a percent of
-frames at the cost of a pose the discriminator has to treat as reference.
-The residual is small enough to leave alone.
+    6 deg/frame (180 deg/s) -> deepest -1.84 cm
+   10 deg/frame (300 deg/s) -> deepest -0.68 cm   <- default
+   14 deg/frame (420 deg/s) -> deepest -0.46 cm
 
     python data/scripts/fix_foot_clips.py --robot atlas \\
         --in-dir data/motions/atlas_v11 --dry-run
@@ -59,6 +65,7 @@ import shutil
 
 import numpy as np
 import torch
+from scipy.ndimage import minimum_filter1d
 
 from fix_foot_ground_pitch import _ang_vel_from_quats, _hull_vertices, _rot
 
@@ -70,7 +77,13 @@ def main() -> None:
     ap.add_argument("--out-dir", default=None,
                     help="default: in place, backing up to <in-dir>_pre_footfix")
     ap.add_argument("--clearance", type=float, default=0.002)
-    ap.add_argument("--max-pitch-deg", type=float, default=40.0)
+    ap.add_argument("--max-pitch-deg", type=float, default=65.0)
+    ap.add_argument("--max-rate-deg", type=float, default=10.0,
+                    help="hard cap on ankle-pitch correction change per frame; "
+                         "10 deg at 30 fps = 300 deg/s")
+    ap.add_argument("--stay-weight", type=float, default=0.05,
+                    help="preference for leaving the retarget angle alone, "
+                         "relative to 1 cm^2 of penetration")
     ap.add_argument("--limit", type=int, default=None, help="first N clips only")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
@@ -112,13 +125,16 @@ def main() -> None:
         # bodies whose ORIENTATION the pitch joint moves: the joint's own
         # body and every descendant of it
         jb = m.jnt_bodyid[jid]
+        sub = []
         for i in range(1, m.nbody):
             p = i
             while p > 0:
                 if p == jb:
                     touched_bodies.add(i - 1)
+                    sub.append(i - 1)
                     break
                 p = m.body_parentid[p]
+        feet[b]["subtree"] = sub
     if not feet:
         raise SystemExit("no foot collision geoms with a pitch dof")
     print(f"feet: {list(feet)}")
@@ -139,7 +155,7 @@ def main() -> None:
             os.makedirs(backup, exist_ok=True)
 
     tot = dict(clips=0, frames=0, corrected=0, unfixable=0,
-               before=0.0, after=0.0, maxdelta=0.0)
+               before=0.0, after=0.0, maxdelta=0.0, maxjump=0.0)
     tot["before"] = tot["after"] = 1e9
     for path in paths:
         name = os.path.basename(path)
@@ -173,38 +189,111 @@ def main() -> None:
                 out[b] = (cur, mins)
             return out
 
+        def sweep():
+            """cur[t] and the achievable sole height for every grid delta."""
+            cur = {b: np.zeros(T) for b in feet}
+            mins = {b: np.zeros((T, len(deltas))) for b in feet}
+            for t in range(T):
+                for b, (c, mn) in lows(t).items():
+                    cur[b][t] = c
+                    mins[b][t] = mn
+            return cur, mins
+
         # pass 1: the height error rotation cannot fix -> one lift per clip
-        best = np.array([min(v[1].max() for v in lows(t).values())
-                         for t in range(T)])
-        cur0 = np.array([min(v[0] for v in lows(t).values()) for t in range(T)])
+        cur, mins = sweep()
+        cur0 = np.min(np.stack([cur[b] for b in feet]), axis=0)
+        best = np.min(np.stack([mins[b].max(axis=1) for b in feet]), axis=0)
         dz = max(0.0, args.clearance - float(best.min()))
         pos[:, :, 2] += dz
 
-        # pass 2: per-frame ankle pitch
-        n_corr = 0
+        # pass 2: ankle pitch, chosen as a SMOOTH TRAJECTORY through the
+        # feasible set rather than per-frame independently.
+        #
+        # The old version took the smallest clearing angle at each frame in
+        # isolation, which forced 0 on any already-clear frame while its
+        # neighbour took 30-65 deg -- a discontinuity that showed up as ankle
+        # chatter (1.4x on average, 3.6x worst clip) and as a 110 deg
+        # correction inside a single frame. The grid search already knows the
+        # FULL SET of clearing angles per frame, so the minimum is only one of
+        # many admissible choices; picking the smoothest admissible sequence
+        # costs nothing in clearance.
+        #
+        # Feasibility is an INTERVAL, not a lower bound: rotating further than
+        # needed lifts the toe but drops the heel, so both ends bind. Each
+        # frame contributes [lo, hi] (the contiguous clearing run nearest zero,
+        # intersected with the joint range) and a projected-smoothing loop
+        # alternates Gaussian smoothing with clamping back into those
+        # intervals. Frames with the foot well clear have wide intervals and so
+        # absorb most of the smoothing; frames genuinely pinned by geometry
+        # keep their required angle.
+        # SHORTEST PATH over the delta grid, with the frame rate limit as a
+        # HARD constraint and ground penetration as a COST.
+        #
+        # Treating clearance as a hard per-frame constraint is what produced
+        # the vibration. The feasible set is frequently two DISJOINT bands
+        # (pitch the toe up, or rotate far the other way so the heel clears),
+        # and demanding clearance every frame lets consecutive frames sit in
+        # different bands -- measured as a 98 deg swing inside one frame
+        # (2900 deg/s, physically impossible for an ankle). Smoothing cannot
+        # repair that: no continuous path exists inside the constraint.
+        #
+        # So the priority is inverted. Only trajectories changing by at most
+        # --max-rate-deg per frame are admissible, and among those we minimise
+        # penetration (quadratic, in cm) plus a small preference for leaving
+        # the retarget alone. Isolated frames where clearing would require an
+        # impossible swing now keep a few mm of penetration instead, which is
+        # invisible and, unlike a 98 deg snap, is not something the AMP
+        # discriminator will reward reproducing.
+        #
+        # With a uniform grid the rate limit makes each step's predecessor set
+        # a fixed-width window, so the DP reduces to a sliding-window minimum
+        # per frame -- O(T*K) via minimum_filter1d rather than O(T*K^2).
+        cur, mins = sweep()
+        applied = {}
+        step = float(np.degrees(deltas[1] - deltas[0]))
+        W = max(1, int(round(args.max_rate_deg / step)))     # states per frame
+        for b, f in feet.items():
+            jlo, jhi = m.jnt_range[f["jid"]]
+            pen_cm = np.maximum(0.0, args.clearance - mins[b]) * 100.0
+            E = pen_cm ** 2 + args.stay_weight * (np.degrees(deltas)[None, :] / 10.0) ** 2
+            # a delta outside the joint range is not a choice at all
+            bad = ((dof[:, f["dof"]][:, None] + deltas[None, :] < jlo)
+                   | (dof[:, f["dof"]][:, None] + deltas[None, :] > jhi))
+            E = np.where(bad, 1e12, E)
+            tot["unfixable"] += int((mins[b] < args.clearance).all(axis=1).sum())
+
+            D = E[0].copy()
+            for t in range(1, T):
+                D = E[t] + minimum_filter1d(D, 2 * W + 1, mode="nearest")
+            k = int(np.argmin(D))
+            # backtrack: recompute the forward table cheaply in reverse by
+            # re-deriving each predecessor inside its window
+            path = np.empty(T, dtype=int)
+            path[-1] = k
+            Ds = [E[0].copy()]
+            for t in range(1, T):
+                Ds.append(E[t] + minimum_filter1d(Ds[-1], 2 * W + 1, mode="nearest"))
+            for t in range(T - 1, 0, -1):
+                s, e = max(0, path[t] - W), min(len(deltas), path[t] + W + 1)
+                path[t - 1] = s + int(np.argmin(Ds[t - 1][s:e]))
+            applied[b] = deltas[path]
+            x = applied[b]
+            dof[:, f["dof"]] += x
+            tot["maxdelta"] = max(tot["maxdelta"], float(np.abs(x).max()))
+            tot["maxjump"] = max(tot["maxjump"],
+                                 float(np.abs(np.diff(x)).max()) if T > 1 else 0.0)
+
+        n_corr = int((np.abs(np.stack([applied[b] for b in feet])) > 1e-9)
+                     .any(axis=0).sum())
+        axw = {b: np.zeros((T, 3)) for b in feet}
         for t in range(T):
-            fl = lows(t)
-            hit = False
+            d.qpos[:3] = pos[t, 0]
+            d.qpos[3:7] = rot[t, 0][[3, 0, 1, 2]]
+            d.qpos[7:] = dof[t]
+            mujoco.mj_forward(m, d)
+            rot[t] = d.xquat[1:][:, [1, 2, 3, 0]]      # wxyz -> xyzw
             for b, f in feet.items():
-                cur, mins = fl[b]
-                if cur >= args.clearance:
-                    continue
-                ok = [k for k in order if mins[k] >= args.clearance]
-                if not ok:
-                    tot["unfixable"] += 1
-                    continue
-                delta = float(deltas[ok[0]])
-                lo, hi = m.jnt_range[f["jid"]]
-                dof[t, f["dof"]] = float(np.clip(dof[t, f["dof"]] + delta, lo, hi))
-                tot["maxdelta"] = max(tot["maxdelta"], abs(delta))
-                hit = True
-            if hit:
-                n_corr += 1
-                d.qpos[:3] = pos[t, 0]
-                d.qpos[3:7] = rot[t, 0][[3, 0, 1, 2]]
-                d.qpos[7:] = dof[t]
-                mujoco.mj_forward(m, d)
-                rot[t] = d.xquat[1:][:, [1, 2, 3, 0]]      # wxyz -> xyzw
+                axw[b][t] = d.xaxis[f["jid"]]
 
         # verify on the FULL mesh
         after = np.zeros(T)
@@ -218,13 +307,18 @@ def main() -> None:
                        + d.geom_xpos[f["geom"]])[:, 2].min())
                 for f in feet.values())
 
-        # surgical velocity update (see module docstring)
-        for f in feet.values():
-            j = f["dof"]
-            dvel[:, j] = np.gradient(dof[:, j], dt)
-        for bi in sorted(touched_bodies):
-            # [T, B, 3]: index the BODY axis, not the frame axis
-            avel[:, bi] = _ang_vel_from_quats(rot[:, bi], dt)
+        # Velocity update: ADD the correction's own derivative rather than
+        # recomputing the channel. The input clips are already low-passed and
+        # their velocities are consistent with their positions, so overwriting
+        # with np.gradient would throw that filtering away on exactly the DOFs
+        # we touch and substitute finite-difference noise -- the mistake that
+        # drove ankle dof_vel from 20.8 to 27.5 rad/s. d/dt is linear, so
+        # adding d(correction)/dt keeps consistency and preserves the filter.
+        for b, f in feet.items():
+            xdot = np.gradient(applied[b], dt)          # rad/s about the axis
+            dvel[:, f["dof"]] += xdot
+            for bi in f["subtree"]:
+                avel[:, bi] += xdot[:, None] * axw[b]
 
         tot["clips"] += 1
         tot["frames"] += T
@@ -249,6 +343,7 @@ def main() -> None:
     print(f"  frames pitch-corrected {tot['corrected']} "
           f"({100*tot['corrected']/max(tot['frames'],1):.1f}%)")
     print(f"  largest correction     {np.degrees(tot['maxdelta']):.1f} deg")
+    print(f"  largest 1-frame jump   {np.degrees(tot['maxjump']):.1f} deg")
     print(f"  unfixable feet         {tot['unfixable']}")
     print(f"  deepest point          {tot['before']*100:+.2f} -> "
           f"{tot['after']*100:+.2f} cm")
