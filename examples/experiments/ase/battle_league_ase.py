@@ -150,6 +150,8 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
         max_hp_per_hit=0.25,
         hit_state=HitStateConfig(impulse_window=0.08, impulse_reward_ref=12.0),
         stun_gates_ko=True,
+        # Spawn from mocap frames only (no random tumbled fall poses).
+        fall_init_prob=0.0,
         **battle_table_kwargs(robot_cfg, args.robot_name),
     )
 
@@ -451,3 +453,8 @@ def apply_inference_overrides(
     env_cfg.max_episode_length = 100000
     env_cfg.motion_manager.resample_on_reset = True
     env_cfg.motion_manager.init_start_prob = 1.0
+    # Frozen checkpoints may still have fall_init_prob=0.1; always spawn
+    # from mocap frames when viewing.
+    battle = env_cfg.control_components.get("battle")
+    if battle is not None:
+        battle.fall_init_prob = 0.0

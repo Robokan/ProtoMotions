@@ -221,8 +221,10 @@ class BattleControlConfig(ControlComponentConfig):
     idle_joint_speed: float = 1.0
     idle_time_increment: float = 0.005
 
-    # Fall-state initialization curriculum (AmpGetupEnv lineage)
-    fall_init_prob: float = 0.1
+    # Fall-state initialization curriculum (AmpGetupEnv lineage).
+    # Default off: battles should spawn from mocap reference frames.
+    # Set >0 only when you explicitly want get-up practice in the arena.
+    fall_init_prob: float = 0.0
     recovery_seconds: float = 2.0  # termination suppression after a fall init
 
     # Viewer: markers per arena side outlining the ring (0 disables)

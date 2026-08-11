@@ -130,7 +130,9 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
         ref_respawn_offset=0.05,
         control_components={
             "battle": BattleControlConfig(
-                arena_size=ARENA_SIZE, arena_spacing=ARENA_SPACING
+                arena_size=ARENA_SIZE,
+                arena_spacing=ARENA_SPACING,
+                fall_init_prob=0.0,
             ),
         },
         observation_components=observation_components,
