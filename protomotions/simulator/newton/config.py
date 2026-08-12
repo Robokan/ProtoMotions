@@ -62,3 +62,8 @@ class NewtonSimulatorConfig(SimulatorConfig):
     _target_: str = "protomotions.simulator.newton.simulator.NewtonSimulator"
     sim: NewtonSimParams = field(default_factory=NewtonSimParams)  # Override sim type
     w_last: bool = True  # Newton uses xyzw quaternions
+    # Mouse-wheel dolly sensitivity for the GL viewer. Newton's default (0.15)
+    # zooms far too fast at our scene scale -- a single notch crosses most of
+    # the arena. Applied to viewer.gui._camera_dolly_scroll_sensitivity.
+    # 0.04 was still too coarse in practice (Eric, 2026-08-11); quartered again.
+    camera_dolly_scroll_sensitivity: float = 0.01

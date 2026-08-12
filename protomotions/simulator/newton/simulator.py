@@ -195,11 +195,25 @@ class NewtonSimulator(Simulator):
             enable_self_collisions=self.robot_config.asset.self_collisions,
         )
 
+        # 2b. Colour the shapes from the MJCF's materials (see the method).
+        self._apply_mjcf_visual_colors(asset_path)
+
         # 3. Set per-DOF joint properties ON THE BUILDER (before finalize)
         self._configure_builder_joint_properties()
 
         self.robot.articulation_label = ["robot"]
-        self.robot.approximate_meshes("convex_hull")
+        # NOTE: approximate_meshes must run AFTER _apply_mjcf_visual_colors,
+        # since it can add/replace shapes and the colour pass matches shapes to
+        # MJCF geoms by index.
+        # approximate_meshes defaults to keep_visual_shapes=False, which hulls
+        # the VISUAL meshes too -- the robot then renders as untextured white
+        # blobs because the convex hulls carry no UVs or material bindings.
+        # Collision shapes are approximated either way, so physics is
+        # unaffected; only rendering differs. Full visual meshes cost memory
+        # per env, so they are kept only when there is a viewer to see them.
+        self.robot.approximate_meshes(
+            "convex_hull", keep_visual_shapes=not self.headless
+        )
 
         # 5. Add projectile free bodies to the builder (before replicate)
         self._resolve_proj_config()
@@ -256,6 +270,80 @@ class NewtonSimulator(Simulator):
             attr = getattr(mujoco_attrs, attr_name, None)
             if attr is not None:
                 attr.zero_()
+
+    def _apply_mjcf_visual_colors(self, asset_path: str) -> None:
+        """Colour Newton's shapes from the MJCF's materials.
+
+        Newton's MJCF importer does not read visual materials: every shape
+        comes back with a default palette colour (measured on atlas -- 118
+        shapes carrying just two distinct values, 0.5 grey and 1.0 white), and
+        the shape_material_* arrays it does populate are FRICTION/restitution,
+        not appearance. So the robot renders as featureless white.
+
+        Newton's ViewerGL has no UV/texture path for meshes either -- it
+        exposes update_shape_colors and _sync_shape_colors_from_model, i.e.
+        per-shape solid colour only. True texturing is therefore not available
+        on this backend; the best faithful approximation is to give each shape
+        the average colour of the texture its MJCF material points at.
+
+        The colour lives in the texture IMAGES, not in the material: every
+        atlas material has mat_rgba = (1,1,1,1). So the mean RGB of each
+        texture is used (atlas: Aluminium_Blue -> #4678a5, Emission -> #57e759,
+        Rubber -> #2a2a2a, ...). Materials are matched to textures by the
+        "tex_<material>" naming convention, falling back to the geom's own
+        rgba when a geom has no material.
+
+        Shapes are matched to MJCF geoms BY INDEX, which holds only while the
+        counts agree, so that is asserted rather than assumed -- a mismatch
+        skips the pass instead of painting parts the wrong colour.
+        """
+        try:
+            import mujoco
+        except ImportError:
+            return
+
+        try:
+            m = mujoco.MjModel.from_xml_path(asset_path)
+        except Exception as exc:  # a malformed MJCF must not break loading
+            print(f"[newton] visual colours skipped: {exc}")
+            return
+
+        geoms = [g for g in range(m.ngeom) if m.geom_bodyid[g] != 0]
+        if len(geoms) != len(self.robot.shape_color):
+            print(
+                f"[newton] visual colours skipped: {len(geoms)} MJCF geoms vs "
+                f"{len(self.robot.shape_color)} shapes -- index mapping unsafe"
+            )
+            return
+
+        tex_mean: Dict[str, Tuple[float, float, float]] = {}
+        for t in range(m.ntex):
+            name = mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_TEXTURE, t)
+            w, h = int(m.tex_width[t]), int(m.tex_height[t])
+            nch = int(m.tex_nchannel[t]) if hasattr(m, "tex_nchannel") else 3
+            adr = int(m.tex_adr[t])
+            buf = m.tex_data[adr : adr + w * h * nch]
+            if buf.size < w * h * nch:
+                continue
+            rgb = buf.astype(np.float64).reshape(h, w, nch)[..., :3]
+            tex_mean[name] = tuple(rgb.mean(axis=(0, 1)) / 255.0)
+
+        painted = 0
+        for i, g in enumerate(geoms):
+            mat_id = int(m.geom_matid[g])
+            color = None
+            if mat_id >= 0:
+                mat_name = mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_MATERIAL, mat_id)
+                color = tex_mean.get(f"tex_{mat_name}")
+                if color is None:
+                    rgba = m.mat_rgba[mat_id]
+                    color = (float(rgba[0]), float(rgba[1]), float(rgba[2]))
+            if color is None:
+                rgba = m.geom_rgba[g]
+                color = (float(rgba[0]), float(rgba[1]), float(rgba[2]))
+            self.robot.shape_color[i] = color
+            painted += 1
+        print(f"[newton] applied MJCF material colours to {painted} shapes")
 
     def _configure_builder_joint_properties(self) -> None:
         """Set joint stiffness, damping, armature, and actuator mode on the builder.
@@ -486,6 +574,28 @@ class NewtonSimulator(Simulator):
             self.viewer = newton.viewer.ViewerGL()
             self.viewer.set_model(self.model)
             self.viewer.vsync = True
+            # Scroll dolly speed. The wheel handler does
+            # camera.dolly(scroll_y * _camera_dolly_scroll_sensitivity), and
+            # newton defaults that to 0.15, which overshoots badly here. The
+            # attribute lives on the viewer's gui object, so guard for a viewer
+            # built without one (imgui_bundle missing) or a newton version that
+            # renames it -- zoom speed must never break rendering.
+            gui = getattr(self.viewer, "gui", None)
+            # Default in the getattr, not None: configs restored from a
+            # checkpoint pickled before this field existed would otherwise skip
+            # the fix entirely, which is exactly the case when replaying an
+            # older run.
+            sensitivity = getattr(
+                self.config, "camera_dolly_scroll_sensitivity", 0.04
+            )
+            if gui is not None and sensitivity is not None:
+                if hasattr(gui, "_camera_dolly_scroll_sensitivity"):
+                    gui._camera_dolly_scroll_sensitivity = float(sensitivity)
+                else:
+                    log.warning(
+                        "newton viewer gui has no _camera_dolly_scroll_sensitivity; "
+                        "scroll zoom speed left at the newton default"
+                    )
 
         self.state_temp = self.model.state()
         self.state_0 = self.model.state()
