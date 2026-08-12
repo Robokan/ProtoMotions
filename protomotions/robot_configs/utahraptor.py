@@ -1,23 +1,24 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025-2026 The ProtoMotions Developers
 # SPDX-License-Identifier: Apache-2.0
 
-"""Utahraptor: the raptor scaled to 200 kg, as a match for the tiger.
+"""Utahraptor: the raptor scaled to 260 kg, matched to the tiger's mass.
 
 Generated from raptor.xml by data/scripts/scale_robot_mjcf.py with every
 length multiplied by
 
-    s = (200 / 40.05)^(1/3) = 1.709260
+    s = (260 / 40.05)^(1/3) = 1.865475
 
-so mass follows as s^3 at unchanged density. Hips sit at 0.87 m instead
-of 0.51 m; the whole animal is 1.71x longer and 5x heavier.
+(equivalently the prior 200 kg utah at s=1.709260, then x1.091393).
+Mass follows as s^3 at unchanged density. Hips sit at ~0.95 m; the
+whole animal is ~1.87x longer than the raptor and ~6.5x heavier.
 
 GAINS. Torque needed to hold a pose against gravity goes as m*g*L, i.e.
-s^4 = 8.54x, so every effort here is the raptor's x8.54. Damping needs
+s^4 ≈ 12.1x, so every effort here is the raptor's xs^4. Damping needs
 one more factor: joint angular velocity in a dynamically similar motion
 scales as 1/sqrt(s), so to produce s^4 times the damping torque from
-1/sqrt(s) times the velocity, kd must scale as s^4.5 = 11.2x. dog_v2's
+1/sqrt(s) times the velocity, kd must scale as s^4.5 ≈ 16.5x. dog_v2's
 _pd() hardcodes kd = kp/10 and cannot express that, hence _pd_big below.
-Getting this wrong is not subtle -- kd short by sqrt(s) is a 200 kg
+Getting this wrong is not subtle -- kd short by sqrt(s) is a heavy
 animal with a Velociraptor's damping, which oscillates.
 
 MOTIONS. The corpus is NOT the raptor's. A bigger body cannot perform the
@@ -38,10 +39,10 @@ from protomotions.robot_configs.base import (
 )
 from protomotions.robot_configs.dog_v2 import VELOCITY_LIMIT
 
-# length scale vs the 40 kg raptor
-SCALE = 1.709260
-TORQUE_SCALE = SCALE ** 4          # 8.536  -- m*g*L
-DAMPING_SCALE = SCALE ** 4.5       # 11.161 -- torque / (angular velocity)
+# length scale vs the 40 kg raptor (260 kg target, matched to tiger mass)
+SCALE = 1.865475
+TORQUE_SCALE = SCALE ** 4          # ~12.11  -- m*g*L
+DAMPING_SCALE = SCALE ** 4.5       # ~16.54  -- torque / (angular velocity)
 
 
 def _pd_big(effort: float) -> ControlInfo:
@@ -146,7 +147,7 @@ class UtahraptorRobotConfig(RobotConfig):
         )
     )
 
-    default_root_height: float = 0.51 * SCALE      # 0.8717 m
+    default_root_height: float = 0.51 * SCALE      # ~0.951 m
     contact_bodies: List[str] = None
 
     control: ControlConfig = field(

@@ -45,205 +45,127 @@
     <exclude body1="LeftShoulder" body2="RightShoulder" />
   </contact>
   <worldbody>
-    <body name="Hips" pos="0 0.00211094 0.873911">
-      <geom name="g_Hips" fromto="-0.00881312 -0.000200872 0.00766979 -0.0367217 -0.000836991 0.031958" size="0.136741" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-      <body name="Spine" pos="-6.74184e-33 -0.218802 -0.00525102">
-        <joint name="Spine_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5107 0.6132" limited="true" armature="0.29179" frictionloss="0.853558" />
-        <joint name="Spine_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.6056 0.6056" limited="true" armature="0.29179" frictionloss="0.853558" />
-        <joint name="Spine_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.6850 0.6850" limited="true" armature="0.29179" frictionloss="0.853558" />
-        <geom name="g_Spine" fromto="-8.31812e-10 -0.0222648 -0.00105019 -3.46587e-09 -0.0927684 -0.00437588" size="0.153833" density="980.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-        <body name="Spine1" pos="-6.93173e-09 -0.18554 -0.00875158">
-          <joint name="Spine1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.0496 0.7756" limited="true" armature="0.29179" frictionloss="0.853558" />
-          <joint name="Spine1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.8858 0.8858" limited="true" armature="0.29179" frictionloss="0.853558" />
-          <joint name="Spine1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.7553 0.7553" limited="true" armature="0.29179" frictionloss="0.853558" />
-          <geom name="g_Spine1" fromto="-3.76191e-09 -0.0134864 0.00182857 -1.56744e-08 -0.0561936 0.00761937" size="0.153833" density="984.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-          <body name="Neck" pos="-5.8896e-09 -0.157532 -0.0122523">
-            <joint name="Neck_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.4389 0.8324" limited="true" armature="0.29179" frictionloss="0.853558" />
-            <joint name="Neck_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.6063 0.8743" limited="true" armature="0.29179" frictionloss="0.853558" />
-            <joint name="Neck_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.8974 0.8974" limited="true" armature="0.29179" frictionloss="0.853558" />
-            <geom name="g_Neck" fromto="-5.74876e-10 -0.0154579 0.0022687 -4.21572e-09 -0.113358 0.0166369" size="0.0427315" density="980.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-            <body name="Neck1" pos="-4.79054e-09 -0.128815 0.0189061">
-              <joint name="Neck1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.2515 0.7095" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <joint name="Neck1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.7888 0.7888" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <joint name="Neck1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.6976 0.7484" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <geom name="g_Neck1" fromto="-5.56672e-10 -0.0149878 0.00302043 -4.08223e-09 -0.109911 0.0221503" size="0.0427315" density="984.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-              <body name="Neck2" pos="-4.63893e-09 -0.124899 0.0251706">
-                <joint name="Neck2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.9083 1.7995" limited="true" armature="0.29179" frictionloss="0.853558" />
-                <joint name="Neck2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.6279 0.5475" limited="true" armature="0.29179" frictionloss="0.853558" />
-                <joint name="Neck2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.9775 0.9775" limited="true" armature="0.29179" frictionloss="0.853558" />
-                <geom name="g_Neck2" fromto="-5.34058e-10 -0.0144267 0.00492814 -3.91643e-09 -0.105796 0.0361389" size="0.0427315" density="984.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                <body name="Neck3" pos="-4.4504e-09 -0.120223 0.0410667">
-                  <joint name="Neck3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.7080 1.5979" limited="true" armature="0.29179" frictionloss="0.853558" />
-                  <joint name="Neck3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.7589 1.6128" limited="true" armature="0.29179" frictionloss="0.853558" />
-                  <joint name="Neck3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.8767 0.8654" limited="true" armature="0.29179" frictionloss="0.853558" />
-                  <geom name="g_Neck3" fromto="-5.0536e-05 -0.0118214 0.00314248 -0.000370602 -0.0866903 0.023046" size="0.0427315" density="984.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                  <body name="Head" pos="-0.000421128 -0.0985115 0.0261876">
-                    <joint name="Head_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.6792 1.7949" limited="true" armature="0.29179" frictionloss="0.853558" />
-                    <joint name="Head_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.4589 1.4589" limited="true" armature="0.29179" frictionloss="0.853558" />
-                    <joint name="Head_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.6584 1.6584" limited="true" armature="0.29179" frictionloss="0.853558" />
-                    <geom name="g_Head" fromto="-0.00019759 -0.0315283 -0.00116957 -0.000938555 -0.14976 -0.00555547" size="0.0789678" density="980.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                    <geom name="g_Head_muzzle" fromto="-0.00123494 -0.197052 -0.00730982 -0.00227229 -0.362575 -0.0134501" size="0.0435861" density="980.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                    <body name="Jaw" pos="-0.000377165 -0.0115802 -0.0467431">
-                      <joint name="Jaw_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.5242 1.3148" limited="true" armature="0.29179" frictionloss="0.853558" />
-                      <joint name="Jaw_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.6722 0.6722" limited="true" armature="0.29179" frictionloss="0.853558" />
-                      <joint name="Jaw_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.6218 0.6218" limited="true" armature="0.29179" frictionloss="0.853558" />
-                      <geom name="g_Jaw" fromto="-0.000221876 -0.026257 -0.00969028 -0.00105391 -0.124721 -0.0460288" size="0.0627299" density="980.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                      <geom name="g_Jaw_tip" fromto="-0.00138672 -0.164106 -0.0605642 -0.00260703 -0.30852 -0.113861" size="0.0338434" density="980.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+    <body name="Hips" pos="0 0.00230387 0.953781">
+      <geom name="g_Hips" fromto="-0.00961858 -0.00021923 0.00837076 -0.0400778 -0.000913486 0.0348788" size="0.149238" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+      <body name="Spine" pos="-7.358e-33 -0.238799 -0.00573093">
+        <joint name="Spine_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5107 0.6132" limited="true" armature="0.451832" frictionloss="1.21104" />
+        <joint name="Spine_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.6056 0.6056" limited="true" armature="0.451832" frictionloss="1.21104" />
+        <joint name="Spine_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.6850 0.6850" limited="true" armature="0.451832" frictionloss="1.21104" />
+        <geom name="g_Spine" fromto="-9.07834e-10 -0.0242997 -0.00114617 -3.78263e-09 -0.101247 -0.00477581" size="0.167892" density="980.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+        <body name="Spine1" pos="-7.56524e-09 -0.202497 -0.00955142">
+          <joint name="Spine1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.0496 0.7756" limited="true" armature="0.451832" frictionloss="1.21104" />
+          <joint name="Spine1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.8858 0.8858" limited="true" armature="0.451832" frictionloss="1.21104" />
+          <joint name="Spine1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.7553 0.7553" limited="true" armature="0.451832" frictionloss="1.21104" />
+          <geom name="g_Spine1" fromto="-4.10572e-09 -0.014719 0.00199569 -1.71069e-08 -0.0613293 0.00831573" size="0.167892" density="984.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+          <body name="Neck" pos="-6.42787e-09 -0.171929 -0.0133721">
+            <joint name="Neck_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.4389 0.8324" limited="true" armature="0.451832" frictionloss="1.21104" />
+            <joint name="Neck_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.6063 0.8743" limited="true" armature="0.451832" frictionloss="1.21104" />
+            <joint name="Neck_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.8974 0.8974" limited="true" armature="0.451832" frictionloss="1.21104" />
+            <geom name="g_Neck" fromto="-6.27416e-10 -0.0168707 0.00247604 -4.60101e-09 -0.123718 0.0181574" size="0.0466369" density="980.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+            <body name="Neck1" pos="-5.22836e-09 -0.140588 0.020634">
+              <joint name="Neck1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.2515 0.7095" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <joint name="Neck1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.7888 0.7888" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <joint name="Neck1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.6976 0.7484" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <geom name="g_Neck1" fromto="-6.07548e-10 -0.0163576 0.00329648 -4.45532e-09 -0.119956 0.0241747" size="0.0466369" density="984.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+              <body name="Neck2" pos="-5.0629e-09 -0.136314 0.027471">
+                <joint name="Neck2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.9083 1.7995" limited="true" armature="0.451832" frictionloss="1.21104" />
+                <joint name="Neck2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.6279 0.5475" limited="true" armature="0.451832" frictionloss="1.21104" />
+                <joint name="Neck2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.9775 0.9775" limited="true" armature="0.451832" frictionloss="1.21104" />
+                <geom name="g_Neck2" fromto="-5.82867e-10 -0.0157452 0.00537854 -4.27437e-09 -0.115465 0.0394418" size="0.0466369" density="984.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                <body name="Neck3" pos="-4.85714e-09 -0.131211 0.0448199">
+                  <joint name="Neck3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.7080 1.5979" limited="true" armature="0.451832" frictionloss="1.21104" />
+                  <joint name="Neck3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.7589 1.6128" limited="true" armature="0.451832" frictionloss="1.21104" />
+                  <joint name="Neck3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.8767 0.8654" limited="true" armature="0.451832" frictionloss="1.21104" />
+                  <geom name="g_Neck3" fromto="-5.51547e-05 -0.0129018 0.00342968 -0.000404473 -0.0946132 0.0251523" size="0.0466369" density="984.0" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                  <body name="Head" pos="-0.000459616 -0.107515 0.028581">
+                    <joint name="Head_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.4312 1.7949" limited="true" armature="0.451832" frictionloss="1.21104" />
+                    <joint name="Head_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.2113 0.9948" limited="true" armature="0.451832" frictionloss="1.21104" />
+                    <joint name="Head_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.6584 1.6584" limited="true" armature="0.451832" frictionloss="1.21104" />
+                    <geom name="g_Head" fromto="-0.000215648 -0.0344098 -0.00127646 -0.00102433 -0.163447 -0.0060632" size="0.0861849" density="980.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                    <geom name="g_Head_muzzle" fromto="-0.00134781 -0.215061 -0.00797789 -0.00247996 -0.395712 -0.0146794" size="0.0475696" density="980.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                    <body name="Jaw" pos="-0.000411635 -0.0126386 -0.0510151">
+                      <joint name="Jaw_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.5242 1.3148" limited="true" armature="0.451832" frictionloss="1.21104" />
+                      <joint name="Jaw_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.6722 0.6722" limited="true" armature="0.451832" frictionloss="1.21104" />
+                      <joint name="Jaw_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.6218 0.6218" limited="true" armature="0.451832" frictionloss="1.21104" />
+                      <geom name="g_Jaw" fromto="-0.000242154 -0.0286567 -0.0105759 -0.00115023 -0.13612 -0.0502355" size="0.068463" density="980.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                      <geom name="g_Jaw_tip" fromto="-0.00151346 -0.179104 -0.0660994 -0.0028453 -0.336717 -0.124267" size="0.0369365" density="980.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                     </body>
                   </body>
                 </body>
               </body>
             </body>
           </body>
-          <body name="LeftShoulder" pos="0.0686097 -0.0898148 0.0289839">
-            <joint name="LeftShoulder_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.0879 1.3179" limited="true" armature="0.29179" frictionloss="0.853558" />
-            <joint name="LeftShoulder_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.9148 0.7142" limited="true" armature="0.29179" frictionloss="0.853558" />
-            <joint name="LeftShoulder_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.6609 0.5530" limited="true" armature="0.29179" frictionloss="0.853558" />
-            <geom name="g_LeftShoulder" fromto="0.00210068 -0.00237741 -0.0222341 0.0154056 -0.0174345 -0.163057" size="0.0769167" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-            <body name="LeftArm" pos="0.0175062 -0.0198103 -0.185284">
-              <joint name="LeftArm_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-2.1802 2.3641" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <joint name="LeftArm_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.3899 1.6724" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <joint name="LeftArm_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-2.2335 1.9332" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <geom name="g_LeftArm" fromto="0.00547767 0.0208957 -0.0176259 0.0401693 0.153235 -0.129256" size="0.0529871" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-              <body name="LeftForeArm" pos="0.0456475 0.174122 -0.146882">
-                <joint name="LeftForeArm_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.2770 1.8986" limited="true" armature="0.29179" frictionloss="0.853558" />
-                <joint name="LeftForeArm_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.2931 1.1387" limited="true" armature="0.29179" frictionloss="0.853558" />
-                <joint name="LeftForeArm_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-2.5874 1.4681" limited="true" armature="0.29179" frictionloss="0.853558" />
-                <geom name="g_LeftForeArm" fromto="0.00459142 -0.0148324 -0.0140961 0.0336707 -0.108772 -0.103373" size="0.0444408" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                <body name="LeftHand" pos="0.0382618 -0.123603 -0.117467">
-                  <joint name="LeftHand_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-3.1067 2.0532" limited="true" armature="0.29179" frictionloss="0.853558" />
-                  <joint name="LeftHand_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.6520 1.3623" limited="true" armature="0.29179" frictionloss="0.853558" />
-                  <joint name="LeftHand_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-3.1067 2.6298" limited="true" armature="0.29179" frictionloss="0.853558" />
-                  <geom name="g_LeftHand" fromto="0.000794276 -0.00777919 -0.00839896 0.00582465 -0.0570466 -0.0615915" size="0.039313" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                  <body name="LeftHandMiddle1" pos="0.0091736 -0.0674594 -0.072365">
-                    <joint name="LeftHandMiddle1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.0460 1.4460" limited="true" armature="0.29179" frictionloss="0.853558" />
-                    <joint name="LeftHandMiddle1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.2524 1.1571" limited="true" armature="0.29179" frictionloss="0.853558" />
-                    <joint name="LeftHandMiddle1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-2.0143 1.1108" limited="true" armature="0.29179" frictionloss="0.853558" />
-                    <geom name="g_LeftHandMiddle1" fromto="0 0 0 0.00802412 -0.02916 -0.0550553" size="0.0183062" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                    <body name="LeftHandMiddle2" pos="0.00802412 -0.02916 -0.0550553">
-                      <joint name="LeftHandMiddle2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.2083 0.6642" limited="true" armature="0.29179" frictionloss="0.853558" />
-                      <joint name="LeftHandMiddle2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.2988 0.9734" limited="true" armature="0.29179" frictionloss="0.853558" />
-                      <joint name="LeftHandMiddle2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.8469 0.2330" limited="true" armature="0.29179" frictionloss="0.853558" />
-                      <geom name="g_LeftHandMiddle2" fromto="0 0 0 -0.000287053 -0.0285156 -0.0594925" size="0.0170242" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                      <body name="LeftHandMiddle3" pos="-0.000287053 -0.0285156 -0.0594925">
-                        <joint name="LeftHandMiddle3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.2106 1.5778" limited="true" armature="0.29179" frictionloss="0.853558" />
-                        <joint name="LeftHandMiddle3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.4369 1.1254" limited="true" armature="0.29179" frictionloss="0.853558" />
-                        <joint name="LeftHandMiddle3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.8404 0.2958" limited="true" armature="0.29179" frictionloss="0.853558" />
-                        <geom name="g_LeftHandMiddle3" fromto="-0.00331453 -0.0050397 -0.0126705 -0.0222424 -0.0338193 -0.085026" size="0.014033" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+          <body name="LeftShoulder" pos="0.0748802 -0.0980233 0.0316328">
+            <joint name="LeftShoulder_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.0879 1.3179" limited="true" armature="0.451832" frictionloss="1.21104" />
+            <joint name="LeftShoulder_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.9148 0.7142" limited="true" armature="0.451832" frictionloss="1.21104" />
+            <joint name="LeftShoulder_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.6609 0.5530" limited="true" armature="0.451832" frictionloss="1.21104" />
+            <geom name="g_LeftShoulder" fromto="0.00229267 -0.00259469 -0.0242662 0.0168136 -0.0190279 -0.177959" size="0.0839464" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+            <body name="LeftArm" pos="0.0191062 -0.0216208 -0.202218">
+              <joint name="LeftArm_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-2.1802 2.3641" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <joint name="LeftArm_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.3899 1.6724" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <joint name="LeftArm_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-2.2335 1.9332" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <geom name="g_LeftArm" fromto="0.00597829 0.0228054 -0.0192368 0.0438405 0.16724 -0.141069" size="0.0578298" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+              <body name="LeftForeArm" pos="0.0498194 0.190036 -0.160306">
+                <joint name="LeftForeArm_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.2770 1.8986" limited="true" armature="0.451832" frictionloss="1.21104" />
+                <joint name="LeftForeArm_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.2931 1.1387" limited="true" armature="0.451832" frictionloss="1.21104" />
+                <joint name="LeftForeArm_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-2.5874 1.4681" limited="true" armature="0.451832" frictionloss="1.21104" />
+                <geom name="g_LeftForeArm" fromto="0.00501105 -0.016188 -0.0153844 0.036748 -0.118713 -0.112821" size="0.0485024" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                <body name="LeftHand" pos="0.0417587 -0.1349 -0.128203">
+                  <joint name="LeftHand_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-3.1067 2.0532" limited="true" armature="0.451832" frictionloss="1.21104" />
+                  <joint name="LeftHand_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.6520 1.3623" limited="true" armature="0.451832" frictionloss="1.21104" />
+                  <joint name="LeftHand_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-3.1067 2.6298" limited="true" armature="0.451832" frictionloss="1.21104" />
+                  <geom name="g_LeftHand" fromto="0.000866868 -0.00849016 -0.00916657 0.00635698 -0.0622603 -0.0672206" size="0.042906" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                  <body name="LeftHandMiddle1" pos="0.010012 -0.0736247 -0.0789787">
+                    <joint name="LeftHandMiddle1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.0460 1.4460" limited="true" armature="0.451832" frictionloss="1.21104" />
+                    <joint name="LeftHandMiddle1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.2524 1.1571" limited="true" armature="0.451832" frictionloss="1.21104" />
+                    <joint name="LeftHandMiddle1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-2.0143 1.1108" limited="true" armature="0.451832" frictionloss="1.21104" />
+                    <geom name="g_LeftHandMiddle1" fromto="0 0 0 0.00875747 -0.031825 -0.060087" size="0.0199793" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                    <body name="LeftHandMiddle2" pos="0.00875747 -0.031825 -0.060087">
+                      <joint name="LeftHandMiddle2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.2083 0.6642" limited="true" armature="0.451832" frictionloss="1.21104" />
+                      <joint name="LeftHandMiddle2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.2988 0.9734" limited="true" armature="0.451832" frictionloss="1.21104" />
+                      <joint name="LeftHandMiddle2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.8469 0.2330" limited="true" armature="0.451832" frictionloss="1.21104" />
+                      <geom name="g_LeftHandMiddle2" fromto="0 0 0 -0.000313288 -0.0311217 -0.0649297" size="0.0185801" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                      <body name="LeftHandMiddle3" pos="-0.000313288 -0.0311217 -0.0649297">
+                        <joint name="LeftHandMiddle3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.2106 1.5778" limited="true" armature="0.451832" frictionloss="1.21104" />
+                        <joint name="LeftHandMiddle3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.4369 1.1254" limited="true" armature="0.451832" frictionloss="1.21104" />
+                        <joint name="LeftHandMiddle3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.8404 0.2958" limited="true" armature="0.451832" frictionloss="1.21104" />
+                        <geom name="g_LeftHandMiddle3" fromto="-0.00361746 -0.0055003 -0.0138285 -0.0242752 -0.0369102 -0.0927968" size="0.0153155" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                       </body>
                     </body>
                   </body>
-                  <body name="LeftHandRing1" pos="0.0127487 -0.0468337 -0.0801506">
-                    <joint name="LeftHandRing1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.0420 0.9748" limited="true" armature="0.29179" frictionloss="0.853558" />
-                    <joint name="LeftHandRing1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.8982 1.2482" limited="true" armature="0.29179" frictionloss="0.853558" />
-                    <joint name="LeftHandRing1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.4353 1.0217" limited="true" armature="0.29179" frictionloss="0.853558" />
-                    <geom name="g_LeftHandRing1" fromto="0 0 0 0.0113676 -0.0118156 -0.0504659" size="0.0186651" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                    <body name="LeftHandRing2" pos="0.0113676 -0.0118156 -0.0504659">
-                      <joint name="LeftHandRing2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.2026 0.6074" limited="true" armature="0.29179" frictionloss="0.853558" />
-                      <joint name="LeftHandRing2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.3775 1.2035" limited="true" armature="0.29179" frictionloss="0.853558" />
-                      <joint name="LeftHandRing2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.6580 0.2258" limited="true" armature="0.29179" frictionloss="0.853558" />
-                      <geom name="g_LeftHandRing2" fromto="0 0 0 0.000722983 -0.0104593 -0.0523752" size="0.0114862" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                      <body name="LeftHandRing3" pos="0.000722983 -0.0104593 -0.0523752">
-                        <joint name="LeftHandRing3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.1917 2.2210" limited="true" armature="0.29179" frictionloss="0.853558" />
-                        <joint name="LeftHandRing3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.3447 1.4237" limited="true" armature="0.29179" frictionloss="0.853558" />
-                        <joint name="LeftHandRing3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-2.2882 0.2091" limited="true" armature="0.29179" frictionloss="0.853558" />
-                        <geom name="g_LeftHandRing3" fromto="-0.00285426 -0.00138457 -0.00975258 -0.0229974 -0.0111558 -0.0785786" size="0.0102556" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                  <body name="LeftHandRing1" pos="0.0139138 -0.051114 -0.0874758">
+                    <joint name="LeftHandRing1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.0420 0.9748" limited="true" armature="0.451832" frictionloss="1.21104" />
+                    <joint name="LeftHandRing1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.8982 1.2482" limited="true" armature="0.451832" frictionloss="1.21104" />
+                    <joint name="LeftHandRing1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.4353 1.0217" limited="true" armature="0.451832" frictionloss="1.21104" />
+                    <geom name="g_LeftHandRing1" fromto="0 0 0 0.0124065 -0.0128955 -0.0550782" size="0.020371" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                    <body name="LeftHandRing2" pos="0.0124065 -0.0128955 -0.0550782">
+                      <joint name="LeftHandRing2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.2026 0.6074" limited="true" armature="0.451832" frictionloss="1.21104" />
+                      <joint name="LeftHandRing2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.3775 1.2035" limited="true" armature="0.451832" frictionloss="1.21104" />
+                      <joint name="LeftHandRing2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.6580 0.2258" limited="true" armature="0.451832" frictionloss="1.21104" />
+                      <geom name="g_LeftHandRing2" fromto="0 0 0 0.000789059 -0.0114152 -0.0571619" size="0.012536" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                      <body name="LeftHandRing3" pos="0.000789059 -0.0114152 -0.0571619">
+                        <joint name="LeftHandRing3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.1917 2.2210" limited="true" armature="0.451832" frictionloss="1.21104" />
+                        <joint name="LeftHandRing3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.3447 1.4237" limited="true" armature="0.451832" frictionloss="1.21104" />
+                        <joint name="LeftHandRing3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-2.2882 0.2091" limited="true" armature="0.451832" frictionloss="1.21104" />
+                        <geom name="g_LeftHandRing3" fromto="-0.00311512 -0.00151111 -0.0106439 -0.0250992 -0.0121754 -0.0857602" size="0.0111929" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                       </body>
                     </body>
                   </body>
-                  <body name="LeftHandIndex1" pos="-0.0020653 -0.0801848 -0.0574585">
-                    <joint name="LeftHandIndex1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.0547 0.9737" limited="true" armature="0.29179" frictionloss="0.853558" />
-                    <joint name="LeftHandIndex1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.5403 1.1295" limited="true" armature="0.29179" frictionloss="0.853558" />
-                    <joint name="LeftHandIndex1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.0749 0.9371" limited="true" armature="0.29179" frictionloss="0.853558" />
-                    <geom name="g_LeftHandIndex1" fromto="0 0 0 0.000924402 -0.0279584 -0.0264764" size="0.0154859" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                    <body name="LeftHandIndex2" pos="0.000924402 -0.0279584 -0.0264764">
-                      <joint name="LeftHandIndex2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.2408 0.5086" limited="true" armature="0.29179" frictionloss="0.853558" />
-                      <joint name="LeftHandIndex2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.2930 0.4743" limited="true" armature="0.29179" frictionloss="0.853558" />
-                      <joint name="LeftHandIndex2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.6024 0.2600" limited="true" armature="0.29179" frictionloss="0.853558" />
-                      <geom name="g_LeftHandIndex2" fromto="0 0 0 -0.00235246 -0.0165879 -0.0180566" size="0.0111615" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                      <body name="LeftHandIndex3" pos="-0.00235246 -0.0165879 -0.0180566">
-                        <joint name="LeftHandIndex3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.2702 1.6488" limited="true" armature="0.29179" frictionloss="0.853558" />
-                        <joint name="LeftHandIndex3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.3272 0.5907" limited="true" armature="0.29179" frictionloss="0.853558" />
-                        <joint name="LeftHandIndex3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.9297 0.3181" limited="true" armature="0.29179" frictionloss="0.853558" />
-                        <geom name="g_LeftHandIndex3" fromto="-0.00245387 -0.00467254 -0.00719402 -0.0168844 -0.0321503 -0.0495" size="0.00892234" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                      </body>
-                    </body>
-                  </body>
-                </body>
-              </body>
-            </body>
-          </body>
-          <body name="RightShoulder" pos="-0.0686097 -0.0898148 0.0289839">
-            <joint name="RightShoulder_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.0879 1.3179" limited="true" armature="0.29179" frictionloss="0.853558" />
-            <joint name="RightShoulder_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.7142 1.0588" limited="true" armature="0.29179" frictionloss="0.853558" />
-            <joint name="RightShoulder_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.5530 0.6609" limited="true" armature="0.29179" frictionloss="0.853558" />
-            <geom name="g_RightShoulder" fromto="-0.00210068 -0.00237724 -0.0222341 -0.0154056 -0.0174327 -0.163057" size="0.0769167" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-            <body name="RightArm" pos="-0.0175062 -0.0198103 -0.185284">
-              <joint name="RightArm_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-2.1802 2.3641" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <joint name="RightArm_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.6724 1.3899" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <joint name="RightArm_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.9332 2.2335" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <geom name="g_RightArm" fromto="-0.00547767 0.0208957 -0.0176259 -0.0401693 0.153233 -0.129256" size="0.0529871" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-              <body name="RightForeArm" pos="-0.0456458 0.174122 -0.146882">
-                <joint name="RightForeArm_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.2770 1.8986" limited="true" armature="0.29179" frictionloss="0.853558" />
-                <joint name="RightForeArm_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.1387 1.2931" limited="true" armature="0.29179" frictionloss="0.853558" />
-                <joint name="RightForeArm_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.4115 2.5874" limited="true" armature="0.29179" frictionloss="0.853558" />
-                <geom name="g_RightForeArm" fromto="-0.00459142 -0.0148324 -0.0140961 -0.0336707 -0.10877 -0.103371" size="0.0444408" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                <body name="RightHand" pos="-0.0382618 -0.123603 -0.117467">
-                  <joint name="RightHand_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-3.1067 2.0532" limited="true" armature="0.29179" frictionloss="0.853558" />
-                  <joint name="RightHand_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.3623 1.6520" limited="true" armature="0.29179" frictionloss="0.853558" />
-                  <joint name="RightHand_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-2.6298 3.1067" limited="true" armature="0.29179" frictionloss="0.853558" />
-                  <geom name="g_RightHand" fromto="-0.00079431 -0.00777919 -0.00839896 -0.00582482 -0.0570466 -0.0615932" size="0.039313" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                  <body name="RightHandMiddle1" pos="-0.0091736 -0.0674594 -0.072365">
-                    <joint name="RightHandMiddle1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.0460 1.4460" limited="true" armature="0.29179" frictionloss="0.853558" />
-                    <joint name="RightHandMiddle1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.1571 1.2524" limited="true" armature="0.29179" frictionloss="0.853558" />
-                    <joint name="RightHandMiddle1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.1108 2.0143" limited="true" armature="0.29179" frictionloss="0.853558" />
-                    <geom name="g_RightHandMiddle1" fromto="0 0 0 -0.00802446 -0.02916 -0.0550536" size="0.0183062" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                    <body name="RightHandMiddle2" pos="-0.00802446 -0.02916 -0.0550536">
-                      <joint name="RightHandMiddle2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.2083 0.6642" limited="true" armature="0.29179" frictionloss="0.853558" />
-                      <joint name="RightHandMiddle2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.9734 0.2988" limited="true" armature="0.29179" frictionloss="0.853558" />
-                      <joint name="RightHandMiddle2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.2330 0.8469" limited="true" armature="0.29179" frictionloss="0.853558" />
-                      <geom name="g_RightHandMiddle2" fromto="0 0 0 0.000287053 -0.0285156 -0.0594925" size="0.0170242" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                      <body name="RightHandMiddle3" pos="0.000287053 -0.0285156 -0.0594925">
-                        <joint name="RightHandMiddle3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.2106 1.5778" limited="true" armature="0.29179" frictionloss="0.853558" />
-                        <joint name="RightHandMiddle3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.1254 0.4369" limited="true" armature="0.29179" frictionloss="0.853558" />
-                        <joint name="RightHandMiddle3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.2958 1.8404" limited="true" armature="0.29179" frictionloss="0.853558" />
-                        <geom name="g_RightHandMiddle3" fromto="0.00331456 -0.00503979 -0.0126704 0.0222428 -0.0338201 -0.0850266" size="0.014033" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                      </body>
-                    </body>
-                  </body>
-                  <body name="RightHandRing1" pos="-0.0127492 -0.0468337 -0.0801506">
-                    <joint name="RightHandRing1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.0420 0.9748" limited="true" armature="0.29179" frictionloss="0.853558" />
-                    <joint name="RightHandRing1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.2482 0.8982" limited="true" armature="0.29179" frictionloss="0.853558" />
-                    <joint name="RightHandRing1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.0217 1.4353" limited="true" armature="0.29179" frictionloss="0.853558" />
-                    <geom name="g_RightHandRing1" fromto="0 0 0 -0.0113662 -0.0118161 -0.0504659" size="0.0183916" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                    <body name="RightHandRing2" pos="-0.0113662 -0.0118161 -0.0504659">
-                      <joint name="RightHandRing2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.2026 0.6074" limited="true" armature="0.29179" frictionloss="0.853558" />
-                      <joint name="RightHandRing2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.2035 0.3760" limited="true" armature="0.29179" frictionloss="0.853558" />
-                      <joint name="RightHandRing2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.2258 0.6580" limited="true" armature="0.29179" frictionloss="0.853558" />
-                      <geom name="g_RightHandRing2" fromto="0 0 0 -0.000723188 -0.0104591 -0.0523752" size="0.0114862" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                      <body name="RightHandRing3" pos="-0.000723188 -0.0104591 -0.0523752">
-                        <joint name="RightHandRing3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.1917 2.2210" limited="true" armature="0.29179" frictionloss="0.853558" />
-                        <joint name="RightHandRing3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.4237 0.3447" limited="true" armature="0.29179" frictionloss="0.853558" />
-                        <joint name="RightHandRing3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.2091 2.2882" limited="true" armature="0.29179" frictionloss="0.853558" />
-                        <geom name="g_RightHandRing3" fromto="0.00285423 -0.00138457 -0.00975258 0.0229971 -0.0111557 -0.0785783" size="0.0102556" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                      </body>
-                    </body>
-                  </body>
-                  <body name="RightHandIndex1" pos="0.00206513 -0.0801848 -0.0574585">
-                    <joint name="RightHandIndex1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.0547 0.9737" limited="true" armature="0.29179" frictionloss="0.853558" />
-                    <joint name="RightHandIndex1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.1295 0.5403" limited="true" armature="0.29179" frictionloss="0.853558" />
-                    <joint name="RightHandIndex1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.9371 1.0749" limited="true" armature="0.29179" frictionloss="0.853558" />
-                    <geom name="g_RightHandIndex1" fromto="0 0 0 -0.000924385 -0.0279584 -0.0264764" size="0.0154859" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                    <body name="RightHandIndex2" pos="-0.000924385 -0.0279584 -0.0264764">
-                      <joint name="RightHandIndex2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.2408 0.5086" limited="true" armature="0.29179" frictionloss="0.853558" />
-                      <joint name="RightHandIndex2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.4743 0.2930" limited="true" armature="0.29179" frictionloss="0.853558" />
-                      <joint name="RightHandIndex2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.2600 0.6024" limited="true" armature="0.29179" frictionloss="0.853558" />
-                      <geom name="g_RightHandIndex2" fromto="0 0 0 0.00235263 -0.0165885 -0.0180549" size="0.0111615" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                      <body name="RightHandIndex3" pos="0.00235263 -0.0165885 -0.0180549">
-                        <joint name="RightHandIndex3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.2702 1.6488" limited="true" armature="0.29179" frictionloss="0.853558" />
-                        <joint name="RightHandIndex3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.5907 0.3272" limited="true" armature="0.29179" frictionloss="0.853558" />
-                        <joint name="RightHandIndex3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.3181 1.9297" limited="true" armature="0.29179" frictionloss="0.853558" />
-                        <geom name="g_RightHandIndex3" fromto="0.00245387 -0.00467249 -0.00719407 0.0168845 -0.0321503 -0.0495007" size="0.00892234" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                  <body name="LeftHandIndex1" pos="-0.00225405 -0.0875132 -0.0627098">
+                    <joint name="LeftHandIndex1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.0547 0.9737" limited="true" armature="0.451832" frictionloss="1.21104" />
+                    <joint name="LeftHandIndex1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.5403 1.1295" limited="true" armature="0.451832" frictionloss="1.21104" />
+                    <joint name="LeftHandIndex1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.0749 0.9371" limited="true" armature="0.451832" frictionloss="1.21104" />
+                    <geom name="g_LeftHandIndex1" fromto="0 0 0 0.00100889 -0.0305136 -0.0288962" size="0.0169012" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                    <body name="LeftHandIndex2" pos="0.00100889 -0.0305136 -0.0288962">
+                      <joint name="LeftHandIndex2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.2408 0.5086" limited="true" armature="0.451832" frictionloss="1.21104" />
+                      <joint name="LeftHandIndex2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.2930 0.4743" limited="true" armature="0.451832" frictionloss="1.21104" />
+                      <joint name="LeftHandIndex2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.6024 0.2600" limited="true" armature="0.451832" frictionloss="1.21104" />
+                      <geom name="g_LeftHandIndex2" fromto="0 0 0 -0.00256746 -0.0181039 -0.0197069" size="0.0121816" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                      <body name="LeftHandIndex3" pos="-0.00256746 -0.0181039 -0.0197069">
+                        <joint name="LeftHandIndex3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.2702 1.6488" limited="true" armature="0.451832" frictionloss="1.21104" />
+                        <joint name="LeftHandIndex3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.3272 0.5907" limited="true" armature="0.451832" frictionloss="1.21104" />
+                        <joint name="LeftHandIndex3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.9297 0.3181" limited="true" armature="0.451832" frictionloss="1.21104" />
+                        <geom name="g_LeftHandIndex3" fromto="-0.00267814 -0.00509958 -0.00785151 -0.0184275 -0.0350886 -0.054024" size="0.00973778" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                       </body>
                     </body>
                   </body>
@@ -251,43 +173,79 @@
               </body>
             </body>
           </body>
-        </body>
-      </body>
-      <body name="Tail" pos="0 0.112842 -0.00140296">
-        <joint name="Tail_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.6016 1.2474" limited="true" armature="0.29179" frictionloss="0.853558" />
-        <joint name="Tail_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.1216 1.1216" limited="true" armature="0.29179" frictionloss="0.853558" />
-        <joint name="Tail_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.9570 0.9570" limited="true" armature="0.29179" frictionloss="0.853558" />
-        <geom name="g_Tail" fromto="-7.75235e-10 0.0239963 -0.000100997 -5.685e-09 0.175968 -0.00074064" size="0.126485" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-        <body name="Tail1" pos="-6.46032e-09 0.199966 -0.00084164">
-          <joint name="Tail1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.4449 0.8159" limited="true" armature="0.29179" frictionloss="0.853558" />
-          <joint name="Tail1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.8186 0.8186" limited="true" armature="0.29179" frictionloss="0.853558" />
-          <joint name="Tail1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.6087 0.6087" limited="true" armature="0.29179" frictionloss="0.853558" />
-          <geom name="g_Tail1" fromto="-8.64903e-10 0.0267704 -0.000112789 -6.34255e-09 0.196326 -0.000827128" size="0.0957186" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-          <body name="Tail2" pos="-7.20744e-09 0.223093 -0.000939922">
-            <joint name="Tail2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.4246 0.4704" limited="true" armature="0.29179" frictionloss="0.853558" />
-            <joint name="Tail2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.4631 0.4631" limited="true" armature="0.29179" frictionloss="0.853558" />
-            <joint name="Tail2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.4904 0.4904" limited="true" armature="0.29179" frictionloss="0.853558" />
-            <geom name="g_Tail2" fromto="-1.14625e-09 0.0354791 -0.000149326 -8.4058e-09 0.260184 -0.00109505" size="0.0683704" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-            <body name="Tail3" pos="-9.55203e-09 0.295668 -0.00124438">
-              <joint name="Tail3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.4323 0.4590" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <joint name="Tail3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.8782 0.8782" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <joint name="Tail3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.4828 0.4828" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <geom name="g_Tail3" fromto="-1.05137e-09 0.0325426 -0.000137043 -7.70996e-09 0.238647 -0.00100498" size="0.0495686" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-              <body name="Tail4" pos="-8.76133e-09 0.271191 -0.00114203">
-                <joint name="Tail4_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.4298 0.4572" limited="true" armature="0.29179" frictionloss="0.853558" />
-                <joint name="Tail4_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.8782 0.8782" limited="true" armature="0.29179" frictionloss="0.853558" />
-                <joint name="Tail4_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.4828 0.4828" limited="true" armature="0.29179" frictionloss="0.853558" />
-                <geom name="g_Tail4" fromto="-1.10309e-09 0.0341442 -0.000143792 -8.08925e-09 0.25039 -0.00105446" size="0.0376037" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                <body name="Tail5" pos="-9.1924e-09 0.284523 -0.00119826">
-                  <joint name="Tail5_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.2446 0.1745" limited="true" armature="0.29179" frictionloss="0.853558" />
-                  <joint name="Tail5_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.1745 0.1745" limited="true" armature="0.29179" frictionloss="0.853558" />
-                  <joint name="Tail5_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.1745 0.1745" limited="true" armature="0.29179" frictionloss="0.853558" />
-                  <geom name="g_Tail5" fromto="-9.21667e-10 0.0285276 -0.000120108 -6.75893e-09 0.209213 -0.000880799" size="0.04615" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                  <body name="Tail6" pos="-7.68056e-09 0.237741 -0.00100091">
-                    <joint name="Tail6_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.0469 1.0288" limited="true" armature="0.29179" frictionloss="0.853558" />
-                    <joint name="Tail6_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.2793 1.2793" limited="true" armature="0.29179" frictionloss="0.853558" />
-                    <joint name="Tail6_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.2112 0.8699" limited="true" armature="0.29179" frictionloss="0.853558" />
-                    <geom name="g_Tail6" fromto="-5.52997e-10 0.0171165 -7.20658e-05 -4.05539e-09 0.125525 -0.000528469" size="0.0341852" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+          <body name="RightShoulder" pos="-0.0748802 -0.0980233 0.0316328">
+            <joint name="RightShoulder_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.0879 1.3179" limited="true" armature="0.451832" frictionloss="1.21104" />
+            <joint name="RightShoulder_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.7142 1.0588" limited="true" armature="0.451832" frictionloss="1.21104" />
+            <joint name="RightShoulder_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.5530 0.6609" limited="true" armature="0.451832" frictionloss="1.21104" />
+            <geom name="g_RightShoulder" fromto="-0.00229267 -0.0025945 -0.0242662 -0.0168136 -0.0190259 -0.177959" size="0.0839464" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+            <body name="RightArm" pos="-0.0191062 -0.0216208 -0.202218">
+              <joint name="RightArm_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-2.1802 2.3641" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <joint name="RightArm_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.6724 1.3899" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <joint name="RightArm_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.9332 2.2335" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <geom name="g_RightArm" fromto="-0.00597829 0.0228054 -0.0192368 -0.0438405 0.167237 -0.141069" size="0.0578298" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+              <body name="RightForeArm" pos="-0.0498175 0.190036 -0.160306">
+                <joint name="RightForeArm_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.2770 1.8986" limited="true" armature="0.451832" frictionloss="1.21104" />
+                <joint name="RightForeArm_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.1387 1.2931" limited="true" armature="0.451832" frictionloss="1.21104" />
+                <joint name="RightForeArm_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.4115 2.5874" limited="true" armature="0.451832" frictionloss="1.21104" />
+                <geom name="g_RightForeArm" fromto="-0.00501105 -0.016188 -0.0153844 -0.036748 -0.118711 -0.112818" size="0.0485024" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                <body name="RightHand" pos="-0.0417587 -0.1349 -0.128203">
+                  <joint name="RightHand_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-3.1067 2.0532" limited="true" armature="0.451832" frictionloss="1.21104" />
+                  <joint name="RightHand_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.3623 1.6520" limited="true" armature="0.451832" frictionloss="1.21104" />
+                  <joint name="RightHand_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-2.6298 3.1067" limited="true" armature="0.451832" frictionloss="1.21104" />
+                  <geom name="g_RightHand" fromto="-0.000866905 -0.00849016 -0.00916657 -0.00635717 -0.0622603 -0.0672224" size="0.042906" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                  <body name="RightHandMiddle1" pos="-0.010012 -0.0736247 -0.0789787">
+                    <joint name="RightHandMiddle1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.0460 1.4460" limited="true" armature="0.451832" frictionloss="1.21104" />
+                    <joint name="RightHandMiddle1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.1571 1.2524" limited="true" armature="0.451832" frictionloss="1.21104" />
+                    <joint name="RightHandMiddle1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.1108 2.0143" limited="true" armature="0.451832" frictionloss="1.21104" />
+                    <geom name="g_RightHandMiddle1" fromto="0 0 0 -0.00875784 -0.031825 -0.0600851" size="0.0199793" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                    <body name="RightHandMiddle2" pos="-0.00875784 -0.031825 -0.0600851">
+                      <joint name="RightHandMiddle2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.2083 0.6642" limited="true" armature="0.451832" frictionloss="1.21104" />
+                      <joint name="RightHandMiddle2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.9734 0.2988" limited="true" armature="0.451832" frictionloss="1.21104" />
+                      <joint name="RightHandMiddle2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.2330 0.8469" limited="true" armature="0.451832" frictionloss="1.21104" />
+                      <geom name="g_RightHandMiddle2" fromto="0 0 0 0.000313288 -0.0311217 -0.0649297" size="0.0185801" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                      <body name="RightHandMiddle3" pos="0.000313288 -0.0311217 -0.0649297">
+                        <joint name="RightHandMiddle3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.2106 1.5778" limited="true" armature="0.451832" frictionloss="1.21104" />
+                        <joint name="RightHandMiddle3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.1254 0.4369" limited="true" armature="0.451832" frictionloss="1.21104" />
+                        <joint name="RightHandMiddle3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.2958 1.8404" limited="true" armature="0.451832" frictionloss="1.21104" />
+                        <geom name="g_RightHandMiddle3" fromto="0.00361749 -0.00550039 -0.0138284 0.0242756 -0.036911 -0.0927975" size="0.0153155" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                      </body>
+                    </body>
+                  </body>
+                  <body name="RightHandRing1" pos="-0.0139144 -0.051114 -0.0874758">
+                    <joint name="RightHandRing1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.0420 0.9748" limited="true" armature="0.451832" frictionloss="1.21104" />
+                    <joint name="RightHandRing1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.2482 0.8982" limited="true" armature="0.451832" frictionloss="1.21104" />
+                    <joint name="RightHandRing1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.0217 1.4353" limited="true" armature="0.451832" frictionloss="1.21104" />
+                    <geom name="g_RightHandRing1" fromto="0 0 0 -0.012405 -0.012896 -0.0550782" size="0.0200725" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                    <body name="RightHandRing2" pos="-0.012405 -0.012896 -0.0550782">
+                      <joint name="RightHandRing2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.2026 0.6074" limited="true" armature="0.451832" frictionloss="1.21104" />
+                      <joint name="RightHandRing2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.2035 0.3760" limited="true" armature="0.451832" frictionloss="1.21104" />
+                      <joint name="RightHandRing2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.2258 0.6580" limited="true" armature="0.451832" frictionloss="1.21104" />
+                      <geom name="g_RightHandRing2" fromto="0 0 0 -0.000789283 -0.011415 -0.0571619" size="0.012536" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                      <body name="RightHandRing3" pos="-0.000789283 -0.011415 -0.0571619">
+                        <joint name="RightHandRing3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.1917 2.2210" limited="true" armature="0.451832" frictionloss="1.21104" />
+                        <joint name="RightHandRing3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.4237 0.3447" limited="true" armature="0.451832" frictionloss="1.21104" />
+                        <joint name="RightHandRing3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.2091 2.2882" limited="true" armature="0.451832" frictionloss="1.21104" />
+                        <geom name="g_RightHandRing3" fromto="0.00311509 -0.00151111 -0.0106439 0.0250989 -0.0121753 -0.0857598" size="0.0111929" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                      </body>
+                    </body>
+                  </body>
+                  <body name="RightHandIndex1" pos="0.00225387 -0.0875132 -0.0627098">
+                    <joint name="RightHandIndex1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.0547 0.9737" limited="true" armature="0.451832" frictionloss="1.21104" />
+                    <joint name="RightHandIndex1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.1295 0.5403" limited="true" armature="0.451832" frictionloss="1.21104" />
+                    <joint name="RightHandIndex1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.9371 1.0749" limited="true" armature="0.451832" frictionloss="1.21104" />
+                    <geom name="g_RightHandIndex1" fromto="0 0 0 -0.00100887 -0.0305136 -0.0288962" size="0.0169012" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                    <body name="RightHandIndex2" pos="-0.00100887 -0.0305136 -0.0288962">
+                      <joint name="RightHandIndex2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.2408 0.5086" limited="true" armature="0.451832" frictionloss="1.21104" />
+                      <joint name="RightHandIndex2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.4743 0.2930" limited="true" armature="0.451832" frictionloss="1.21104" />
+                      <joint name="RightHandIndex2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.2600 0.6024" limited="true" armature="0.451832" frictionloss="1.21104" />
+                      <geom name="g_RightHandIndex2" fromto="0 0 0 0.00256764 -0.0181046 -0.019705" size="0.0121816" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                      <body name="RightHandIndex3" pos="0.00256764 -0.0181046 -0.019705">
+                        <joint name="RightHandIndex3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.2702 1.6488" limited="true" armature="0.451832" frictionloss="1.21104" />
+                        <joint name="RightHandIndex3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.5907 0.3272" limited="true" armature="0.451832" frictionloss="1.21104" />
+                        <joint name="RightHandIndex3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.3181 1.9297" limited="true" armature="0.451832" frictionloss="1.21104" />
+                        <geom name="g_RightHandIndex3" fromto="0.00267814 -0.00509952 -0.00785156 0.0184276 -0.0350886 -0.0540247" size="0.00973778" density="1310.9" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                      </body>
+                    </body>
                   </body>
                 </body>
               </body>
@@ -295,156 +253,198 @@
           </body>
         </body>
       </body>
-      <body name="LeftUpLeg" pos="0.0734435 -0.00167398 0.0639161">
-        <joint name="LeftUpLeg_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.7984 1.1466" limited="true" armature="0.29179" frictionloss="0.853558" />
-        <joint name="LeftUpLeg_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.9443 0.6051" limited="true" armature="0.29179" frictionloss="0.853558" />
-        <joint name="LeftUpLeg_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.0967 0.8135" limited="true" armature="0.29179" frictionloss="0.853558" />
-        <geom name="g_LeftUpLeg" fromto="0.00511445 -0.00579029 -0.0438032 0.0375063 -0.0424614 -0.321221" size="0.111102" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-        <body name="LeftLeg" pos="0.0426204 -0.0482524 -0.36503">
-          <joint name="LeftLeg_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.7311 2.4105" limited="true" armature="0.29179" frictionloss="0.853558" />
-          <joint name="LeftLeg_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.6966 1.3946" limited="true" armature="0.29179" frictionloss="0.853558" />
-          <joint name="LeftLeg_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.4227 0.8179" limited="true" armature="0.29179" frictionloss="0.853558" />
-          <geom name="g_LeftLeg" fromto="0.00461534 0.021576 -0.0430717 0.0338468 0.158226 -0.315871" size="0.0410222" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-          <body name="LeftFoot" pos="0.0384618 0.179797 -0.358928">
-            <joint name="LeftFoot_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-2.0747 0.9271" limited="true" armature="0.29179" frictionloss="0.853558" />
-            <joint name="LeftFoot_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.6183 1.4881" limited="true" armature="0.29179" frictionloss="0.853558" />
-            <joint name="LeftFoot_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.8977 0.8570" limited="true" armature="0.29179" frictionloss="0.853558" />
-            <geom name="g_LeftFoot" fromto="0.00105595 -0.00645041 -0.0210085 0.00774363 -0.0473021 -0.154061" size="0.039313" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-            <body name="LeftToeBase" pos="0.00786995 -0.0611317 -0.181489">
-              <joint name="LeftToeBase_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-2.7852 2.5440" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <joint name="LeftToeBase_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.6339 1.7271" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <joint name="LeftToeBase_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.8521 3.1067" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <geom name="g_LeftToeBase" fromto="0 0.0138004 0 0 0.0410222 0" size="0.0239296" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-            </body>
-            <body name="LeftFootIndex1" pos="-0.018701 -0.0501514 -0.166581">
-              <joint name="LeftFootIndex1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5186 2.6109" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <joint name="LeftFootIndex1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.2260 1.2952" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <joint name="LeftFootIndex1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.7670 2.1674" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <geom name="g_LeftFootIndex1" fromto="0 0 0 -0.00477499 -0.0440613 -0.00779987" size="0.0285959" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-              <body name="LeftFootIndex2" pos="-0.00477499 -0.0440613 -0.00779987">
-                <joint name="LeftFootIndex2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.0873 1.5936" limited="true" armature="0.29179" frictionloss="0.853558" />
-                <joint name="LeftFootIndex2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.2224 0.2088" limited="true" armature="0.29179" frictionloss="0.853558" />
-                <joint name="LeftFootIndex2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.1410 0.2880" limited="true" armature="0.29179" frictionloss="0.853558" />
-                <geom name="g_LeftFootIndex2" fromto="0 0 0 -0.00433708 -0.037961 0.0188292" size="0.0216051" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                <body name="LeftFootIndex3" pos="-0.00433708 -0.037961 0.0188292">
-                  <joint name="LeftFootIndex3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.8183 1.6514" limited="true" armature="0.29179" frictionloss="0.853558" />
-                  <joint name="LeftFootIndex3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.2768 0.2332" limited="true" armature="0.29179" frictionloss="0.853558" />
-                  <joint name="LeftFootIndex3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.2061 0.2897" limited="true" armature="0.29179" frictionloss="0.853558" />
-                  <geom name="g_LeftFootIndex3" fromto="-0.00106774 -0.00937095 0.0132181 -0.00579644 -0.050872 0.0717568" size="0.016238" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                </body>
-              </body>
-            </body>
-            <body name="LeftFootMiddle1" pos="0.00835538 -0.0528948 -0.176105">
-              <joint name="LeftFootMiddle1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5603 3.1067" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <joint name="LeftFootMiddle1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.4467 1.6240" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <joint name="LeftFootMiddle1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-2.8446 1.2173" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <geom name="g_LeftFootMiddle1" fromto="0 0 0 -5.9819e-09 -0.0856322 -0.0221845" size="0.0228528" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-              <body name="LeftFootMiddle2" pos="-5.9819e-09 -0.0856322 -0.0221845">
-                <joint name="LeftFootMiddle2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.0873 1.6122" limited="true" armature="0.29179" frictionloss="0.853558" />
-                <joint name="LeftFootMiddle2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.1774 0.1950" limited="true" armature="0.29179" frictionloss="0.853558" />
-                <joint name="LeftFootMiddle2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.1691 0.2039" limited="true" armature="0.29179" frictionloss="0.853558" />
-                <geom name="g_LeftFootMiddle2" fromto="0 0 0 -2.49586e-09 -0.0585678 0.0031059" size="0.0171439" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                <body name="LeftFootMiddle3" pos="-2.49586e-09 -0.0585678 0.0031059">
-                  <joint name="LeftFootMiddle3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.5742 1.5203" limited="true" armature="0.29179" frictionloss="0.853558" />
-                  <joint name="LeftFootMiddle3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.1803 0.1967" limited="true" armature="0.29179" frictionloss="0.853558" />
-                  <joint name="LeftFootMiddle3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.1841 0.2039" limited="true" armature="0.29179" frictionloss="0.853558" />
-                  <geom name="g_LeftFootMiddle3" fromto="0.000107361 -0.0134067 -0.00309414 0.000466997 -0.0583165 -0.0134589" size="0.0137595" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                </body>
-              </body>
-            </body>
-            <body name="LeftFootRing1" pos="0.0376738 -0.0508334 -0.176105">
-              <joint name="LeftFootRing1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.6908 3.1067" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <joint name="LeftFootRing1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.2814 1.6088" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <joint name="LeftFootRing1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-2.5722 1.5796" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <geom name="g_LeftFootRing1" fromto="0 0 0 0.0043017 -0.0855194 -0.022205" size="0.0237929" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-              <body name="LeftFootRing2" pos="0.0043017 -0.0855194 -0.022205">
-                <joint name="LeftFootRing2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.0873 1.5876" limited="true" armature="0.29179" frictionloss="0.853558" />
-                <joint name="LeftFootRing2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.1809 0.2757" limited="true" armature="0.29179" frictionloss="0.853558" />
-                <joint name="LeftFootRing2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.1904 0.2708" limited="true" armature="0.29179" frictionloss="0.853558" />
-                <geom name="g_LeftFootRing2" fromto="0 0 0 0.00276934 -0.0585029 0.00309051" size="0.017537" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                <body name="LeftFootRing3" pos="0.00276934 -0.0585029 0.00309051">
-                  <joint name="LeftFootRing3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.6197 1.4533" limited="true" armature="0.29179" frictionloss="0.853558" />
-                  <joint name="LeftFootRing3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.1943 0.2410" limited="true" armature="0.29179" frictionloss="0.853558" />
-                  <joint name="LeftFootRing3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.2271 0.1871" limited="true" armature="0.29179" frictionloss="0.853558" />
-                  <geom name="g_LeftFootRing3" fromto="0.000529062 -0.0132975 -0.00335883 0.00239797 -0.0602707 -0.0152238" size="0.0137254" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+      <body name="Tail" pos="0 0.123155 -0.00153118">
+        <joint name="Tail_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.6016 1.2474" limited="true" armature="0.451832" frictionloss="1.21104" />
+        <joint name="Tail_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.1216 1.1216" limited="true" armature="0.451832" frictionloss="1.21104" />
+        <joint name="Tail_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.9570 0.9570" limited="true" armature="0.451832" frictionloss="1.21104" />
+        <geom name="g_Tail" fromto="-8.46086e-10 0.0261894 -0.000110227 -6.20457e-09 0.19205 -0.00080833" size="0.138045" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+        <body name="Tail1" pos="-7.05075e-09 0.218242 -0.00091856">
+          <joint name="Tail1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.4449 0.8159" limited="true" armature="0.451832" frictionloss="1.21104" />
+          <joint name="Tail1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.8186 0.8186" limited="true" armature="0.451832" frictionloss="1.21104" />
+          <joint name="Tail1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.6087 0.6087" limited="true" armature="0.451832" frictionloss="1.21104" />
+          <geom name="g_Tail1" fromto="-9.43949e-10 0.029217 -0.000123097 -6.92222e-09 0.214269 -0.000902722" size="0.104467" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+          <body name="Tail2" pos="-7.86615e-09 0.243482 -0.00102582">
+            <joint name="Tail2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.4246 0.4704" limited="true" armature="0.451832" frictionloss="1.21104" />
+            <joint name="Tail2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.4631 0.4631" limited="true" armature="0.451832" frictionloss="1.21104" />
+            <joint name="Tail2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.4904 0.4904" limited="true" armature="0.451832" frictionloss="1.21104" />
+            <geom name="g_Tail2" fromto="-1.25101e-09 0.0387217 -0.000162973 -9.17403e-09 0.283963 -0.00119513" size="0.074619" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+            <body name="Tail3" pos="-1.0425e-08 0.32269 -0.00135811">
+              <joint name="Tail3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.4323 0.4590" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <joint name="Tail3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.8782 0.8782" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <joint name="Tail3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.4828 0.4828" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <geom name="g_Tail3" fromto="-1.14746e-09 0.0355168 -0.000149568 -8.4146e-09 0.260458 -0.00109683" size="0.0540988" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+              <body name="Tail4" pos="-9.56206e-09 0.295976 -0.0012464">
+                <joint name="Tail4_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.4298 0.4572" limited="true" armature="0.451832" frictionloss="1.21104" />
+                <joint name="Tail4_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.8782 0.8782" limited="true" armature="0.451832" frictionloss="1.21104" />
+                <joint name="Tail4_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.4828 0.4828" limited="true" armature="0.451832" frictionloss="1.21104" />
+                <geom name="g_Tail4" fromto="-1.20391e-09 0.0372648 -0.000156934 -8.82855e-09 0.273274 -0.00115083" size="0.0410404" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                <body name="Tail5" pos="-1.00325e-08 0.310527 -0.00130777">
+                  <joint name="Tail5_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.2446 0.1745" limited="true" armature="0.451832" frictionloss="1.21104" />
+                  <joint name="Tail5_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.1745 0.1745" limited="true" armature="0.451832" frictionloss="1.21104" />
+                  <joint name="Tail5_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.1745 0.1745" limited="true" armature="0.451832" frictionloss="1.21104" />
+                  <geom name="g_Tail5" fromto="-1.0059e-09 0.0311348 -0.000131085 -7.37665e-09 0.228334 -0.000961298" size="0.0503678" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                  <body name="Tail6" pos="-8.38251e-09 0.259469 -0.00109239">
+                    <joint name="Tail6_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.0469 1.0288" limited="true" armature="0.451832" frictionloss="1.21104" />
+                    <joint name="Tail6_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.2793 1.2793" limited="true" armature="0.451832" frictionloss="1.21104" />
+                    <joint name="Tail6_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.2112 0.8699" limited="true" armature="0.451832" frictionloss="1.21104" />
+                    <geom name="g_Tail6" fromto="-6.03537e-10 0.0186808 -7.86521e-05 -4.42603e-09 0.136997 -0.000576768" size="0.0373095" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                  </body>
                 </body>
               </body>
             </body>
           </body>
         </body>
       </body>
-      <body name="RightUpLeg" pos="-0.0734435 -0.00167396 0.0639144">
-        <joint name="RightUpLeg_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.7984 1.2450" limited="true" armature="0.29179" frictionloss="0.853558" />
-        <joint name="RightUpLeg_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.6051 0.9443" limited="true" armature="0.29179" frictionloss="0.853558" />
-        <joint name="RightUpLeg_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.8135 1.0967" limited="true" armature="0.29179" frictionloss="0.853558" />
-        <geom name="g_RightUpLeg" fromto="-0.00511445 -0.00579029 -0.0438032 -0.0375063 -0.0424614 -0.321221" size="0.111102" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-        <body name="RightLeg" pos="-0.0426204 -0.0482524 -0.36503">
-          <joint name="RightLeg_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.7311 2.4105" limited="true" armature="0.29179" frictionloss="0.853558" />
-          <joint name="RightLeg_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.3946 0.6966" limited="true" armature="0.29179" frictionloss="0.853558" />
-          <joint name="RightLeg_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.8179 1.4227" limited="true" armature="0.29179" frictionloss="0.853558" />
-          <geom name="g_RightLeg" fromto="-0.00461534 0.021576 -0.0430717 -0.0338468 0.158226 -0.315871" size="0.0410222" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-          <body name="RightFoot" pos="-0.0384618 0.179797 -0.358928">
-            <joint name="RightFoot_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-2.0747 0.9271" limited="true" armature="0.29179" frictionloss="0.853558" />
-            <joint name="RightFoot_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.4881 1.6183" limited="true" armature="0.29179" frictionloss="0.853558" />
-            <joint name="RightFoot_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.8570 1.8977" limited="true" armature="0.29179" frictionloss="0.853558" />
-            <geom name="g_RightFoot" fromto="-0.00105595 -0.00645041 -0.0210085 -0.00774363 -0.0473021 -0.154061" size="0.039313" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-            <body name="RightToeBase" pos="-0.00786995 -0.0611317 -0.181489">
-              <joint name="RightToeBase_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-2.7852 2.5440" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <joint name="RightToeBase_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.7271 1.6339" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <joint name="RightToeBase_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-3.1067 1.8521" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <geom name="g_RightToeBase" fromto="0 0.0138004 0 0 0.0410222 0" size="0.0239296" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+      <body name="LeftUpLeg" pos="0.0801558 -0.00182697 0.0697576">
+        <joint name="LeftUpLeg_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.7984 1.1466" limited="true" armature="0.451832" frictionloss="1.21104" />
+        <joint name="LeftUpLeg_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.9443 0.6051" limited="true" armature="0.451832" frictionloss="1.21104" />
+        <joint name="LeftUpLeg_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.0967 0.8135" limited="true" armature="0.451832" frictionloss="1.21104" />
+        <geom name="g_LeftUpLeg" fromto="0.00558188 -0.00631948 -0.0478065 0.0409341 -0.0463421 -0.350578" size="0.121256" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+        <body name="LeftLeg" pos="0.0465156 -0.0526624 -0.398391">
+          <joint name="LeftLeg_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.7311 2.4105" limited="true" armature="0.451832" frictionloss="1.21104" />
+          <joint name="LeftLeg_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.6966 1.3946" limited="true" armature="0.451832" frictionloss="1.21104" />
+          <joint name="LeftLeg_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.4227 0.8179" limited="true" armature="0.451832" frictionloss="1.21104" />
+          <geom name="g_LeftLeg" fromto="0.00503715 0.0235479 -0.0470082 0.0369402 0.172687 -0.34474" size="0.0447714" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+          <body name="LeftFoot" pos="0.041977 0.196229 -0.391732">
+            <joint name="LeftFoot_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-2.0747 0.9271" limited="true" armature="0.451832" frictionloss="1.21104" />
+            <joint name="LeftFoot_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.6183 1.4881" limited="true" armature="0.451832" frictionloss="1.21104" />
+            <joint name="LeftFoot_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.8977 0.8570" limited="true" armature="0.451832" frictionloss="1.21104" />
+            <geom name="g_LeftFoot" fromto="0.00115246 -0.00703994 -0.0229285 0.00845135 -0.0516252 -0.168141" size="0.042906" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+            <body name="LeftToeBase" pos="0.00858921 -0.0667187 -0.198076">
+              <joint name="LeftToeBase_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-2.7852 2.5440" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <joint name="LeftToeBase_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.6339 1.7271" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <joint name="LeftToeBase_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.8521 3.1067" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <geom name="g_LeftToeBase" fromto="0 0.0150617 0 0 0.0447714 0" size="0.0261166" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
             </body>
-            <body name="RightFootIndex1" pos="0.018701 -0.0501514 -0.166581">
-              <joint name="RightFootIndex1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5186 2.6109" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <joint name="RightFootIndex1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.2952 1.2260" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <joint name="RightFootIndex1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-2.1674 1.7670" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <geom name="g_RightFootIndex1" fromto="0 0 0 0.00477499 -0.0440613 -0.00779987" size="0.0269892" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-              <body name="RightFootIndex2" pos="0.00477499 -0.0440613 -0.00779987">
-                <joint name="RightFootIndex2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.0873 1.5936" limited="true" armature="0.29179" frictionloss="0.853558" />
-                <joint name="RightFootIndex2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.1698 0.2224" limited="true" armature="0.29179" frictionloss="0.853558" />
-                <joint name="RightFootIndex2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.2880 0.1193" limited="true" armature="0.29179" frictionloss="0.853558" />
-                <geom name="g_RightFootIndex2" fromto="0 0 0 0.00433725 -0.037961 0.0188309" size="0.0216051" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                <body name="RightFootIndex3" pos="0.00433725 -0.037961 0.0188309">
-                  <joint name="RightFootIndex3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.8183 1.6514" limited="true" armature="0.29179" frictionloss="0.853558" />
-                  <joint name="RightFootIndex3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.2332 0.2768" limited="true" armature="0.29179" frictionloss="0.853558" />
-                  <joint name="RightFootIndex3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.2897 0.2061" limited="true" armature="0.29179" frictionloss="0.853558" />
-                  <geom name="g_RightFootIndex3" fromto="0.00106773 -0.00937095 0.0132181 0.00579641 -0.050872 0.0717568" size="0.016238" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+            <body name="LeftFootIndex1" pos="-0.0204101 -0.0547349 -0.181805">
+              <joint name="LeftFootIndex1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5186 2.6109" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <joint name="LeftFootIndex1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.2260 1.2952" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <joint name="LeftFootIndex1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.7670 2.1674" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <geom name="g_LeftFootIndex1" fromto="0 0 0 -0.00521139 -0.0480882 -0.00851273" size="0.0312094" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+              <body name="LeftFootIndex2" pos="-0.00521139 -0.0480882 -0.00851273">
+                <joint name="LeftFootIndex2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.0873 1.5936" limited="true" armature="0.451832" frictionloss="1.21104" />
+                <joint name="LeftFootIndex2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.2224 0.2088" limited="true" armature="0.451832" frictionloss="1.21104" />
+                <joint name="LeftFootIndex2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.1410 0.2880" limited="true" armature="0.451832" frictionloss="1.21104" />
+                <geom name="g_LeftFootIndex2" fromto="0 0 0 -0.00473346 -0.0414304 0.0205501" size="0.0235797" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                <body name="LeftFootIndex3" pos="-0.00473346 -0.0414304 0.0205501">
+                  <joint name="LeftFootIndex3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.8183 1.6514" limited="true" armature="0.451832" frictionloss="1.21104" />
+                  <joint name="LeftFootIndex3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.2768 0.2332" limited="true" armature="0.451832" frictionloss="1.21104" />
+                  <joint name="LeftFootIndex3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.2061 0.2897" limited="true" armature="0.451832" frictionloss="1.21104" />
+                  <geom name="g_LeftFootIndex3" fromto="-0.00116532 -0.0102274 0.0144261 -0.0063262 -0.0555214 0.0783149" size="0.017722" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                 </body>
               </body>
             </body>
-            <body name="RightFootMiddle1" pos="-0.00835538 -0.0528948 -0.176105">
-              <joint name="RightFootMiddle1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5603 3.1067" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <joint name="RightFootMiddle1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.6240 1.4467" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <joint name="RightFootMiddle1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.2173 2.8446" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <geom name="g_RightFootMiddle1" fromto="0 0 0 -2.37433e-10 -0.0856322 -0.0221845" size="0.0228528" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-              <body name="RightFootMiddle2" pos="-2.37433e-10 -0.0856322 -0.0221845">
-                <joint name="RightFootMiddle2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.0873 1.6122" limited="true" armature="0.29179" frictionloss="0.853558" />
-                <joint name="RightFootMiddle2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.1950 0.1774" limited="true" armature="0.29179" frictionloss="0.853558" />
-                <joint name="RightFootMiddle2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.2032 0.1694" limited="true" armature="0.29179" frictionloss="0.853558" />
-                <geom name="g_RightFootMiddle2" fromto="0 0 0 -1.9689e-09 -0.0585678 0.0031059" size="0.0171439" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                <body name="RightFootMiddle3" pos="-1.9689e-09 -0.0585678 0.0031059">
-                  <joint name="RightFootMiddle3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.5742 1.5203" limited="true" armature="0.29179" frictionloss="0.853558" />
-                  <joint name="RightFootMiddle3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.1967 0.1803" limited="true" armature="0.29179" frictionloss="0.853558" />
-                  <joint name="RightFootMiddle3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.2039 0.1841" limited="true" armature="0.29179" frictionloss="0.853558" />
-                  <geom name="g_RightFootMiddle3" fromto="-0.000107365 -0.0134067 -0.00309412 -0.000467018 -0.0583165 -0.0134588" size="0.0137595" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+            <body name="LeftFootMiddle1" pos="0.00911901 -0.057729 -0.1922">
+              <joint name="LeftFootMiddle1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5603 3.1067" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <joint name="LeftFootMiddle1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.4467 1.6240" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <joint name="LeftFootMiddle1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-2.8446 1.2173" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <geom name="g_LeftFootMiddle1" fromto="0 0 0 -6.52861e-09 -0.0934584 -0.024212" size="0.0249414" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+              <body name="LeftFootMiddle2" pos="-6.52861e-09 -0.0934584 -0.024212">
+                <joint name="LeftFootMiddle2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.0873 1.6122" limited="true" armature="0.451832" frictionloss="1.21104" />
+                <joint name="LeftFootMiddle2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.1774 0.1950" limited="true" armature="0.451832" frictionloss="1.21104" />
+                <joint name="LeftFootMiddle2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.1691 0.2039" limited="true" armature="0.451832" frictionloss="1.21104" />
+                <geom name="g_LeftFootMiddle2" fromto="0 0 0 -2.72397e-09 -0.0639205 0.00338976" size="0.0187107" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                <body name="LeftFootMiddle3" pos="-2.72397e-09 -0.0639205 0.00338976">
+                  <joint name="LeftFootMiddle3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.5742 1.5203" limited="true" armature="0.451832" frictionloss="1.21104" />
+                  <joint name="LeftFootMiddle3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.1803 0.1967" limited="true" armature="0.451832" frictionloss="1.21104" />
+                  <joint name="LeftFootMiddle3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.1841 0.2039" limited="true" armature="0.451832" frictionloss="1.21104" />
+                  <geom name="g_LeftFootMiddle3" fromto="0.000117173 -0.014632 -0.00337692 0.000509677 -0.0636462 -0.014689" size="0.015017" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                 </body>
               </body>
             </body>
-            <body name="RightFootRing1" pos="-0.0376738 -0.0508334 -0.176105">
-              <joint name="RightFootRing1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.6908 3.1067" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <joint name="RightFootRing1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.6088 1.2814" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <joint name="RightFootRing1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5796 2.5722" limited="true" armature="0.29179" frictionloss="0.853558" />
-              <geom name="g_RightFootRing1" fromto="0 0 0 -0.00430221 -0.0855194 -0.022205" size="0.0239126" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-              <body name="RightFootRing2" pos="-0.00430221 -0.0855194 -0.022205">
-                <joint name="RightFootRing2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.0873 1.6407" limited="true" armature="0.29179" frictionloss="0.853558" />
-                <joint name="RightFootRing2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.3756 0.1783" limited="true" armature="0.29179" frictionloss="0.853558" />
-                <joint name="RightFootRing2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.2708 0.2143" limited="true" armature="0.29179" frictionloss="0.853558" />
-                <geom name="g_RightFootRing2" fromto="0 0 0 -0.002769 -0.0585029 0.00309051" size="0.017537" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
-                <body name="RightFootRing3" pos="-0.002769 -0.0585029 0.00309051">
-                  <joint name="RightFootRing3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.6197 1.4533" limited="true" armature="0.29179" frictionloss="0.853558" />
-                  <joint name="RightFootRing3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.3649 0.1936" limited="true" armature="0.29179" frictionloss="0.853558" />
-                  <joint name="RightFootRing3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.1871 0.2111" limited="true" armature="0.29179" frictionloss="0.853558" />
-                  <geom name="g_RightFootRing3" fromto="-0.000532346 -0.0133803 -0.00337974 -0.00239462 -0.0601882 -0.0152029" size="0.0138108" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+            <body name="LeftFootRing1" pos="0.0411169 -0.0554792 -0.1922">
+              <joint name="LeftFootRing1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.6908 3.1067" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <joint name="LeftFootRing1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.2814 1.6088" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <joint name="LeftFootRing1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-2.5722 1.5796" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <geom name="g_LeftFootRing1" fromto="0 0 0 0.00469485 -0.0933353 -0.0242344" size="0.0259674" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+              <body name="LeftFootRing2" pos="0.00469485 -0.0933353 -0.0242344">
+                <joint name="LeftFootRing2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.0873 1.5876" limited="true" armature="0.451832" frictionloss="1.21104" />
+                <joint name="LeftFootRing2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.1809 0.2757" limited="true" armature="0.451832" frictionloss="1.21104" />
+                <joint name="LeftFootRing2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.1904 0.2708" limited="true" armature="0.451832" frictionloss="1.21104" />
+                <geom name="g_LeftFootRing2" fromto="0 0 0 0.00302244 -0.0638497 0.00337296" size="0.0191398" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                <body name="LeftFootRing3" pos="0.00302244 -0.0638497 0.00337296">
+                  <joint name="LeftFootRing3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.6197 1.4533" limited="true" armature="0.451832" frictionloss="1.21104" />
+                  <joint name="LeftFootRing3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.1943 0.2410" limited="true" armature="0.451832" frictionloss="1.21104" />
+                  <joint name="LeftFootRing3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.2271 0.1871" limited="true" armature="0.451832" frictionloss="1.21104" />
+                  <geom name="g_LeftFootRing3" fromto="0.000577415 -0.0145128 -0.00366581 0.00261713 -0.065779 -0.0166152" size="0.0149798" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+      <body name="RightUpLeg" pos="-0.0801558 -0.00182695 0.0697558">
+        <joint name="RightUpLeg_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.7984 1.2450" limited="true" armature="0.451832" frictionloss="1.21104" />
+        <joint name="RightUpLeg_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.6051 0.9443" limited="true" armature="0.451832" frictionloss="1.21104" />
+        <joint name="RightUpLeg_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.8135 1.0967" limited="true" armature="0.451832" frictionloss="1.21104" />
+        <geom name="g_RightUpLeg" fromto="-0.00558188 -0.00631948 -0.0478065 -0.0409341 -0.0463421 -0.350578" size="0.121256" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+        <body name="RightLeg" pos="-0.0465156 -0.0526624 -0.398391">
+          <joint name="RightLeg_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.7311 2.4105" limited="true" armature="0.451832" frictionloss="1.21104" />
+          <joint name="RightLeg_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.3946 0.6966" limited="true" armature="0.451832" frictionloss="1.21104" />
+          <joint name="RightLeg_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.8179 1.4227" limited="true" armature="0.451832" frictionloss="1.21104" />
+          <geom name="g_RightLeg" fromto="-0.00503715 0.0235479 -0.0470082 -0.0369402 0.172687 -0.34474" size="0.0447714" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+          <body name="RightFoot" pos="-0.041977 0.196229 -0.391732">
+            <joint name="RightFoot_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-2.0747 0.9271" limited="true" armature="0.451832" frictionloss="1.21104" />
+            <joint name="RightFoot_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.4881 1.6183" limited="true" armature="0.451832" frictionloss="1.21104" />
+            <joint name="RightFoot_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.8570 1.8977" limited="true" armature="0.451832" frictionloss="1.21104" />
+            <geom name="g_RightFoot" fromto="-0.00115246 -0.00703994 -0.0229285 -0.00845135 -0.0516252 -0.168141" size="0.042906" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+            <body name="RightToeBase" pos="-0.00858921 -0.0667187 -0.198076">
+              <joint name="RightToeBase_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-2.7852 2.5440" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <joint name="RightToeBase_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.7271 1.6339" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <joint name="RightToeBase_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-3.1067 1.8521" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <geom name="g_RightToeBase" fromto="0 0.0150617 0 0 0.0447714 0" size="0.0261166" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+            </body>
+            <body name="RightFootIndex1" pos="0.0204101 -0.0547349 -0.181805">
+              <joint name="RightFootIndex1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5186 2.6109" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <joint name="RightFootIndex1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.2952 1.2260" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <joint name="RightFootIndex1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-2.1674 1.7670" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <geom name="g_RightFootIndex1" fromto="0 0 0 0.00521139 -0.0480882 -0.00851273" size="0.0294558" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+              <body name="RightFootIndex2" pos="0.00521139 -0.0480882 -0.00851273">
+                <joint name="RightFootIndex2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.0873 1.5936" limited="true" armature="0.451832" frictionloss="1.21104" />
+                <joint name="RightFootIndex2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.1698 0.2224" limited="true" armature="0.451832" frictionloss="1.21104" />
+                <joint name="RightFootIndex2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.2880 0.1193" limited="true" armature="0.451832" frictionloss="1.21104" />
+                <geom name="g_RightFootIndex2" fromto="0 0 0 0.00473365 -0.0414304 0.0205519" size="0.0235797" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                <body name="RightFootIndex3" pos="0.00473365 -0.0414304 0.0205519">
+                  <joint name="RightFootIndex3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.8183 1.6514" limited="true" armature="0.451832" frictionloss="1.21104" />
+                  <joint name="RightFootIndex3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.2332 0.2768" limited="true" armature="0.451832" frictionloss="1.21104" />
+                  <joint name="RightFootIndex3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.2897 0.2061" limited="true" armature="0.451832" frictionloss="1.21104" />
+                  <geom name="g_RightFootIndex3" fromto="0.00116531 -0.0102274 0.0144261 0.00632616 -0.0555214 0.0783149" size="0.017722" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                </body>
+              </body>
+            </body>
+            <body name="RightFootMiddle1" pos="-0.00911901 -0.057729 -0.1922">
+              <joint name="RightFootMiddle1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.5603 3.1067" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <joint name="RightFootMiddle1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.6240 1.4467" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <joint name="RightFootMiddle1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.2173 2.8446" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <geom name="g_RightFootMiddle1" fromto="0 0 0 -2.59133e-10 -0.0934584 -0.024212" size="0.0249414" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+              <body name="RightFootMiddle2" pos="-2.59133e-10 -0.0934584 -0.024212">
+                <joint name="RightFootMiddle2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.0873 1.6122" limited="true" armature="0.451832" frictionloss="1.21104" />
+                <joint name="RightFootMiddle2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.1950 0.1774" limited="true" armature="0.451832" frictionloss="1.21104" />
+                <joint name="RightFootMiddle2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.2032 0.1694" limited="true" armature="0.451832" frictionloss="1.21104" />
+                <geom name="g_RightFootMiddle2" fromto="0 0 0 -2.14884e-09 -0.0639205 0.00338976" size="0.0187107" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                <body name="RightFootMiddle3" pos="-2.14884e-09 -0.0639205 0.00338976">
+                  <joint name="RightFootMiddle3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.5742 1.5203" limited="true" armature="0.451832" frictionloss="1.21104" />
+                  <joint name="RightFootMiddle3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.1967 0.1803" limited="true" armature="0.451832" frictionloss="1.21104" />
+                  <joint name="RightFootMiddle3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.2039 0.1841" limited="true" armature="0.451832" frictionloss="1.21104" />
+                  <geom name="g_RightFootMiddle3" fromto="-0.000117177 -0.014632 -0.0033769 -0.0005097 -0.0636462 -0.0146888" size="0.015017" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                </body>
+              </body>
+            </body>
+            <body name="RightFootRing1" pos="-0.0411169 -0.0554792 -0.1922">
+              <joint name="RightFootRing1_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-1.6908 3.1067" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <joint name="RightFootRing1_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-1.6088 1.2814" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <joint name="RightFootRing1_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-1.5796 2.5722" limited="true" armature="0.451832" frictionloss="1.21104" />
+              <geom name="g_RightFootRing1" fromto="0 0 0 -0.0046954 -0.0933353 -0.0242344" size="0.0260981" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+              <body name="RightFootRing2" pos="-0.0046954 -0.0933353 -0.0242344">
+                <joint name="RightFootRing2_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.0873 1.6407" limited="true" armature="0.451832" frictionloss="1.21104" />
+                <joint name="RightFootRing2_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.3756 0.1783" limited="true" armature="0.451832" frictionloss="1.21104" />
+                <joint name="RightFootRing2_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.2708 0.2143" limited="true" armature="0.451832" frictionloss="1.21104" />
+                <geom name="g_RightFootRing2" fromto="0 0 0 -0.00302207 -0.0638497 0.00337296" size="0.0191398" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
+                <body name="RightFootRing3" pos="-0.00302207 -0.0638497 0.00337296">
+                  <joint name="RightFootRing3_x" type="hinge" axis="1 0 0" pos="0 0 0" range="-0.6197 1.4533" limited="true" armature="0.451832" frictionloss="1.21104" />
+                  <joint name="RightFootRing3_y" type="hinge" axis="0 1 0" pos="0 0 0" range="-0.3649 0.1936" limited="true" armature="0.451832" frictionloss="1.21104" />
+                  <joint name="RightFootRing3_z" type="hinge" axis="0 0 1" pos="0 0 0" range="-0.1871 0.2111" limited="true" armature="0.451832" frictionloss="1.21104" />
+                  <geom name="g_RightFootRing3" fromto="-0.000580999 -0.0146032 -0.00368863 -0.00261347 -0.065689 -0.0165923" size="0.015073" density="1401.8" type="capsule" contype="1" conaffinity="1" friction="1.0 0.05 0.05" />
                 </body>
               </body>
             </body>
@@ -454,206 +454,206 @@
     <joint type="free" name="root" limited="false" actuatorfrclimited="false" /></body>
   </worldbody>
   <actuator>
-    <motor name="m_Spine_x" joint="Spine_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_Spine_y" joint="Spine_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_Spine_z" joint="Spine_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_Tail_x" joint="Tail_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_Tail_y" joint="Tail_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_Tail_z" joint="Tail_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftUpLeg_x" joint="LeftUpLeg_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftUpLeg_y" joint="LeftUpLeg_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftUpLeg_z" joint="LeftUpLeg_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightUpLeg_x" joint="RightUpLeg_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightUpLeg_y" joint="RightUpLeg_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightUpLeg_z" joint="RightUpLeg_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_Spine1_x" joint="Spine1_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_Spine1_y" joint="Spine1_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_Spine1_z" joint="Spine1_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_Tail1_x" joint="Tail1_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_Tail1_y" joint="Tail1_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_Tail1_z" joint="Tail1_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftLeg_x" joint="LeftLeg_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftLeg_y" joint="LeftLeg_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftLeg_z" joint="LeftLeg_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightLeg_x" joint="RightLeg_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightLeg_y" joint="RightLeg_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightLeg_z" joint="RightLeg_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_Neck_x" joint="Neck_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_Neck_y" joint="Neck_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_Neck_z" joint="Neck_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftShoulder_x" joint="LeftShoulder_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftShoulder_y" joint="LeftShoulder_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftShoulder_z" joint="LeftShoulder_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightShoulder_x" joint="RightShoulder_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightShoulder_y" joint="RightShoulder_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightShoulder_z" joint="RightShoulder_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_Tail2_x" joint="Tail2_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_Tail2_y" joint="Tail2_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_Tail2_z" joint="Tail2_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftFoot_x" joint="LeftFoot_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftFoot_y" joint="LeftFoot_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftFoot_z" joint="LeftFoot_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightFoot_x" joint="RightFoot_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightFoot_y" joint="RightFoot_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightFoot_z" joint="RightFoot_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_Neck1_x" joint="Neck1_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_Neck1_y" joint="Neck1_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_Neck1_z" joint="Neck1_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftArm_x" joint="LeftArm_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftArm_y" joint="LeftArm_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftArm_z" joint="LeftArm_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightArm_x" joint="RightArm_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightArm_y" joint="RightArm_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightArm_z" joint="RightArm_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_Tail3_x" joint="Tail3_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_Tail3_y" joint="Tail3_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_Tail3_z" joint="Tail3_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftToeBase_x" joint="LeftToeBase_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftToeBase_y" joint="LeftToeBase_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftToeBase_z" joint="LeftToeBase_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftFootIndex1_x" joint="LeftFootIndex1_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftFootIndex1_y" joint="LeftFootIndex1_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftFootIndex1_z" joint="LeftFootIndex1_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftFootMiddle1_x" joint="LeftFootMiddle1_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftFootMiddle1_y" joint="LeftFootMiddle1_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftFootMiddle1_z" joint="LeftFootMiddle1_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftFootRing1_x" joint="LeftFootRing1_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftFootRing1_y" joint="LeftFootRing1_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftFootRing1_z" joint="LeftFootRing1_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightToeBase_x" joint="RightToeBase_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightToeBase_y" joint="RightToeBase_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightToeBase_z" joint="RightToeBase_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightFootIndex1_x" joint="RightFootIndex1_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightFootIndex1_y" joint="RightFootIndex1_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightFootIndex1_z" joint="RightFootIndex1_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightFootMiddle1_x" joint="RightFootMiddle1_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightFootMiddle1_y" joint="RightFootMiddle1_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightFootMiddle1_z" joint="RightFootMiddle1_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightFootRing1_x" joint="RightFootRing1_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightFootRing1_y" joint="RightFootRing1_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightFootRing1_z" joint="RightFootRing1_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_Neck2_x" joint="Neck2_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_Neck2_y" joint="Neck2_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_Neck2_z" joint="Neck2_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftForeArm_x" joint="LeftForeArm_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftForeArm_y" joint="LeftForeArm_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftForeArm_z" joint="LeftForeArm_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightForeArm_x" joint="RightForeArm_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightForeArm_y" joint="RightForeArm_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightForeArm_z" joint="RightForeArm_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_Tail4_x" joint="Tail4_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_Tail4_y" joint="Tail4_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_Tail4_z" joint="Tail4_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftFootIndex2_x" joint="LeftFootIndex2_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftFootIndex2_y" joint="LeftFootIndex2_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftFootIndex2_z" joint="LeftFootIndex2_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftFootMiddle2_x" joint="LeftFootMiddle2_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftFootMiddle2_y" joint="LeftFootMiddle2_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftFootMiddle2_z" joint="LeftFootMiddle2_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftFootRing2_x" joint="LeftFootRing2_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftFootRing2_y" joint="LeftFootRing2_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftFootRing2_z" joint="LeftFootRing2_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightFootIndex2_x" joint="RightFootIndex2_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightFootIndex2_y" joint="RightFootIndex2_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightFootIndex2_z" joint="RightFootIndex2_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightFootMiddle2_x" joint="RightFootMiddle2_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightFootMiddle2_y" joint="RightFootMiddle2_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightFootMiddle2_z" joint="RightFootMiddle2_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightFootRing2_x" joint="RightFootRing2_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightFootRing2_y" joint="RightFootRing2_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightFootRing2_z" joint="RightFootRing2_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_Neck3_x" joint="Neck3_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_Neck3_y" joint="Neck3_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_Neck3_z" joint="Neck3_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftHand_x" joint="LeftHand_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftHand_y" joint="LeftHand_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftHand_z" joint="LeftHand_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightHand_x" joint="RightHand_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightHand_y" joint="RightHand_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightHand_z" joint="RightHand_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_Tail5_x" joint="Tail5_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_Tail5_y" joint="Tail5_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_Tail5_z" joint="Tail5_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftFootIndex3_x" joint="LeftFootIndex3_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftFootIndex3_y" joint="LeftFootIndex3_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftFootIndex3_z" joint="LeftFootIndex3_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftFootMiddle3_x" joint="LeftFootMiddle3_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftFootMiddle3_y" joint="LeftFootMiddle3_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftFootMiddle3_z" joint="LeftFootMiddle3_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftFootRing3_x" joint="LeftFootRing3_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftFootRing3_y" joint="LeftFootRing3_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftFootRing3_z" joint="LeftFootRing3_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightFootIndex3_x" joint="RightFootIndex3_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightFootIndex3_y" joint="RightFootIndex3_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightFootIndex3_z" joint="RightFootIndex3_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightFootMiddle3_x" joint="RightFootMiddle3_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightFootMiddle3_y" joint="RightFootMiddle3_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightFootMiddle3_z" joint="RightFootMiddle3_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightFootRing3_x" joint="RightFootRing3_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightFootRing3_y" joint="RightFootRing3_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightFootRing3_z" joint="RightFootRing3_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_Head_x" joint="Head_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_Head_y" joint="Head_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_Head_z" joint="Head_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftHandMiddle1_x" joint="LeftHandMiddle1_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftHandMiddle1_y" joint="LeftHandMiddle1_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftHandMiddle1_z" joint="LeftHandMiddle1_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftHandRing1_x" joint="LeftHandRing1_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftHandRing1_y" joint="LeftHandRing1_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftHandRing1_z" joint="LeftHandRing1_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftHandIndex1_x" joint="LeftHandIndex1_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftHandIndex1_y" joint="LeftHandIndex1_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftHandIndex1_z" joint="LeftHandIndex1_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightHandMiddle1_x" joint="RightHandMiddle1_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightHandMiddle1_y" joint="RightHandMiddle1_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightHandMiddle1_z" joint="RightHandMiddle1_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightHandRing1_x" joint="RightHandRing1_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightHandRing1_y" joint="RightHandRing1_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightHandRing1_z" joint="RightHandRing1_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightHandIndex1_x" joint="RightHandIndex1_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightHandIndex1_y" joint="RightHandIndex1_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightHandIndex1_z" joint="RightHandIndex1_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_Tail6_x" joint="Tail6_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_Tail6_y" joint="Tail6_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_Tail6_z" joint="Tail6_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_Jaw_x" joint="Jaw_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_Jaw_y" joint="Jaw_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_Jaw_z" joint="Jaw_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftHandMiddle2_x" joint="LeftHandMiddle2_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftHandMiddle2_y" joint="LeftHandMiddle2_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftHandMiddle2_z" joint="LeftHandMiddle2_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftHandRing2_x" joint="LeftHandRing2_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftHandRing2_y" joint="LeftHandRing2_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftHandRing2_z" joint="LeftHandRing2_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftHandIndex2_x" joint="LeftHandIndex2_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftHandIndex2_y" joint="LeftHandIndex2_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftHandIndex2_z" joint="LeftHandIndex2_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightHandMiddle2_x" joint="RightHandMiddle2_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightHandMiddle2_y" joint="RightHandMiddle2_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightHandMiddle2_z" joint="RightHandMiddle2_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightHandRing2_x" joint="RightHandRing2_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightHandRing2_y" joint="RightHandRing2_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightHandRing2_z" joint="RightHandRing2_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightHandIndex2_x" joint="RightHandIndex2_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightHandIndex2_y" joint="RightHandIndex2_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightHandIndex2_z" joint="RightHandIndex2_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftHandMiddle3_x" joint="LeftHandMiddle3_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftHandMiddle3_y" joint="LeftHandMiddle3_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftHandMiddle3_z" joint="LeftHandMiddle3_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftHandRing3_x" joint="LeftHandRing3_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftHandRing3_y" joint="LeftHandRing3_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftHandRing3_z" joint="LeftHandRing3_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftHandIndex3_x" joint="LeftHandIndex3_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftHandIndex3_y" joint="LeftHandIndex3_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_LeftHandIndex3_z" joint="LeftHandIndex3_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightHandMiddle3_x" joint="RightHandMiddle3_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightHandMiddle3_y" joint="RightHandMiddle3_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightHandMiddle3_z" joint="RightHandMiddle3_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightHandRing3_x" joint="RightHandRing3_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightHandRing3_y" joint="RightHandRing3_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightHandRing3_z" joint="RightHandRing3_z" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightHandIndex3_x" joint="RightHandIndex3_x" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightHandIndex3_y" joint="RightHandIndex3_y" ctrlrange="-170.712 170.712" />
-    <motor name="m_RightHandIndex3_z" joint="RightHandIndex3_z" ctrlrange="-170.712 170.712" />
+    <motor name="m_Spine_x" joint="Spine_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_Spine_y" joint="Spine_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_Spine_z" joint="Spine_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_Tail_x" joint="Tail_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_Tail_y" joint="Tail_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_Tail_z" joint="Tail_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftUpLeg_x" joint="LeftUpLeg_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftUpLeg_y" joint="LeftUpLeg_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftUpLeg_z" joint="LeftUpLeg_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightUpLeg_x" joint="RightUpLeg_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightUpLeg_y" joint="RightUpLeg_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightUpLeg_z" joint="RightUpLeg_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_Spine1_x" joint="Spine1_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_Spine1_y" joint="Spine1_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_Spine1_z" joint="Spine1_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_Tail1_x" joint="Tail1_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_Tail1_y" joint="Tail1_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_Tail1_z" joint="Tail1_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftLeg_x" joint="LeftLeg_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftLeg_y" joint="LeftLeg_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftLeg_z" joint="LeftLeg_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightLeg_x" joint="RightLeg_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightLeg_y" joint="RightLeg_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightLeg_z" joint="RightLeg_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_Neck_x" joint="Neck_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_Neck_y" joint="Neck_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_Neck_z" joint="Neck_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftShoulder_x" joint="LeftShoulder_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftShoulder_y" joint="LeftShoulder_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftShoulder_z" joint="LeftShoulder_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightShoulder_x" joint="RightShoulder_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightShoulder_y" joint="RightShoulder_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightShoulder_z" joint="RightShoulder_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_Tail2_x" joint="Tail2_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_Tail2_y" joint="Tail2_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_Tail2_z" joint="Tail2_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftFoot_x" joint="LeftFoot_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftFoot_y" joint="LeftFoot_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftFoot_z" joint="LeftFoot_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightFoot_x" joint="RightFoot_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightFoot_y" joint="RightFoot_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightFoot_z" joint="RightFoot_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_Neck1_x" joint="Neck1_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_Neck1_y" joint="Neck1_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_Neck1_z" joint="Neck1_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftArm_x" joint="LeftArm_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftArm_y" joint="LeftArm_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftArm_z" joint="LeftArm_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightArm_x" joint="RightArm_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightArm_y" joint="RightArm_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightArm_z" joint="RightArm_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_Tail3_x" joint="Tail3_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_Tail3_y" joint="Tail3_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_Tail3_z" joint="Tail3_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftToeBase_x" joint="LeftToeBase_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftToeBase_y" joint="LeftToeBase_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftToeBase_z" joint="LeftToeBase_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftFootIndex1_x" joint="LeftFootIndex1_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftFootIndex1_y" joint="LeftFootIndex1_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftFootIndex1_z" joint="LeftFootIndex1_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftFootMiddle1_x" joint="LeftFootMiddle1_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftFootMiddle1_y" joint="LeftFootMiddle1_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftFootMiddle1_z" joint="LeftFootMiddle1_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftFootRing1_x" joint="LeftFootRing1_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftFootRing1_y" joint="LeftFootRing1_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftFootRing1_z" joint="LeftFootRing1_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightToeBase_x" joint="RightToeBase_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightToeBase_y" joint="RightToeBase_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightToeBase_z" joint="RightToeBase_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightFootIndex1_x" joint="RightFootIndex1_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightFootIndex1_y" joint="RightFootIndex1_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightFootIndex1_z" joint="RightFootIndex1_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightFootMiddle1_x" joint="RightFootMiddle1_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightFootMiddle1_y" joint="RightFootMiddle1_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightFootMiddle1_z" joint="RightFootMiddle1_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightFootRing1_x" joint="RightFootRing1_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightFootRing1_y" joint="RightFootRing1_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightFootRing1_z" joint="RightFootRing1_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_Neck2_x" joint="Neck2_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_Neck2_y" joint="Neck2_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_Neck2_z" joint="Neck2_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftForeArm_x" joint="LeftForeArm_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftForeArm_y" joint="LeftForeArm_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftForeArm_z" joint="LeftForeArm_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightForeArm_x" joint="RightForeArm_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightForeArm_y" joint="RightForeArm_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightForeArm_z" joint="RightForeArm_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_Tail4_x" joint="Tail4_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_Tail4_y" joint="Tail4_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_Tail4_z" joint="Tail4_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftFootIndex2_x" joint="LeftFootIndex2_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftFootIndex2_y" joint="LeftFootIndex2_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftFootIndex2_z" joint="LeftFootIndex2_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftFootMiddle2_x" joint="LeftFootMiddle2_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftFootMiddle2_y" joint="LeftFootMiddle2_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftFootMiddle2_z" joint="LeftFootMiddle2_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftFootRing2_x" joint="LeftFootRing2_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftFootRing2_y" joint="LeftFootRing2_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftFootRing2_z" joint="LeftFootRing2_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightFootIndex2_x" joint="RightFootIndex2_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightFootIndex2_y" joint="RightFootIndex2_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightFootIndex2_z" joint="RightFootIndex2_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightFootMiddle2_x" joint="RightFootMiddle2_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightFootMiddle2_y" joint="RightFootMiddle2_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightFootMiddle2_z" joint="RightFootMiddle2_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightFootRing2_x" joint="RightFootRing2_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightFootRing2_y" joint="RightFootRing2_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightFootRing2_z" joint="RightFootRing2_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_Neck3_x" joint="Neck3_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_Neck3_y" joint="Neck3_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_Neck3_z" joint="Neck3_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftHand_x" joint="LeftHand_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftHand_y" joint="LeftHand_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftHand_z" joint="LeftHand_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightHand_x" joint="RightHand_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightHand_y" joint="RightHand_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightHand_z" joint="RightHand_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_Tail5_x" joint="Tail5_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_Tail5_y" joint="Tail5_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_Tail5_z" joint="Tail5_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftFootIndex3_x" joint="LeftFootIndex3_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftFootIndex3_y" joint="LeftFootIndex3_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftFootIndex3_z" joint="LeftFootIndex3_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftFootMiddle3_x" joint="LeftFootMiddle3_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftFootMiddle3_y" joint="LeftFootMiddle3_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftFootMiddle3_z" joint="LeftFootMiddle3_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftFootRing3_x" joint="LeftFootRing3_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftFootRing3_y" joint="LeftFootRing3_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftFootRing3_z" joint="LeftFootRing3_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightFootIndex3_x" joint="RightFootIndex3_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightFootIndex3_y" joint="RightFootIndex3_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightFootIndex3_z" joint="RightFootIndex3_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightFootMiddle3_x" joint="RightFootMiddle3_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightFootMiddle3_y" joint="RightFootMiddle3_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightFootMiddle3_z" joint="RightFootMiddle3_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightFootRing3_x" joint="RightFootRing3_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightFootRing3_y" joint="RightFootRing3_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightFootRing3_z" joint="RightFootRing3_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_Head_x" joint="Head_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_Head_y" joint="Head_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_Head_z" joint="Head_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftHandMiddle1_x" joint="LeftHandMiddle1_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftHandMiddle1_y" joint="LeftHandMiddle1_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftHandMiddle1_z" joint="LeftHandMiddle1_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftHandRing1_x" joint="LeftHandRing1_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftHandRing1_y" joint="LeftHandRing1_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftHandRing1_z" joint="LeftHandRing1_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftHandIndex1_x" joint="LeftHandIndex1_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftHandIndex1_y" joint="LeftHandIndex1_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftHandIndex1_z" joint="LeftHandIndex1_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightHandMiddle1_x" joint="RightHandMiddle1_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightHandMiddle1_y" joint="RightHandMiddle1_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightHandMiddle1_z" joint="RightHandMiddle1_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightHandRing1_x" joint="RightHandRing1_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightHandRing1_y" joint="RightHandRing1_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightHandRing1_z" joint="RightHandRing1_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightHandIndex1_x" joint="RightHandIndex1_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightHandIndex1_y" joint="RightHandIndex1_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightHandIndex1_z" joint="RightHandIndex1_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_Tail6_x" joint="Tail6_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_Tail6_y" joint="Tail6_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_Tail6_z" joint="Tail6_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_Jaw_x" joint="Jaw_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_Jaw_y" joint="Jaw_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_Jaw_z" joint="Jaw_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftHandMiddle2_x" joint="LeftHandMiddle2_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftHandMiddle2_y" joint="LeftHandMiddle2_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftHandMiddle2_z" joint="LeftHandMiddle2_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftHandRing2_x" joint="LeftHandRing2_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftHandRing2_y" joint="LeftHandRing2_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftHandRing2_z" joint="LeftHandRing2_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftHandIndex2_x" joint="LeftHandIndex2_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftHandIndex2_y" joint="LeftHandIndex2_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftHandIndex2_z" joint="LeftHandIndex2_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightHandMiddle2_x" joint="RightHandMiddle2_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightHandMiddle2_y" joint="RightHandMiddle2_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightHandMiddle2_z" joint="RightHandMiddle2_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightHandRing2_x" joint="RightHandRing2_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightHandRing2_y" joint="RightHandRing2_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightHandRing2_z" joint="RightHandRing2_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightHandIndex2_x" joint="RightHandIndex2_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightHandIndex2_y" joint="RightHandIndex2_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightHandIndex2_z" joint="RightHandIndex2_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftHandMiddle3_x" joint="LeftHandMiddle3_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftHandMiddle3_y" joint="LeftHandMiddle3_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftHandMiddle3_z" joint="LeftHandMiddle3_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftHandRing3_x" joint="LeftHandRing3_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftHandRing3_y" joint="LeftHandRing3_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftHandRing3_z" joint="LeftHandRing3_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftHandIndex3_x" joint="LeftHandIndex3_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftHandIndex3_y" joint="LeftHandIndex3_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_LeftHandIndex3_z" joint="LeftHandIndex3_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightHandMiddle3_x" joint="RightHandMiddle3_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightHandMiddle3_y" joint="RightHandMiddle3_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightHandMiddle3_z" joint="RightHandMiddle3_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightHandRing3_x" joint="RightHandRing3_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightHandRing3_y" joint="RightHandRing3_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightHandRing3_z" joint="RightHandRing3_z" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightHandIndex3_x" joint="RightHandIndex3_x" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightHandIndex3_y" joint="RightHandIndex3_y" ctrlrange="-242.209 242.209" />
+    <motor name="m_RightHandIndex3_z" joint="RightHandIndex3_z" ctrlrange="-242.209 242.209" />
   </actuator>
 </mujoco>
