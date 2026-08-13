@@ -83,18 +83,27 @@ class AtlasRobotConfig(RobotConfig):
                     stiffness=400, damping=15, effort_limit=280,
                     velocity_limit=26,
                 ),
-                # ankles (90 Nm pitch, 60 Nm roll/swivel)
+                # ankles (140 Nm pitch, 60 Nm roll/swivel). Pitch raised
+                # 90 -> 140 on 2026-08-13: elite plantarflexion is ~1.6-2
+                # Nm/kg, i.e. ~120-150 Nm at this 89 kg / 1.52 m build, and
+                # the ankle launches every jump kick in the Reallusion set.
+                # 90 was well under the mocap performer.
                 r"Foot_[LR]_Pitch": ControlInfo(
-                    stiffness=120, damping=6, effort_limit=90,
+                    stiffness=120, damping=6, effort_limit=140,
                     velocity_limit=35,
                 ),
                 r"Foot_[LR]_Roll": ControlInfo(
                     stiffness=80, damping=4, effort_limit=60,
                     velocity_limit=35,
                 ),
-                # waist (140 Nm class)
+                # waist (250 Nm class). Raised 140 -> 250 on 2026-08-13:
+                # corpus inverse dynamics put SUSTAINED demand at 145.9 Nm
+                # through the kip-up/jump-kick snap -- the only joint group
+                # over its limit -- and human athletic trunk extension is
+                # 250-400 Nm. 140 could not deliver the moves this corpus
+                # asks for; the policy visibly sagged out of them.
                 r"(Twist|Backbone)_Joint": ControlInfo(
-                    stiffness=250, damping=10, effort_limit=140,
+                    stiffness=250, damping=10, effort_limit=250,
                     velocity_limit=26,
                 ),
                 # shoulders + elbows (90 Nm class)
