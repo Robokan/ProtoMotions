@@ -109,32 +109,55 @@ def collision_mask(model, data, mo, depth_m, keep_pair, mujoco):
     return mask, worst
 
 
-def pop_mask(mo, dof_names, thr_deg, prefixes):
-    """Per-frame True around an IK branch flip -- a joint that jumps.
+def pop_mask(mo, dof_names, thr_deg, prefixes,
+             return_deg=15.0, look_frames=20, spike_ratio=5.0):
+    """Per-frame True over IK branch-flip damage -- not just the jump itself.
 
-    The retarget solves each frame independently, so a redundant limb can
-    settle on a different IK branch from one frame to the next and the joint
-    teleports. 0.5 rad/frame (~29 deg) is the threshold this rig's arm flips
-    were originally caught with; real motion sits an order of magnitude below
-    it (median arm motion is well under 1 deg/frame on locomotion, ~4-8 on a
-    kip-up, against 50-60 for a flip).
+    Cutting only the two frames of the teleport is wrong for half the cases
+    (Eric's observation): once the IK has flipped branches, everything AFTER
+    the flip is on the wrong branch unless it flips back. Measured on
+    atlas_v12 (217 events): 121 flip back within 20 frames, 55 never do,
+    and 41 exceed the jump threshold while their NEIGHBOURS are also fast --
+    genuine punches/kicks, not flips at all. Three cases, three treatments:
 
-    A jump spans frames t and t+1, so BOTH are marked: keeping either leaves
-    the teleport at a segment boundary, which is the artifact being removed.
+      * TRANSIENT -- the dof returns to within `return_deg` of its pre-pop
+        value inside `look_frames`: mark the whole flipped island, so the cut
+        stitches same-branch to same-branch.
+      * PERMANENT SPIKE -- never returns, and the jump dwarfs the median
+        neighbouring frame-to-frame delta (> spike_ratio): a true flip whose
+        tail is wrong-branch throughout. Mark from the pop TO THE END of the
+        clip.
+      * PLATEAU -- never returns but the neighbourhood is also fast: real
+        fast motion that merely trips the threshold. NOT marked; cutting
+        two frames out of a legitimate strike only damages it.
     """
+    T = mo["dof_pos"].shape[0]
     if not prefixes:
-        return np.zeros(mo["dof_pos"].shape[0], dtype=bool), 0.0
+        return np.zeros(T, dtype=bool), 0.0
     idx = [i for i, n in enumerate(dof_names) if n.startswith(prefixes)]
     if not idx:
-        return np.zeros(mo["dof_pos"].shape[0], dtype=bool), 0.0
+        return np.zeros(T, dtype=bool), 0.0
     dof = np.degrees(mo["dof_pos"].numpy().astype(np.float64)[:, idx])
-    jump = np.abs(np.diff(dof, axis=0)).max(axis=1)  # [T-1]
-    bad = jump > thr_deg
-    mask = np.zeros(dof.shape[0], dtype=bool)
-    mask[:-1] |= bad
-    mask[1:] |= bad
-    return mask, float(jump.max() if len(jump) else 0.0)
-
+    mask = np.zeros(T, dtype=bool)
+    worst = 0.0
+    adj = np.abs(np.diff(dof, axis=0))  # [T-1, J]
+    for jj in range(dof.shape[1]):
+        for t in np.where(adj[:, jj] > thr_deg)[0]:
+            pre = dof[t, jj]
+            ahead = dof[t + 1 : min(T, t + 1 + look_frames), jj]
+            back = np.where(np.abs(ahead - pre) < return_deg)[0]
+            if len(back):
+                # transient island: pop frame through the return frame
+                mask[t : t + 2 + int(back[0])] = True
+                worst = max(worst, float(adj[t, jj]))
+                continue
+            lo, hi = max(0, t - 5), min(len(adj), t + 6)
+            nb = np.delete(adj[lo:hi, jj], t - lo)
+            if float(adj[t, jj]) / max(float(np.median(nb)), 1e-3) > spike_ratio:
+                mask[t:] = True  # permanent flip: the whole tail is wrong
+                worst = max(worst, float(adj[t, jj]))
+            # else plateau: genuine fast motion, leave it alone
+    return mask, worst
 
 def main() -> None:
     ap = argparse.ArgumentParser()
