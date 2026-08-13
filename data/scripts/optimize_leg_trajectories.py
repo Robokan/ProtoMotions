@@ -55,7 +55,21 @@ from scipy.optimize import minimize
 
 LEG_BODIES = {"Leg1_L", "Leg2_L", "Leg3_L", "Leg4_L", "Foot_L",
               "Leg1_R", "Leg2_R", "Leg3_R", "Leg4_R", "Foot_R", "Hip"}
+ARM_BODIES = {f"Arm{i}_{s}" for i in range(1, 10) for s in "LR"} | {"Hand1_L", "Hand1_R"}
 FOOT_BODIES = ("Foot_L", "Foot_R")
+
+# Mode semantics (Eric, 2026-08-13): legs need a real CLEARANCE -- a shin
+# grazing a shin mid-swing becomes a trip in sim. Arms only need
+# NON-PENETRATION: arms legitimately sit close to (and rest against) the
+# body -- a guard on the chest is intentional style -- but pressing INTO a
+# body part is a retarget artifact. So arm clearance ~0: deliberate contact
+# survives as contact, interpenetration gets re-pathed out.
+MODES = {
+    "legs": dict(bodies=LEG_BODIES, pair="both", dof_prefix="Leg_",
+                 foot_guard=True, clearance_cm=0.5),
+    "arms": dict(bodies=ARM_BODIES, pair="any", dof_prefix="Arm_",
+                 foot_guard=False, clearance_cm=0.2),
+}
 
 
 def _helpers():
@@ -69,7 +83,8 @@ def _helpers():
 class LegWorld:
     """MuJoCo wrapper: leg-pair distances and foot heights for one frame."""
 
-    def __init__(self, robot: str, margin: float):
+    def __init__(self, robot: str, margin: float, mode: dict = None):
+        self.mode = mode or MODES["legs"]
         import sys
         sys.path.insert(0, ".")
         import mujoco
@@ -90,16 +105,22 @@ class LegWorld:
         for g in range(self.m.ngeom):
             b = self.m.geom_bodyid[g]
             if b > 0 and self.m.geom_contype[g] != 0 \
-                    and self.body_names[b - 1] in LEG_BODIES:
+                    and self.body_names[b - 1] in self.mode["bodies"]:
                 self.leg_geoms.add(g)
                 # report contacts BEFORE penetration so the optimizer sees
                 # a gradient while there is still time to steer away
                 self.m.geom_margin[g] = margin
         self.world_geoms = {g for g in range(self.m.ngeom)
                             if self.m.geom_bodyid[g] == 0}
-        # optimized dofs: hips and knees, NOT ankles
+        # optimized dofs (legs: hips/knees, NOT ankles; arms: all arm dofs)
         self.opt_idx = [i for i, n in enumerate(self.dof_names)
-                        if n.startswith("Leg_")]
+                        if n.startswith(self.mode["dof_prefix"])]
+        # joint-range bounds for the optimizer (dof i <-> joint 1+i after
+        # the free root); without these L-BFGS can walk a dof past its limit
+        self.opt_bounds = [(float(self.m.jnt_range[1 + i][0]),
+                            float(self.m.jnt_range[1 + i][1]))
+                           for i in self.opt_idx]
+        self.all_geoms_by_body = {}
         self.foot_geoms = {}
         for b in FOOT_BODIES:
             gi = [g for g in range(self.m.ngeom)
@@ -116,13 +137,20 @@ class LegWorld:
         self.mujoco.mj_forward(self.m, self.d)
 
     def leg_pair_distances(self):
-        """Signed distances (m) of reported leg-vs-leg contacts (<= margin)."""
+        """Signed distances (m) of watched contacts (<= margin).
+
+        pair="both": both geoms in the mode's body set (leg-vs-leg).
+        pair="any":  at least one geom in the set (arm-vs-anything) --
+        Eric's spec is that an arm pressing into ANY body part is wrong.
+        """
         out = []
+        both = self.mode["pair"] == "both"
         for ci in range(self.d.ncon):
             c = self.d.contact[ci]
             if c.geom1 in self.world_geoms or c.geom2 in self.world_geoms:
                 continue
-            if c.geom1 in self.leg_geoms and c.geom2 in self.leg_geoms:
+            a, b = c.geom1 in self.leg_geoms, c.geom2 in self.leg_geoms
+            if (a and b) if both else (a or b):
                 out.append(float(c.dist))
         return out
 
@@ -160,9 +188,10 @@ def window_cost(world, x, q0_win, pos_win, rot_win, foot0, free,
         for dist in world.leg_pair_distances():
             if dist < clearance:
                 base += w_pen * (clearance - dist) ** 2
-        for b, low in world.foot_lows().items():
-            if low < foot0[t][b]:
-                base += w_foot * (foot0[t][b] - low) ** 2
+        if world.mode["foot_guard"]:
+            for b, low in world.foot_lows().items():
+                if low < foot0[t][b]:
+                    base += w_foot * (foot0[t][b] - low) ** 2
         cost += base
         if base > 0.0:
             for jj, j in enumerate(idx):
@@ -172,9 +201,10 @@ def window_cost(world, x, q0_win, pos_win, rot_win, foot0, free,
                 for dist in world.leg_pair_distances():
                     if dist < clearance:
                         pert += w_pen * (clearance - dist) ** 2
-                for b, low in world.foot_lows().items():
-                    if low < foot0[t][b]:
-                        pert += w_foot * (foot0[t][b] - low) ** 2
+                if world.mode["foot_guard"]:
+                    for b, low in world.foot_lows().items():
+                        if low < foot0[t][b]:
+                            pert += w_foot * (foot0[t][b] - low) ** 2
                 grad_q[t, jj] += (pert - base) / eps
     return cost, grad_q[free].ravel()
 
@@ -187,8 +217,11 @@ def main() -> None:
     ap.add_argument("--clips", nargs="*", default=None,
                     help="stems to process (default: every clip with a "
                          "leg contact deeper than --trigger-cm)")
+    ap.add_argument("--mode", choices=list(MODES), default="legs")
     ap.add_argument("--trigger-cm", type=float, default=1.0)
-    ap.add_argument("--clearance-cm", type=float, default=0.5)
+    ap.add_argument("--clearance-cm", type=float, default=None,
+                    help="default per mode: legs 0.5 (real gap), arms 0.2 "
+                         "(contact ok, penetration not)")
     ap.add_argument("--margin-cm", type=float, default=2.0)
     ap.add_argument("--pad", type=int, default=15,
                     help="frames of context around each bad stretch")
@@ -203,7 +236,10 @@ def main() -> None:
     args = ap.parse_args()
 
     ang_vel_from_quats = _helpers()
-    world = LegWorld(args.robot, args.margin_cm / 100.0)
+    mode = MODES[args.mode]
+    world = LegWorld(args.robot, args.margin_cm / 100.0, mode)
+    if args.clearance_cm is None:
+        args.clearance_cm = mode["clearance_cm"]
     clear = args.clearance_cm / 100.0
     trig = args.trigger_cm / 100.0
 
@@ -272,6 +308,7 @@ def main() -> None:
                                       args.w_dev, args.w_smooth,
                                       args.w_pen, args.w_foot),
                 x0, jac=True, method="L-BFGS-B",
+                bounds=world.opt_bounds * len(free),
                 options={"maxiter": args.maxiter})
             qn = q0_win.copy()
             qn[np.ix_(free, world.opt_idx)] = res.x.reshape(
@@ -297,7 +334,7 @@ def main() -> None:
             lo, hi = max(0, a - 1), min(T, b + 1)
             for j in world.opt_idx:
                 dvel[lo:hi, j] = np.gradient(dof[lo:hi, j], dt)
-            leg_ids = [world.body_names.index(n) for n in LEG_BODIES
+            leg_ids = [world.body_names.index(n) for n in world.mode["bodies"]
                        if n in world.body_names]
             for bi in leg_ids:
                 bvel[lo:hi, bi] = np.gradient(pos[lo:hi, bi], dt, axis=0)
