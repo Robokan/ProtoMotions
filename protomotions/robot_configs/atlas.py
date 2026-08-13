@@ -96,14 +96,19 @@ class AtlasRobotConfig(RobotConfig):
                     stiffness=80, damping=4, effort_limit=60,
                     velocity_limit=35,
                 ),
-                # waist (250 Nm class). Raised 140 -> 250 on 2026-08-13:
+                # waist (300 Nm class). Raised 140 -> 300 on 2026-08-13:
                 # corpus inverse dynamics put SUSTAINED demand at 145.9 Nm
                 # through the kip-up/jump-kick snap -- the only joint group
                 # over its limit -- and human athletic trunk extension is
                 # 250-400 Nm. 140 could not deliver the moves this corpus
-                # asks for; the policy visibly sagged out of them.
+                # asks for; the policy visibly sagged out of them. 300 not
+                # 250: the criterion is the PERFORMER (explosive martial
+                # artist, trunk 300-400 Nm), lever-corrected to atlas's
+                # 1.52 m: ~255-340. 250 was the bottom of that band (Eric
+                # caught it); 300 is mid-range, ~2x the 145.9 Nm sustained
+                # demand the kip-up actually measures through this body.
                 r"(Twist|Backbone)_Joint": ControlInfo(
-                    stiffness=250, damping=10, effort_limit=250,
+                    stiffness=250, damping=10, effort_limit=300,
                     velocity_limit=26,
                 ),
                 # shoulders + elbows (90 Nm class)

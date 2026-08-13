@@ -360,8 +360,8 @@
     </body>
   </worldbody>
   <actuator>
-    <motor name="motor_Twist_Joint" joint="Twist_Joint" ctrlrange="-250 250" ctrllimited="true" />
-    <motor name="motor_Backbone_Joint" joint="Backbone_Joint" ctrlrange="-250 250" ctrllimited="true" />
+    <motor name="motor_Twist_Joint" joint="Twist_Joint" ctrlrange="-300 300" ctrllimited="true" />
+    <motor name="motor_Backbone_Joint" joint="Backbone_Joint" ctrlrange="-300 300" ctrllimited="true" />
     <motor name="motor_Neck_2_Joint" joint="Neck_2_Joint" ctrlrange="-25 25" ctrllimited="true" />
     <motor name="motor_Head_Joint" joint="Head_Joint" ctrlrange="-25 25" ctrllimited="true" />
     <motor name="motor_Arm_1_L_Joint" joint="Arm_1_L_Joint" ctrlrange="-90 90" ctrllimited="true" />
