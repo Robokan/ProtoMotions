@@ -219,6 +219,10 @@ def main() -> None:
                          "leg contact deeper than --trigger-cm)")
     ap.add_argument("--mode", choices=list(MODES), default="legs")
     ap.add_argument("--trigger-cm", type=float, default=1.0)
+    ap.add_argument("--gap-trigger", action="store_true",
+                    help="trigger-cm is a minimum GAP: optimize any frame "
+                         "whose closest leg pair is nearer than this, even "
+                         "without penetration (needs margin > clearance)")
     ap.add_argument("--clearance-cm", type=float, default=None,
                     help="default per mode: legs 0.5 (real gap), arms 0.2 "
                          "(contact ok, penetration not)")
@@ -262,14 +266,22 @@ def main() -> None:
         fps = float(mo.get("fps", 30)); dt = 1.0 / fps
         T = dof.shape[0]
 
-        # per-frame worst penetration and original foot heights
-        worst = np.zeros(T); foot0 = []
+        # per-frame minimum gap (signed; negative = penetrating) and
+        # original foot heights. Triggering on GAP rather than penetration
+        # is the point (Eric 2026-08-14): a reference that clears by 5 mm is
+        # geometrically valid but untrackable -- the policy's leg-pass
+        # tracking error is 1-3 cm, so the reference must PROVIDE SPACE, not
+        # merely avoid overlap. Frames with a gap under the clearance target
+        # get optimized even though nothing penetrates.
+        gap = np.full(T, np.inf); foot0 = []
         for t in range(T):
             world.set_frame(pos[t, 0], rot[t, 0], dof[t])
-            dists = [d for d in world.leg_pair_distances() if d < 0]
-            worst[t] = -min(dists) if dists else 0.0
+            dists = world.leg_pair_distances()
+            if dists:
+                gap[t] = min(dists)
             foot0.append(world.foot_lows())
-        bad = worst > trig
+        worst = np.maximum(-gap, 0.0)          # penetration depth, for reports
+        bad = gap < (clear - trig) if trig < 0 else               (gap < trig) if args.gap_trigger else (worst > trig)
         if not bad.any():
             if not args.dry_run:
                 shutil.copy(p, out / p.name)
@@ -315,15 +327,15 @@ def main() -> None:
                 len(free), len(world.opt_idx))
             dof[a:b] = qn
             # measure the window after
-            w_after = 0.0; dq = 0.0
+            g_after = np.inf; dq = 0.0
             for t in range(a, b):
                 world.set_frame(pos[t, 0], rot[t, 0], dof[t])
-                dists = [d for d in world.leg_pair_distances() if d < 0]
+                dists = world.leg_pair_distances()
                 if dists:
-                    w_after = max(w_after, -min(dists))
+                    g_after = min(g_after, min(dists))
                 dq = max(dq, float(np.abs(np.degrees(
                     dof[t] - mo["dof_pos"].numpy()[t])).max()))
-            report.append((a, b, worst[a:b].max(), w_after, dq, res.nit))
+            report.append((a, b, gap[a:b].min(), g_after, dq, res.nit))
 
         # FK writeback + surgical velocities inside the touched windows
         for a, b in runs:
@@ -341,9 +353,9 @@ def main() -> None:
                 avel[lo:hi, bi] = ang_vel_from_quats(rot[lo:hi, bi], dt) \
                     if hi - lo > 2 else avel[lo:hi, bi]
 
-        for (a, b, w0, w1, dq, nit) in report:
+        for (a, b, g0, g1, dq, nit) in report:
             print(f"  {p.name[:44]:<44} win {a:3d}-{b:3d}  "
-                  f"pen {w0*100:5.2f} -> {w1*100:5.2f} cm  "
+                  f"gap {g0*100:+6.2f} -> {g1*100:+6.2f} cm  "
                   f"max dq {dq:4.1f} deg  ({nit} iters)", flush=True)
         if not args.dry_run:
             mo["rigid_body_pos"] = torch.from_numpy(pos).float()
