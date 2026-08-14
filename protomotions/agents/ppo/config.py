@@ -172,6 +172,20 @@ class PPOAgentConfig(BaseAgentConfig):
     )
 
     # Actor update control
+    actor_freeze_epochs: int = field(
+        default=0,
+        metadata={
+            "help": "Freeze actor updates for the first N epochs of a run "
+            "(critic warmup). For warm starts whose episode HORIZON changes, "
+            "the inherited critic's advantage estimates are garbage until it "
+            "re-fits to the new return scale -- and PPO meanwhile trains the "
+            "good inherited policy toward destruction (measured: a checkpoint "
+            "with 3/10 indefinite walkers degraded to universal "
+            "2-steps-then-freeze within ~470 epochs after a 35 -> 300 step "
+            "horizon jump). Critic, discriminator and normalizers keep "
+            "training; only the actor is protected."
+        },
+    )
     actor_clip_frac_threshold: Optional[float] = field(
         default=0.6,
         metadata={"help": "Skip actor update if clip_frac > threshold (e.g., 0.5)."},

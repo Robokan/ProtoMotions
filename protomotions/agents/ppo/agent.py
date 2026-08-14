@@ -655,8 +655,12 @@ class PPO(BaseAgent):
     # Optimization Override
     # -----------------------------
     def optimize_model(self) -> Dict:
-        # Reset epoch-level actor skip flag
-        self._skip_actor_for_epoch = False
+        # Reset epoch-level actor skip flag -- unless we are inside the
+        # critic-warmup window (actor_freeze_epochs), in which case the whole
+        # epoch skips actor updates while critic/disc/normalizers adapt.
+        self._skip_actor_for_epoch = (
+            self.current_epoch < getattr(self.config, "actor_freeze_epochs", 0)
+        )
 
         training_log_dict = super().optimize_model()
         # Merge advantage normalization logs if available

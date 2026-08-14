@@ -273,6 +273,18 @@ def agent_config(
             discriminator_termination_anneal_epochs=2000,
         ),
     )
+    # Critic warmup for warm starts whose horizon changed: freeze the actor
+    # while the critic re-fits to the new return scale, so garbage advantages
+    # cannot grind down the inherited policy (a 3/10-indefinite-walker
+    # checkpoint degraded to universal 2-steps-then-freeze in ~470 epochs
+    # after the 35 -> 300 horizon jump).
+    agent_config.actor_freeze_epochs = int(
+        getattr(args, "actor_freeze_epochs", 0) or 0
+    )
+    if getattr(args, "disc_term_threshold", None) is not None:
+        agent_config.amp_parameters.discriminator_reward_threshold = float(
+            args.disc_term_threshold
+        )
     return agent_config
 
 
@@ -304,6 +316,16 @@ def apply_inference_overrides(
 
 
 def additional_experiment_arguments(parser):
+    parser.add_argument(
+        "--disc-term-threshold", type=float, default=None,
+        help="Override discriminator_reward_threshold (0 disables the style "
+             "kill entirely -- required for warm starts from a CONVERGED "
+             "disc, whose reward floor sits under any useful threshold).")
+    parser.add_argument(
+        "--actor-freeze-epochs", type=int, default=0,
+        help="Critic warmup: freeze actor updates for N epochs. Use ~300 for "
+             "warm starts whose episode horizon changed -- the inherited "
+             "critic must re-fit before its advantages are safe to train on.")
     parser.add_argument(
         "--no-fall-termination", action="store_true",
         help="Disable height+contact fall termination (tumbling/rolling "
