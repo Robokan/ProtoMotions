@@ -37,6 +37,21 @@ from examples.experiments.ase.mlp import (  # noqa: F401  (loader re-exports)
 from examples.experiments.ase import mlp as _base
 
 
+def env_config(robot_cfg, args: argparse.Namespace):
+    """Base env config MINUS the power penalty.
+
+    Atlas imitates MOCAP -- a real human already moves energy-efficiently,
+    so imitation embeds the energy prior and pure AMP economics apply: every
+    per-step reward >= 0, survival weakly dominates termination (Eric,
+    2026-08-14, after the utahraptor learned to fall on purpose when the
+    converged style reward 0.104 met the -0.097 power penalty).
+    """
+    cfg = _base.env_config(robot_cfg, args)
+    if hasattr(cfg, "reward_components") and cfg.reward_components:
+        cfg.reward_components.pop("pow_rew", None)
+    return cfg
+
+
 def agent_config(robot_config, env_config, args: argparse.Namespace):
     cfg = _base.agent_config(robot_config, env_config, args)
     cfg.gamma = 0.95

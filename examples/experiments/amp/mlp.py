@@ -70,7 +70,7 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
     from protomotions.envs.component_factories import (
         max_coords_obs_factory,
         historical_max_coords_obs_factory,
-        pow_rew_factory,
+        pow_efficiency_bonus_factory,
     )
     from protomotions.envs.motion_manager.config import MotionManagerConfig
     from protomotions.envs.action import make_pd_action_config
@@ -104,7 +104,14 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
     # Mechanical power penalty (|τ·q̇|): nudges get-ups / thrashing toward
     # cheaper motions. Needs a non-zero agent task_reward_w to affect PPO.
     reward_components = {
-        "pow_rew": pow_rew_factory(weight=-1e-5, min_value=-0.5),
+        # BONUS form, not penalty: the additive penalty made net per-step
+        # reward ~0 once the disc converged (0.104 style vs -0.097 penalty)
+        # and the policy learned to fall on purpose after the grace period.
+        # Kept at all (unlike pure AMP) because raptor-family references are
+        # keyframed animation, not mocap -- energy plausibility is not
+        # embedded in the imitation target. coef*exp(-P/10kW); 10kW ~ the
+        # measured mean |tau.qd| of the walk run.
+        "pow_rew": pow_efficiency_bonus_factory(coef=0.02, power_scale=10000.0),
     }
 
     env_config: EnvConfig = EnvConfig(
@@ -257,7 +264,11 @@ def apply_inference_overrides(
         agent_cfg.amp_parameters.discriminator_reward_threshold = 0.0
 
     if env_cfg is not None:
-        if hasattr(env_cfg, "max_episode_length"):
+        # Keep the training horizon when --amp-disc-term is on so timeouts
+        # still reset envs in the viewer (disc kills alone are not enough).
+        if hasattr(env_cfg, "max_episode_length") and not getattr(
+            args, "amp_disc_term", False
+        ):
             env_cfg.max_episode_length = 1000000
         if hasattr(env_cfg, "motion_manager"):
             if hasattr(env_cfg.motion_manager, "init_start_prob"):

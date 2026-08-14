@@ -784,6 +784,29 @@ def mimic_tracking_rewards_factory(
     }
 
 
+def pow_efficiency_bonus_factory(
+    coef: float = 0.02,
+    power_scale: float = 10000.0,
+) -> MdpComponent:
+    """Non-negative energy shaping: coef * exp(-power/power_scale).
+
+    Replacement for pow_rew_factory with a negative weight, which violates
+    AMP's implicit invariant that per-step reward >= 0 (survival must weakly
+    dominate termination). See compute_pow_efficiency_bonus for the
+    utahraptor suicide post-mortem that motivated it.
+    """
+    from protomotions.envs.rewards.regularization import compute_pow_efficiency_bonus
+
+    return MdpComponent(
+        compute_func=compute_pow_efficiency_bonus,
+        dynamic_vars={
+            "dof_forces": EnvContext.current.dof_forces,
+            "dof_vel": EnvContext.current.dof_vel,
+        },
+        static_params={"coef": coef, "power_scale": power_scale},
+    )
+
+
 def pow_rew_factory(
     weight: float = -1e-5,
     min_value: Optional[float] = -0.5,

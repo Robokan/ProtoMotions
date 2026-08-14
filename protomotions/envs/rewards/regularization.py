@@ -99,6 +99,31 @@ def compute_pow_rew(
     return power_consumption_sum(dof_forces, dof_vel, use_torque_squared)
 
 
+def compute_pow_efficiency_bonus(
+    dof_forces: Tensor,
+    dof_vel: Tensor,
+    coef: float = 0.02,
+    power_scale: float = 10000.0,
+) -> Tensor:
+    """Energy shaping that cannot break AMP's survival invariant.
+
+    The additive power PENALTY (compute_pow_rew with negative weight) can
+    push net per-step reward below zero once the adversarial style reward
+    decays to the penalty's scale -- at which point terminating early is
+    optimal and the policy learns to fall on purpose (utahraptor walk,
+    2026-08-14: style 0.104 vs penalty -0.097, episode length pinned at
+    grace+3 steps across four runs).
+
+    This keeps the term's PURPOSE -- the raptor-family references are
+    keyframed animation, not mocap, so energy plausibility is not embedded
+    in imitation and needs a nudge -- but as a BONUS, coef*exp(-P/P0):
+    monotonically favours efficient motion, strictly non-negative, so being
+    alive always weakly dominates dying, exactly as AMP designed it.
+    """
+    p = power_consumption_sum(dof_forces, dof_vel, False)
+    return coef * torch.exp(-p / power_scale)
+
+
 def compute_soft_pos_limit_rew(
     dof_pos: Tensor,
     dof_limits_lower: Tensor,
