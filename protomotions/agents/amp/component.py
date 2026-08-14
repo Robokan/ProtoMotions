@@ -296,6 +296,29 @@ class AMPTrainingComponent:
 
         return fn(**func_kwargs)
 
+    def _disc_termination_threshold(self) -> float:
+        """Effective disc-kill threshold, annealed to zero over training.
+
+        The style kill is an early-training compute saver (cut hopeless
+        rollouts instead of simulating them to the cap). A CONSTANT threshold
+        compared against the adversarially sinking disc reward eventually
+        crosses it and guillotines healthy episodes -- measured at 2.85%/step
+        = every episode dead at ~35 frames on the raptor walk, regardless of
+        max_episode_length. Annealing (Eric, 2026-08-14) makes the
+        threshold's intended lifetime explicit. It is also the
+        reference-aware early guard for floor-content corpora (rolls score
+        fine against a corpus containing rolls), where height-based fall
+        termination cannot be used. <= 0 means disabled, matching the
+        existing gates.
+        """
+        params = self.config.amp_parameters
+        base = params.discriminator_reward_threshold
+        anneal = getattr(params, "discriminator_termination_anneal_epochs", None)
+        if base <= 0.0 or not anneal:
+            return base
+        epoch = getattr(self.agent, "current_epoch", 0)
+        return base * max(0.0, 1.0 - epoch / float(anneal))
+
     def post_env_step_modifications(self, dones, terminated, extras):
         discriminator_termination = (
             self.num_cumulative_bad_transitions
@@ -344,7 +367,7 @@ class AMPTrainingComponent:
         when watching resets in the viewer.
         """
         params = self.config.amp_parameters
-        if params.discriminator_reward_threshold <= 0.0:
+        if self._disc_termination_threshold() <= 0.0:
             extras["amp_rewards"] = None
             extras["amp_discriminator_termination"] = torch.zeros_like(
                 dones, dtype=torch.bool
@@ -360,7 +383,7 @@ class AMPTrainingComponent:
         amp_rewards = self.discriminator.module.compute_disc_reward(
             disc_logits
         ).flatten()
-        bad_transition = amp_rewards < params.discriminator_reward_threshold
+        bad_transition = amp_rewards < self._disc_termination_threshold()
         self.num_cumulative_bad_transitions[bad_transition] += 1
         self.num_cumulative_bad_transitions[~bad_transition] = 0
 
@@ -404,9 +427,7 @@ class AMPTrainingComponent:
         amp_rewards = self.discriminator.module.compute_disc_reward(
             disc_logits
         ).flatten()
-        bad_transition = (
-            amp_rewards < self.config.amp_parameters.discriminator_reward_threshold
-        )
+        bad_transition = amp_rewards < self._disc_termination_threshold()
         self.num_cumulative_bad_transitions[bad_transition] += 1
         self.num_cumulative_bad_transitions[~bad_transition] = 0
 

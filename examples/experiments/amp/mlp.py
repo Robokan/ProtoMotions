@@ -121,15 +121,18 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
         observation_components=observation_components,
         reward_components=reward_components,
         action_config=make_pd_action_config(robot_cfg),
-        # Real fall termination (the disc-FSM kill above is disabled).
-        # Without ANY early termination a fallen raptor farms the floor for
-        # the remaining episode; with it, falling ends the episode -- and
-        # since every per-step reward is >= 0, ending early is strictly
-        # worse than continuing: AMP's survival economics, now with actual
-        # 300-step horizons to learn balance in.
-        termination_components={
-            "fall": fall_termination_factory(termination_height=0.25),
-        },
+        # Fall termination: falling ends the episode, and since every
+        # per-step reward is >= 0, ending early strictly loses -- AMP's
+        # survival economics over real 300-step horizons. PER-RUN KNOB
+        # (Eric): height+contact termination is only valid for UPRIGHT
+        # corpora; a tumbling/rolling reference puts the torso on the floor
+        # deliberately and this would execute it mid-roll. For those runs
+        # pass --no-fall-termination and let the annealed disc kill (which
+        # scores rolls as in-reference) be the early guard.
+        termination_components=(
+            {} if getattr(args, "no_fall_termination", False) else
+            {"fall": fall_termination_factory(termination_height=0.25)}
+        ),
         motion_manager=MotionManagerConfig(
             init_start_prob=0.5  # Bias agent to start at the beginning of the motion to prevent getting stuck in a local-minima (standing still).
         ),
@@ -252,17 +255,22 @@ def agent_config(
         gradient_clip_val=50.0,
         clip_critic_loss=True,
         amp_parameters=AMPParametersConfig(
-            # 0.0 DISABLES the discriminator-FSM episode kill (2026-08-14).
-            # At 0.02 the converged disc (reward floor ~0.006) accumulated
-            # "bad transitions" at ~2.85%/step and guillotined EVERY episode
-            # at ~35 steps -- 1/0.0285 -- regardless of max_episode_length
-            # (which is why 300 vs 75 changed nothing). The raptor never
-            # trained a rollout longer than ~1.2 s and never once fell in
-            # training (terminate_mean 0.0000), so inference walking died at
-            # ~3 steps: the edge of the only horizon it ever practiced. The
-            # IsaacLabASE reference that learned this walk has no disc kill;
-            # fall termination below is the honest episode ender.
-            discriminator_reward_threshold=0.0,
+            # Disc-kill ANNEALED to zero (Eric, 2026-08-14): potent early --
+            # cut hopeless flailing rollouts instead of simulating them to
+            # the cap -- and impotent by epoch 2000, so the converged disc
+            # (reward floor ~0.006, below any useful fixed threshold) can
+            # never again guillotine healthy episodes as it did (every
+            # raptor episode dead at ~35 steps; the 300-vs-75 episode-length
+            # experiments never had a chance to matter). For FLOOR-CONTENT
+            # corpora (rolls/getups) this annealed kill is also the only
+            # viable early guard, since height-based fall termination would
+            # execute a mid-roll robot (Eric).
+            # NOTE for warm starts from a CONVERGED disc: the early anneal
+            # window kills at the old rate until it decays -- use
+            # --no-fall-termination/-style overrides or threshold 0 for
+            # those runs.
+            discriminator_reward_threshold=0.02,
+            discriminator_termination_anneal_epochs=2000,
         ),
     )
     return agent_config
@@ -293,3 +301,10 @@ def apply_inference_overrides(
         if hasattr(env_cfg, "motion_manager"):
             if hasattr(env_cfg.motion_manager, "init_start_prob"):
                 env_cfg.motion_manager.init_start_prob = 1.0
+
+
+def additional_experiment_arguments(parser):
+    parser.add_argument(
+        "--no-fall-termination", action="store_true",
+        help="Disable height+contact fall termination (tumbling/rolling "
+             "corpora put the torso on the floor deliberately).")
