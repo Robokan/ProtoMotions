@@ -399,19 +399,26 @@ class PPO(BaseAgent):
                     )
 
         if self._skip_actor_for_epoch:
+            # Skip ONLY the actor's optimizer step. The previous early-return
+            # here skipped the critic too, which inverted the purpose of both
+            # users of this flag: the clip-frac guard meant "stop moving the
+            # policy, keep fitting the value function", and actor_freeze_epochs
+            # (critic warmup) meant "fit the critic BEFORE moving the policy".
+            # Returning early gave neither -- 169 epochs of "warmup" trained
+            # nothing but the discriminator and the running normalizers, and
+            # the warm-started walkers still degraded to instant-fallers.
             iter_log_dict["actor/update_skipped"] = torch.tensor(
                 1.0, device=self.device
             )
-            return iter_log_dict
-
-        actor_grad_clip_dict = self._step_optimizer(
-            loss=actor_loss,
-            model=self.actor,
-            optimizer=self.actor_optimizer,
-            model_name="actor",
-        )
-        iter_log_dict.update(actor_grad_clip_dict)
-        iter_log_dict["actor/update_skipped"] = torch.tensor(0.0, device=self.device)
+        else:
+            actor_grad_clip_dict = self._step_optimizer(
+                loss=actor_loss,
+                model=self.actor,
+                optimizer=self.actor_optimizer,
+                model_name="actor",
+            )
+            iter_log_dict.update(actor_grad_clip_dict)
+            iter_log_dict["actor/update_skipped"] = torch.tensor(0.0, device=self.device)
 
         critic_loss, critic_loss_dict = self.critic_step(batch_dict)
         iter_log_dict.update(critic_loss_dict)
