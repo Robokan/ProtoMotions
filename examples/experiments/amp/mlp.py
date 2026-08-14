@@ -71,6 +71,7 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
         max_coords_obs_factory,
         historical_max_coords_obs_factory,
         pow_efficiency_bonus_factory,
+        fall_termination_factory,
     )
     from protomotions.envs.motion_manager.config import MotionManagerConfig
     from protomotions.envs.action import make_pd_action_config
@@ -120,6 +121,15 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
         observation_components=observation_components,
         reward_components=reward_components,
         action_config=make_pd_action_config(robot_cfg),
+        # Real fall termination (the disc-FSM kill above is disabled).
+        # Without ANY early termination a fallen raptor farms the floor for
+        # the remaining episode; with it, falling ends the episode -- and
+        # since every per-step reward is >= 0, ending early is strictly
+        # worse than continuing: AMP's survival economics, now with actual
+        # 300-step horizons to learn balance in.
+        termination_components={
+            "fall": fall_termination_factory(termination_height=0.25),
+        },
         motion_manager=MotionManagerConfig(
             init_start_prob=0.5  # Bias agent to start at the beginning of the motion to prevent getting stuck in a local-minima (standing still).
         ),
@@ -242,7 +252,17 @@ def agent_config(
         gradient_clip_val=50.0,
         clip_critic_loss=True,
         amp_parameters=AMPParametersConfig(
-            discriminator_reward_threshold=0.02,  # Training default (eval override in apply_inference_overrides if needed)
+            # 0.0 DISABLES the discriminator-FSM episode kill (2026-08-14).
+            # At 0.02 the converged disc (reward floor ~0.006) accumulated
+            # "bad transitions" at ~2.85%/step and guillotined EVERY episode
+            # at ~35 steps -- 1/0.0285 -- regardless of max_episode_length
+            # (which is why 300 vs 75 changed nothing). The raptor never
+            # trained a rollout longer than ~1.2 s and never once fell in
+            # training (terminate_mean 0.0000), so inference walking died at
+            # ~3 steps: the edge of the only horizon it ever practiced. The
+            # IsaacLabASE reference that learned this walk has no disc kill;
+            # fall termination below is the honest episode ender.
+            discriminator_reward_threshold=0.0,
         ),
     )
     return agent_config
