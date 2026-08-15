@@ -131,6 +131,11 @@ class BaseModelConfig:
 class BaseAgentConfig:
     """Main configuration class for PPO Agent."""
 
+    batch_size: int = field(metadata={"help": "Training batch size."})
+    training_max_steps: int = field(metadata={"help": "Maximum training steps."})
+
+    _target_: str = "protomotions.agents.base_agent.agent.BaseAgent"
+
     freeze_actor_obs_norm: bool = False
     """Freeze the actor's observation-normalizer running stats after load.
 
@@ -144,10 +149,6 @@ class BaseAgentConfig:
     space to what it trained with; disc/critic normalizers stay live.
     """
 
-    batch_size: int = field(metadata={"help": "Training batch size."})
-    training_max_steps: int = field(metadata={"help": "Maximum training steps."})
-
-    _target_: str = "protomotions.agents.base_agent.agent.BaseAgent"
 
     # Model configuration
     model: BaseModelConfig = field(
