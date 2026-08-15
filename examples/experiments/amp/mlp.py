@@ -284,6 +284,10 @@ def agent_config(
     agent_config.freeze_actor_obs_norm = bool(
         getattr(args, "freeze_actor_obs_norm", False)
     )
+    if getattr(args, "disc_term_anneal_epochs", None) is not None:
+        agent_config.amp_parameters.discriminator_termination_anneal_epochs = (
+            args.disc_term_anneal_epochs or None
+        )
     if getattr(args, "disc_term_threshold", None) is not None:
         agent_config.amp_parameters.discriminator_reward_threshold = float(
             args.disc_term_threshold
@@ -324,6 +328,14 @@ def additional_experiment_arguments(parser):
         help="Pin the warm-started policy's input normalization (the EMA "
              "normalizer otherwise re-centers within epochs and collapses "
              "the inherited behavior while the weights stay intact).")
+    parser.add_argument(
+        "--disc-term-anneal-epochs", type=int, default=None,
+        help="Override the disc-kill anneal horizon. 0 = CONSTANT threshold "
+             "(the original regime: standing stays lethal forever -- needed "
+             "for from-scratch runs, which otherwise settle into standing "
+             "the moment the anneal decays; measured on atlas A485 at epoch "
+             "~2000). Beware the constant regime's known cost: at disc "
+             "convergence it capped every raptor episode at ~35 steps.")
     parser.add_argument(
         "--disc-term-threshold", type=float, default=None,
         help="Override discriminator_reward_threshold (0 disables the style "
