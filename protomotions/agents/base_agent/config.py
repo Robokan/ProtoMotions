@@ -131,6 +131,19 @@ class BaseModelConfig:
 class BaseAgentConfig:
     """Main configuration class for PPO Agent."""
 
+    freeze_actor_obs_norm: bool = False
+    """Freeze the actor's observation-normalizer running stats after load.
+
+    The normalizer is EMA-based (count-invariant), so at training sample
+    rates it fully re-centers within a few epochs. For a warm-started policy
+    that is catastrophic: the weights stay intact while the LENS they see
+    through shifts to the new state distribution -- measured on the raptor
+    walkers: obs-norm mean drifted 0.84 (var 2.95) within 59 epochs while
+    MLP weights moved <0.002, and the walking collapsed identically across
+    four differently-protected runs. Freezing pins the policy's input
+    space to what it trained with; disc/critic normalizers stay live.
+    """
+
     batch_size: int = field(metadata={"help": "Training batch size."})
     training_max_steps: int = field(metadata={"help": "Maximum training steps."})
 

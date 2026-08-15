@@ -335,6 +335,17 @@ class BaseAgent:
 
     def _after_load_model_state_dict(self, state_dict) -> None:
         """Hook for model-load adjustments that are not training state."""
+        if getattr(self.config, "freeze_actor_obs_norm", False):
+            from protomotions.agents.common.common import NormObsBase
+
+            actor = getattr(self.model, "_actor", None)
+            n = 0
+            if actor is not None:
+                for m in actor.modules():
+                    if isinstance(m, NormObsBase):
+                        m._freeze_running = True
+                        n += 1
+            log.info(f"freeze_actor_obs_norm: froze {n} actor normalizer(s)")
 
     def _load_training_state(self, state_dict):
         """Restore training-only state shared by all training algorithms."""

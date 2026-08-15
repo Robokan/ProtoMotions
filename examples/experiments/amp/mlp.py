@@ -281,6 +281,9 @@ def agent_config(
     agent_config.actor_freeze_epochs = int(
         getattr(args, "actor_freeze_epochs", 0) or 0
     )
+    agent_config.freeze_actor_obs_norm = bool(
+        getattr(args, "freeze_actor_obs_norm", False)
+    )
     if getattr(args, "disc_term_threshold", None) is not None:
         agent_config.amp_parameters.discriminator_reward_threshold = float(
             args.disc_term_threshold
@@ -316,6 +319,11 @@ def apply_inference_overrides(
 
 
 def additional_experiment_arguments(parser):
+    parser.add_argument(
+        "--freeze-actor-obs-norm", action="store_true",
+        help="Pin the warm-started policy's input normalization (the EMA "
+             "normalizer otherwise re-centers within epochs and collapses "
+             "the inherited behavior while the weights stay intact).")
     parser.add_argument(
         "--disc-term-threshold", type=float, default=None,
         help="Override discriminator_reward_threshold (0 disables the style "
