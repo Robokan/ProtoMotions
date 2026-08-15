@@ -54,6 +54,11 @@ def env_config(robot_cfg, args: argparse.Namespace):
 
 def agent_config(robot_config, env_config, args: argparse.Namespace):
     cfg = _base.agent_config(robot_config, env_config, args)
+    # Warm starts must pin the actor's input normalization: the EMA obs
+    # normalizer re-centers within epochs while the weights stay intact,
+    # which collapsed four raptor warm starts before it was found (see
+    # warm-start-obs-norm-freeze). Applied whenever warm-starting.
+    cfg.freeze_actor_obs_norm = bool(getattr(args, "checkpoint", None))
     cfg.gamma = 0.95
     cfg.entropy_coef = 0.01
     # Template effective mix: disc(x2 scale, w .5) : enc(w .5) = 2 : 1
