@@ -64,18 +64,6 @@ class AMPParametersConfig:
         default=0.05,
         metadata={"help": "Threshold for discriminator reward termination.", "min": 0.0, "max": 1.0}
     )
-    discriminator_termination_anneal_epochs: Optional[int] = field(
-        default=None,
-        metadata={
-            "help": "Linearly anneal the disc-termination threshold to zero "
-            "over this many epochs (Eric, 2026-08-14): the style kill is an "
-            "early-training compute saver -- cut hopeless flailing rollouts "
-            "instead of simulating them to the cap -- but once the disc "
-            "converges its reward floor drops below any fixed threshold and "
-            "it guillotines healthy episodes (measured: every raptor episode "
-            "dead at 35 steps). None = constant threshold (legacy)."
-        },
-    )
     discriminator_max_cumulative_bad_transitions: int = field(
         default=10,
         metadata={"help": "Max bad transitions before termination.", "min": 1}

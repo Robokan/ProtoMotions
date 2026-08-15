@@ -127,7 +127,7 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
         # (Eric): height+contact termination is only valid for UPRIGHT
         # corpora; a tumbling/rolling reference puts the torso on the floor
         # deliberately and this would execute it mid-roll. For those runs
-        # pass --no-fall-termination and let the annealed disc kill (which
+        # pass --no-fall-termination and let the disc kill (which
         # scores rolls as in-reference) be the early guard.
         termination_components=(
             {} if getattr(args, "no_fall_termination", False) else
@@ -255,22 +255,18 @@ def agent_config(
         gradient_clip_val=50.0,
         clip_critic_loss=True,
         amp_parameters=AMPParametersConfig(
-            # Disc-kill ANNEALED to zero (Eric, 2026-08-14): potent early --
-            # cut hopeless flailing rollouts instead of simulating them to
-            # the cap -- and impotent by epoch 2000, so the converged disc
-            # (reward floor ~0.006, below any useful fixed threshold) can
-            # never again guillotine healthy episodes as it did (every
-            # raptor episode dead at ~35 steps; the 300-vs-75 episode-length
-            # experiments never had a chance to matter). For FLOOR-CONTENT
-            # corpora (rolls/getups) this annealed kill is also the only
-            # viable early guard, since height-based fall termination would
-            # execute a mid-roll robot (Eric).
-            # NOTE for warm starts from a CONVERGED disc: the early anneal
-            # window kills at the old rate until it decays -- use
-            # --no-fall-termination/-style overrides or threshold 0 for
-            # those runs.
+            # Disc-kill: CONSTANT threshold. Annealing was tried (e742e51)
+            # and REMOVED as a mistake (Eric, 2026-08-15): the kill is what
+            # makes STANDING lethal, and a from-scratch run retires into the
+            # documented standing-still minimum the moment the threshold
+            # fades (measured on atlas A485, parked exactly at the anneal's
+            # death ~epoch 2000). The rule is now binary:
+            #   * from scratch: keep this constant threshold (this default);
+            #   * WARM START of a working policy: kill it entirely with
+            #     --disc-term-threshold 0, because at disc convergence a
+            #     constant threshold guillotines healthy walkers (raptor:
+            #     every episode dead at ~35 steps).
             discriminator_reward_threshold=0.02,
-            discriminator_termination_anneal_epochs=2000,
         ),
     )
     # Critic warmup for warm starts whose horizon changed: freeze the actor
@@ -284,10 +280,6 @@ def agent_config(
     agent_config.freeze_actor_obs_norm = bool(
         getattr(args, "freeze_actor_obs_norm", False)
     )
-    if getattr(args, "disc_term_anneal_epochs", None) is not None:
-        agent_config.amp_parameters.discriminator_termination_anneal_epochs = (
-            args.disc_term_anneal_epochs or None
-        )
     if getattr(args, "disc_term_threshold", None) is not None:
         agent_config.amp_parameters.discriminator_reward_threshold = float(
             args.disc_term_threshold
@@ -328,14 +320,6 @@ def additional_experiment_arguments(parser):
         help="Pin the warm-started policy's input normalization (the EMA "
              "normalizer otherwise re-centers within epochs and collapses "
              "the inherited behavior while the weights stay intact).")
-    parser.add_argument(
-        "--disc-term-anneal-epochs", type=int, default=None,
-        help="Override the disc-kill anneal horizon. 0 = CONSTANT threshold "
-             "(the original regime: standing stays lethal forever -- needed "
-             "for from-scratch runs, which otherwise settle into standing "
-             "the moment the anneal decays; measured on atlas A485 at epoch "
-             "~2000). Beware the constant regime's known cost: at disc "
-             "convergence it capped every raptor episode at ~35 steps.")
     parser.add_argument(
         "--disc-term-threshold", type=float, default=None,
         help="Override discriminator_reward_threshold (0 disables the style "
