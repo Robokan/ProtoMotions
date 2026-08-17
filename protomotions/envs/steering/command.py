@@ -67,6 +67,10 @@ class SteeringCommandControlConfig(ControlComponentConfig):
     heading_change_steps_max: int = 175
     rate_frac_min: float = 0.02
     rate_frac_max: float = 0.08
+    # Skill buttons ("press B to sit"). The state is published for the agent's
+    # latent-bank override and appended to the task obs so a learned HLC can
+    # also see which button is held. 0 = no buttons, obs width unchanged.
+    num_buttons: int = 0
     difficulty_epochs: int = 1
 
 
@@ -96,6 +100,12 @@ class SteeringCommandControl(ControlComponent):
             num_envs, device=device, dtype=torch.int64
         )
         self._difficulty = 1.0 if config.difficulty_epochs <= 1 else 0.2
+        # [num_envs, num_buttons], 1.0 while held. Driven by teleop (a
+        # gamepad drives env 0) or scripted tests; zeros during training
+        # unless something sets it.
+        self.button_state = torch.zeros(
+            num_envs, config.num_buttons, device=device, dtype=torch.float
+        )
 
     def set_epoch(self, current_epoch: int):
         """Difficulty curriculum hook, called by the HLC env adapter each epoch."""
@@ -153,6 +163,8 @@ class SteeringCommandControl(ControlComponent):
         # Fresh episodes ramp up from standstill; mid-episode resamples keep
         # ramping from the current target.
         self._target[env_ids[is_env_reset]] = 0.0
+        if self.button_state.shape[1]:
+            self.button_state[env_ids[is_env_reset]] = 0.0
 
     def step(self):
         resample_mask = self.env.progress_buf >= self._change_steps
@@ -164,11 +176,19 @@ class SteeringCommandControl(ControlComponent):
         step = torch.clamp(goal - self._target, -self._rates, self._rates)
         self._target += step
 
+    def set_buttons(self, state: Tensor, env_ids: Tensor = None) -> None:
+        """Teleop hook: set held buttons (1.0 = held) for some/all envs."""
+        if env_ids is None:
+            self.button_state[:] = state
+        else:
+            self.button_state[env_ids] = state
+
     def populate_context(self, ctx) -> None:
         ctx.steering_cmd = SteeringCommandContext(
             fwd_cmd=self._target[:, 0],
             turn_cmd=self._target[:, 1],
             side_cmd=self._target[:, 2],
+            buttons=self.button_state,
         )
 
 
@@ -184,9 +204,10 @@ def compute_steering_command_obs(
     fwd_cmd: Tensor,
     turn_cmd: Tensor,
     side_cmd: Tensor,
+    buttons: Tensor,
     w_last: bool = True,
 ) -> Tensor:
-    """Command + gait proprioception observation, 12 dims:
+    """Command + gait proprioception observation, 12 dims (+1 per button):
     [fwd_cmd, turn_cmd, side_cmd, projected_gravity(3), root_ang_vel(3, body
     frame), heading-frame local linear velocity(3)].
     """
@@ -204,6 +225,7 @@ def compute_steering_command_obs(
             proj_gravity,
             root_local_ang_vel,
             local_vel,
+            buttons,
         ],
         dim=-1,
     )
@@ -284,6 +306,7 @@ def steering_command_obs_factory():
             "fwd_cmd": EnvContext.steering_cmd.fwd_cmd,
             "turn_cmd": EnvContext.steering_cmd.turn_cmd,
             "side_cmd": EnvContext.steering_cmd.side_cmd,
+            "buttons": EnvContext.steering_cmd.buttons,
         },
         static_params={"w_last": True},
     )

@@ -418,18 +418,22 @@ class SteeringCommandContext:
     fwd_cmd: Tensor = FieldPath()
     turn_cmd: Tensor = FieldPath()
     side_cmd: Tensor = FieldPath()
+    buttons: Tensor = FieldPath()
 
-    def __init__(self, fwd_cmd: Tensor, turn_cmd: Tensor, side_cmd: Tensor):
+    def __init__(self, fwd_cmd: Tensor, turn_cmd: Tensor, side_cmd: Tensor,
+                 buttons: Tensor = None):
         """Initialize SteeringCommandContext.
 
         Args:
             fwd_cmd: Target forward velocity in the heading frame [num_envs] (m/s).
             turn_cmd: Target yaw rate [num_envs] (rad/s).
             side_cmd: Target lateral velocity in the heading frame [num_envs] (m/s).
+            buttons: Held skill buttons [num_envs, num_buttons], 1.0 = held.
         """
         self.fwd_cmd = fwd_cmd
         self.turn_cmd = turn_cmd
         self.side_cmd = side_cmd
+        self.buttons = buttons
 
 
 class SteeringContext:

@@ -56,6 +56,15 @@ def additional_experiment_arguments(parser):
         "--task-reward-w", type=float, default=0.9,
         help="Command-tracking weight in the HLC reward mix.")
     parser.add_argument(
+        "--latent-bank", type=str, default=None,
+        help="Skill-latent bank from protomotions/agents/ase/latent_bank.py. "
+             "With --button-skills, a held button pipes that skill's latent "
+             "straight into the frozen LLC (press B to sit).")
+    parser.add_argument(
+        "--button-skills", type=str, default="",
+        help="Comma-separated skill names, one per button, in button order "
+             "(e.g. 'sit,jump').")
+    parser.add_argument(
         "--disc-reward-w", type=float, default=0.1,
         help="Style weight from the FROZEN LLC discriminator (0 disables).")
 
@@ -93,6 +102,7 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
 
     control_components = {
         "steering_cmd": SteeringCommandControlConfig(
+            num_buttons=len([s for s in args.button_skills.split(",") if s]),
             forward_vel_min=args.forward_vel_min,
             forward_vel_max=args.forward_vel_max,
             turn_vel_max=args.turn_vel_max,
@@ -247,6 +257,8 @@ def agent_config(
             decision_interval=args.llc_steps,
             task_reward_w=args.task_reward_w,
             disc_reward_w=args.disc_reward_w,
+            latent_bank_path=args.latent_bank,
+            button_skills=[s for s in args.button_skills.split(",") if s],
         ),
         batch_size=args.batch_size,
         training_max_steps=args.training_max_steps,

@@ -16,7 +16,7 @@ are averaged over the window and dones OR'd.
 
 import logging
 from dataclasses import dataclass, field
-from typing import Dict
+from typing import Dict, List, Optional
 
 import torch
 from tensordict import TensorDict
@@ -134,6 +134,13 @@ class HLCParams:
     # Reward mix; style requires pretrained_modules["llc_disc"].
     task_reward_w: float = 1.0
     disc_reward_w: float = 0.0
+    # "Press B to sit": a {name: latent} bank encoded from clips by
+    # protomotions/agents/ase/latent_bank.py. While a button is held, its
+    # skill latent REPLACES the policy's output for that env, so the frozen
+    # LLC performs the clip's skill. button_skills[i] names the skill driven
+    # by button i (the order the control component publishes them in).
+    latent_bank_path: Optional[str] = None
+    button_skills: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -179,6 +186,19 @@ class ASEHLCAgent(FineTuningAgent):
             )
         self._llc = llc  # frozen + eval via PretrainedModelConfig(freeze=True)
         self._llc_disc = self.pretrained.get("llc_disc")
+        self._button_latents = None
+        if self.config.hlc.latent_bank_path and self.config.hlc.button_skills:
+            from protomotions.agents.ase.latent_bank import load_bank
+            bank = load_bank(self.config.hlc.latent_bank_path, device=self.device)
+            missing = [s for s in self.config.hlc.button_skills if s not in bank]
+            if missing:
+                raise ValueError(
+                    f"latent bank {self.config.hlc.latent_bank_path} has no "
+                    f"skill(s) {missing}; it holds {sorted(bank)}")
+            # [num_buttons, latent_dim], row i = the skill button i triggers
+            self._button_latents = torch.stack(
+                [bank[s] for s in self.config.hlc.button_skills], dim=0)
+            log.info("button skills: %s", list(self.config.hlc.button_skills))
         if self.config.hlc.disc_reward_w > 0 and self._llc_disc is None:
             raise ValueError(
                 "hlc.disc_reward_w > 0 requires pretrained_modules['llc_disc'] "
@@ -192,6 +212,7 @@ class ASEHLCAgent(FineTuningAgent):
         # Project onto the unit hypersphere -- the latent-space convention the
         # LLC was trained under (ASE.sample_latents).
         z = torch.nn.functional.normalize(latents, dim=-1)
+        z = self._apply_button_latents(z)
         key = "mean_action" if self.config.hlc.llc_deterministic else "action"
         td = TensorDict(
             {"max_coords_obs": obs["max_coords_obs"], "latents": z},
@@ -199,6 +220,42 @@ class ASEHLCAgent(FineTuningAgent):
         )
         td = self._llc(td)
         return td[key]
+
+    def _button_state(self) -> Optional[Tensor]:
+        """[num_envs, num_buttons] float buffer published by the control
+        component, or None when the env has no button-capable controller."""
+        manager = getattr(self.env, "control_manager", None)
+        if manager is None:
+            return None
+        for comp in getattr(manager, "components", {}).values():
+            state = getattr(comp, "button_state", None)
+            if state is not None:
+                return state
+        return None
+
+    def _apply_button_latents(self, z: Tensor) -> Tensor:
+        """Held button -> its skill latent replaces the policy's output.
+
+        The LAST pressed button wins when several are held, so a chord does
+        something definite rather than averaging into a latent that means
+        nothing. Untouched envs keep the policy's z.
+        """
+        if self._button_latents is None:
+            return z
+        state = self._button_state()
+        if state is None or state.shape[1] == 0:
+            return z
+        n = min(state.shape[1], self._button_latents.shape[0])
+        pressed = state[:, :n] > 0.5
+        any_pressed = pressed.any(dim=1)
+        if not bool(any_pressed.any()):
+            return z
+        # argmax over the reversed mask = index of the last pressed button
+        last = n - 1 - pressed[:, :n].flip(dims=[1]).float().argmax(dim=1)
+        z = z.clone()
+        rows = any_pressed.nonzero(as_tuple=False).flatten()
+        z[rows] = self._button_latents[last[rows]].to(z.dtype)
+        return z
 
     def _style_reward(self, obs: Dict[str, Tensor], latents: Tensor) -> Tensor:
         """Naturalness anchor: the frozen pretrain discriminator's reward over
