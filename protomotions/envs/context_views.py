@@ -406,6 +406,32 @@ class MaskedMimicContext:
         self.target_bodies_masks = target_bodies_masks
 
 
+class SteeringCommandContext:
+    """View for the omnidirectional velocity-command steering control.
+
+    Body-frame velocity commands (the game-controller task): forward and
+    lateral speed plus yaw rate, already ramped toward the sampled target.
+
+    All fields are FieldPath descriptors for dual class/instance access.
+    """
+
+    fwd_cmd: Tensor = FieldPath()
+    turn_cmd: Tensor = FieldPath()
+    side_cmd: Tensor = FieldPath()
+
+    def __init__(self, fwd_cmd: Tensor, turn_cmd: Tensor, side_cmd: Tensor):
+        """Initialize SteeringCommandContext.
+
+        Args:
+            fwd_cmd: Target forward velocity in the heading frame [num_envs] (m/s).
+            turn_cmd: Target yaw rate [num_envs] (rad/s).
+            side_cmd: Target lateral velocity in the heading frame [num_envs] (m/s).
+        """
+        self.fwd_cmd = fwd_cmd
+        self.turn_cmd = turn_cmd
+        self.side_cmd = side_cmd
+
+
 class SteeringContext:
     """View for steering control context.
 
@@ -607,6 +633,7 @@ class EnvContext:
     mimic: Optional[MimicContext] = NestedField(MimicContext)
     masked_mimic: Optional[MaskedMimicContext] = NestedField(MaskedMimicContext)
     steering: Optional[SteeringContext] = NestedField(SteeringContext)
+    steering_cmd: Optional[SteeringCommandContext] = NestedField(SteeringCommandContext)
     path: Optional[PathContext] = NestedField(PathContext)
     target: Optional[TargetContext] = NestedField(TargetContext)
     battle: Optional[BattleContext] = NestedField(BattleContext)
@@ -636,6 +663,7 @@ class EnvContext:
         mimic: Optional[MimicContext] = None,
         masked_mimic: Optional[MaskedMimicContext] = None,
         steering: Optional[SteeringContext] = None,
+        steering_cmd: Optional[SteeringCommandContext] = None,
         path: Optional[PathContext] = None,
         target: Optional[TargetContext] = None,
         battle: Optional[BattleContext] = None,
@@ -705,6 +733,7 @@ class EnvContext:
         self.mimic = mimic
         self.masked_mimic = masked_mimic
         self.steering = steering
+        self.steering_cmd = steering_cmd
         self.path = path
         self.target = target
         self.battle = battle
