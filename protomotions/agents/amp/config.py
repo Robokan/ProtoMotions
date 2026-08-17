@@ -64,6 +64,19 @@ class AMPParametersConfig:
         default=0.05,
         metadata={"help": "Threshold for discriminator reward termination.", "min": 0.0, "max": 1.0}
     )
+    discriminator_termination_decay_epochs: int = field(
+        default=0,
+        metadata={
+            "help": "Linearly decay discriminator_reward_threshold to 0 over "
+                    "this many epochs, then never terminate again (0 = the "
+                    "threshold is constant for the whole run). The style kill "
+                    "makes standing-still lethal while a fresh policy is "
+                    "finding its feet, but a converged policy's reward floor "
+                    "sits under any useful threshold, so holding it forever "
+                    "guillotines the walker it produced.",
+            "min": 0,
+        },
+    )
     discriminator_max_cumulative_bad_transitions: int = field(
         default=10,
         metadata={"help": "Max bad transitions before termination.", "min": 1}

@@ -81,6 +81,25 @@ class AMPTrainingComponent:
         return self.agent.config
 
     @property
+    def active_disc_threshold(self) -> float:
+        """Style-kill threshold for THIS epoch.
+
+        With discriminator_termination_decay_epochs > 0 the configured
+        threshold decays linearly to 0 and the kill switches off for the rest
+        of the run: lethal early (standing still cannot pay), harmless once
+        the policy is worth keeping. NOTE (Eric, 2026-08-16): an earlier
+        anneal let a from-scratch run retire into standing the moment the
+        kill expired -- watch the gait across the decay boundary.
+        """
+        params = self.config.amp_parameters
+        base = float(params.discriminator_reward_threshold)
+        n = int(getattr(params, "discriminator_termination_decay_epochs", 0) or 0)
+        if n <= 0 or base <= 0.0:
+            return base
+        remaining = 1.0 - (float(self.agent.current_epoch) / float(n))
+        return base * max(0.0, remaining)
+
+    @property
     def device(self):
         return self.agent.device
 
@@ -344,7 +363,7 @@ class AMPTrainingComponent:
         when watching resets in the viewer.
         """
         params = self.config.amp_parameters
-        if params.discriminator_reward_threshold <= 0.0:
+        if self.active_disc_threshold <= 0.0:
             extras["amp_rewards"] = None
             extras["amp_discriminator_termination"] = torch.zeros_like(
                 dones, dtype=torch.bool
@@ -360,7 +379,7 @@ class AMPTrainingComponent:
         amp_rewards = self.discriminator.module.compute_disc_reward(
             disc_logits
         ).flatten()
-        bad_transition = amp_rewards < self.config.amp_parameters.discriminator_reward_threshold
+        bad_transition = amp_rewards < self.active_disc_threshold
         self.num_cumulative_bad_transitions[bad_transition] += 1
         self.num_cumulative_bad_transitions[~bad_transition] = 0
 
@@ -404,7 +423,7 @@ class AMPTrainingComponent:
         amp_rewards = self.discriminator.module.compute_disc_reward(
             disc_logits
         ).flatten()
-        bad_transition = amp_rewards < self.config.amp_parameters.discriminator_reward_threshold
+        bad_transition = amp_rewards < self.active_disc_threshold
         self.num_cumulative_bad_transitions[bad_transition] += 1
         self.num_cumulative_bad_transitions[~bad_transition] = 0
 

@@ -373,6 +373,20 @@ def agent_config(
         ),
         ase_parameters=ase_parameters,
     )
+    # Warm-start controls (same semantics as examples/experiments/amp/mlp.py):
+    # freeze the EMA obs normalizer so the inherited policy's inputs stay
+    # calibrated, and allow disabling the disc-reward kill, which guillotines
+    # converged walkers whose disc reward floor sits under any threshold.
+    agent_config.freeze_actor_obs_norm = bool(
+        getattr(args, "freeze_actor_obs_norm", False)
+    )
+    if getattr(args, "disc_term_threshold", None) is not None:
+        agent_config.amp_parameters.discriminator_reward_threshold = float(
+            args.disc_term_threshold
+        )
+    agent_config.amp_parameters.discriminator_termination_decay_epochs = int(
+        getattr(args, "disc_term_decay_epochs", 0) or 0
+    )
     return agent_config
 
 
@@ -405,3 +419,22 @@ def apply_inference_overrides(
             env_cfg.motion_manager.init_start_prob = 0.0
         if hasattr(env_cfg.motion_manager, "resample_on_reset"):
             env_cfg.motion_manager.resample_on_reset = True
+
+
+def additional_experiment_arguments(parser):
+    parser.add_argument(
+        "--freeze-actor-obs-norm", action="store_true",
+        help="Pin the warm-started policy's input normalization (the EMA "
+             "normalizer otherwise re-centers within epochs and collapses "
+             "the inherited behavior while the weights stay intact).")
+    parser.add_argument(
+        "--disc-term-decay-epochs", type=int, default=0,
+        help="Decay --disc-term-threshold linearly to 0 over N epochs, then "
+             "no style kills at all (0 = constant for the whole run). Lethal "
+             "early so standing still cannot pay, off before it can "
+             "guillotine a converged walker.")
+    parser.add_argument(
+        "--disc-term-threshold", type=float, default=None,
+        help="Override discriminator_reward_threshold (0 disables the style "
+             "kill entirely -- required for warm starts from a CONVERGED "
+             "disc, whose reward floor sits under any useful threshold).")

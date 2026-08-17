@@ -284,6 +284,9 @@ def agent_config(
         agent_config.amp_parameters.discriminator_reward_threshold = float(
             args.disc_term_threshold
         )
+    agent_config.amp_parameters.discriminator_termination_decay_epochs = int(
+        getattr(args, "disc_term_decay_epochs", 0) or 0
+    )
     return agent_config
 
 
@@ -320,6 +323,12 @@ def additional_experiment_arguments(parser):
         help="Pin the warm-started policy's input normalization (the EMA "
              "normalizer otherwise re-centers within epochs and collapses "
              "the inherited behavior while the weights stay intact).")
+    parser.add_argument(
+        "--disc-term-decay-epochs", type=int, default=0,
+        help="Decay --disc-term-threshold linearly to 0 over N epochs, then "
+             "no style kills at all (0 = constant for the whole run). Lethal "
+             "early so standing still cannot pay, off before it can "
+             "guillotine a converged walker.")
     parser.add_argument(
         "--disc-term-threshold", type=float, default=None,
         help="Override discriminator_reward_threshold (0 disables the style "
