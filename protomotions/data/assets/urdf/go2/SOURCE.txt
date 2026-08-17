@@ -1,0 +1,11 @@
+Official Unitree Go2 description, stripped to the ProtoMotions 17-body skeleton.
+
+Upstream: https://github.com/unitreerobotics/unitree_ros
+  robots/go2_description/urdf/go2_description.urdf
+The upstream package does not ship a top-level LICENSE file in the sparse
+checkout; Unitree's robot descriptions are typically BSD-3-Clause.
+
+`data/scripts/vendor_official_urdfs.py` renames `base` → `base_link` (the
+name used by mjcf/go2_nomesh.xml and the motion clips) and drops rotors,
+head collision links, imu/radar/camera. Joint names (FL_hip_joint, …)
+already matched the MJCF.

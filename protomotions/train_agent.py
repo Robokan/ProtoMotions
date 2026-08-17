@@ -168,6 +168,14 @@ def create_parser():
         help="Simulator to use (e.g., 'isaacgym', 'isaaclab', 'newton', 'genesis')",
     )
     parser.add_argument(
+        "--physics",
+        type=str,
+        default="physx",
+        choices=["physx", "newton"],
+        help="Isaac Lab physics backend. 'newton' uses Lab 3 Newton/MJWarp "
+        "(SimulationCfg.physics=NewtonCfg). Ignored for other simulators.",
+    )
+    parser.add_argument(
         "--num-envs",
         type=int,
         required=True,
@@ -695,6 +703,9 @@ def main():
     from lightning.fabric import Fabric
 
     fabric_config = FabricConfig(
+        # The MuJoCo backend is CPU-only (its simulator asserts a cpu device);
+        # everything else trains on GPU.
+        accelerator="cpu" if args.simulator == "mujoco" else "gpu",
         devices=args.ngpu,
         num_nodes=args.nodes,
         loggers=loggers,
@@ -717,6 +728,11 @@ def main():
             app_launcher_flags["distributed"] = True
             os.environ["LOCAL_RANK"] = str(fabric.local_rank)
             os.environ["RANK"] = str(fabric.global_rank)
+        # Isaac Lab 3: Kit viewport is opt-in. Lab 2 has no visualizer CLI.
+        if not args.headless and hasattr(
+            AppLauncher, "sync_visualizer_cli_settings_to_carb"
+        ):
+            app_launcher_flags["visualizer"] = ["kit"]
         app_launcher = AppLauncher(app_launcher_flags)
         simulator_extra_params["simulation_app"] = app_launcher.app
 
@@ -943,6 +959,7 @@ def _handle_create_config_only(
 
     # Create minimal fabric config (no loggers/callbacks needed for config-only mode)
     fabric_config = FabricConfig(
+        accelerator="cpu" if args.simulator == "mujoco" else "gpu",
         devices=args.ngpu,
         num_nodes=args.nodes,
         loggers=[],

@@ -97,8 +97,16 @@ class Go2RobotConfig(RobotConfig):
     asset: RobotAssetConfig = field(
         default_factory=lambda: RobotAssetConfig(
             asset_file_name="mjcf/go2_nomesh.xml",
+            urdf_asset_file_name="urdf/go2/go2.urdf",
             usd_asset_file_name="usd/go2/go2.usd",
+            # Local Go2 USD matches the MJCF skeleton (base_link, 17 bodies).
+            # Isaac Lab 6.0 Nucleus Go2 (Isaac/IsaacLab/Robots/Unitree/Go2/go2.usd)
+            # uses `base` plus Head_upper/Head_lower rigid bodies, so it cannot
+            # play ProtoMotions clips without a remapping. Textures live in
+            # Props/instanceable_meshes.usd next to this file.
+            lab3_usd_asset_file_name="usd/go2/go2.usd",
             usd_bodies_root_prim_path="/World/envs/env_.*/Robot/go2_description/",
+            apply_default_visual_material=False,
             replace_cylinder_with_capsule=True,
             thickness=0.01,
             max_angular_velocity=1000.0,

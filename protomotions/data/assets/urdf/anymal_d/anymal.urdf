@@ -1,0 +1,713 @@
+<?xml version='1.0' encoding='utf-8'?>
+<robot name="anymal_d">
+  <link name="base">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="meshes/base.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0.016" />
+      <geometry>
+        <box size="0.894 0.1615 0.256" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin rpy="0 1.5707963267948966 0" xyz="0.23529999999999995 0.08075 0" />
+      <geometry>
+        <cylinder length="0.1482" radius="0.089" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin rpy="0 1.5707963267948966 0" xyz="0.23529999999999995 -0.08075 0" />
+      <geometry>
+        <cylinder length="0.1482" radius="0.089" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin rpy="0 1.5707963267948966 0" xyz="-0.23529999999999995 0.08075 0" />
+      <geometry>
+        <cylinder length="0.1482" radius="0.089" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin rpy="0 1.5707963267948966 0" xyz="-0.23529999999999995 -0.08075 0" />
+      <geometry>
+        <cylinder length="0.1482" radius="0.089" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin rpy="0 -0 0" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="meshes/top_shell.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+    <visual>
+      <origin rpy="0 -0 0" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="meshes/bottom_shell.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+    <visual>
+      <origin rpy="0 -0 0" xyz="0.4087 0 0.0205" />
+      <geometry>
+        <mesh filename="meshes/face_shell.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+    <visual>
+      <origin rpy="0 -0 3.1415927" xyz="-0.4087 0 0.0205" />
+      <geometry>
+        <mesh filename="meshes/face_shell.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+    <visual>
+      <origin rpy="0 -0 0" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="meshes/battery.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+    <visual>
+      <origin rpy="0 -0 0" xyz="0.26132 0 -0.06205" />
+      <geometry>
+        <mesh filename="meshes/docking_socket.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0.31 0 0.1585" rpy="0 -0 3.1415927" />
+      <geometry>
+        <mesh filename="meshes/lidar.obj" />
+      </geometry>
+    </visual>
+    <visual>
+      <origin xyz="-0.31 0 0.1585" rpy="0 -0 3.1415927" />
+      <geometry>
+        <mesh filename="meshes/lidar_guard.obj" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin rpy="0 -0 3.1415927" xyz="-0.31 0 0.1585" />
+      <geometry>
+        <cylinder length="0.1355" radius="0.07" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin rpy="0 -0 0" xyz="0.304 0.109 0" />
+      <geometry>
+        <mesh filename="meshes/drive.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+    <visual>
+      <origin rpy="0 -0 0" xyz="0.304 -0.109 0" />
+      <geometry>
+        <mesh filename="meshes/drive.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+    <visual>
+      <origin rpy="0 -0 -3.1415927" xyz="-0.304 0.109 0" />
+      <geometry>
+        <mesh filename="meshes/drive.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+    <visual>
+      <origin rpy="0 -0 -3.1415927" xyz="-0.304 -0.109 0" />
+      <geometry>
+        <mesh filename="meshes/drive.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin rpy="0 -0 0" xyz="0.14253 0 0.092" />
+      <geometry>
+        <box size="0.16 0.135 0.015" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="LF_HIP">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0" />
+      <mass value="0.001" />
+      <inertia ixx="0.000001" ixy="0.0" ixz="0.0" iyy="0.000001" iyz="0.0" izz="0.000001" />
+    </inertial>
+    <visual>
+      <origin rpy="0 -0 0" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="meshes/hip.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+  </link>
+  <link name="LF_THIGH">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0" />
+      <mass value="0.001" />
+      <inertia ixx="0.000001" ixy="0.0" ixz="0.0" iyy="0.000001" iyz="0.0" izz="0.000001" />
+    </inertial>
+    <visual>
+      <origin rpy="0 -0 0" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="meshes/drive.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin rpy="-0 1.5707963 0" xyz="-0.0595 0 0" />
+      <geometry>
+        <cylinder length="0.119" radius="0.05375" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin rpy="0 -0 1.5707963" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="meshes/thigh.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin rpy="1.5707963 -0 1.5707963" xyz="-0.105195 6.441336e-18 0" />
+      <geometry>
+        <cylinder length="0.08313000000000001" radius="0.07" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin rpy="0 -0 1.5707963" xyz="-0.09513 5.8250325e-18 -0.1425" />
+      <geometry>
+        <box size="0.093 0.063 0.285" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin rpy="1.5707963 -0 1.5707963" xyz="-0.085065 5.208729e-18 -0.285" />
+      <geometry>
+        <cylinder length="0.08313000000000001" radius="0.07" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin rpy="0 -0 3.1415927" xyz="-0.1805 1.1052437e-17 -0.285" />
+      <geometry>
+        <mesh filename="meshes/drive.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin rpy="-3.1415927 1.5707963 0" xyz="-0.121 3.7657889e-18 -0.285" />
+      <geometry>
+        <cylinder length="0.119" radius="0.05375" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="LF_SHANK">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0" />
+      <mass value="0.001" />
+      <inertia ixx="0.000001" ixy="0.0" ixz="0.0" iyy="0.000001" iyz="0.0" izz="0.000001" />
+    </inertial>
+    <visual>
+      <origin rpy="0 -0 -1.5707963" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="meshes/shank_l.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin rpy="1.5707963 -0 -1.5707963" xyz="0 0 0" />
+      <geometry>
+        <cylinder length="0.05732" radius="0.071" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin rpy="1.5707963 -0 -1.5707963" xyz="4.0667459e-18 -0.066415 0" />
+      <geometry>
+        <box size="0.13283 0.08302 0.05732" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="LF_FOOT">
+    <visual>
+      <origin rpy="0 0 0.0" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="meshes/foot.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 -0.016891153063699788 0.22824319686592265" />
+      <geometry>
+        <cylinder length="0.39572" radius="0.0175" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0 -0.008141153063699788 0.03038319686592264" />
+      <geometry>
+        <sphere radius="0.031455" />
+      </geometry>
+    </collision>
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.0 -0.01559 0.15004" />
+      <mass value="0.29644" />
+      <inertia ixx="0.00514263169" ixy="1.46e-09" ixz="6.85e-09" iyy="0.0051315957" iyz="0.00016323086" izz="0.00011890148" />
+    </inertial>
+  </link>
+  <link name="RF_HIP">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0" />
+      <mass value="0.001" />
+      <inertia ixx="0.000001" ixy="0.0" ixz="0.0" iyy="0.000001" iyz="0.0" izz="0.000001" />
+    </inertial>
+    <visual>
+      <origin rpy="-3.1415927 -0 0" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="meshes/hip.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+  </link>
+  <link name="RF_THIGH">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0" />
+      <mass value="0.001" />
+      <inertia ixx="0.000001" ixy="0.0" ixz="0.0" iyy="0.000001" iyz="0.0" izz="0.000001" />
+    </inertial>
+    <visual>
+      <origin rpy="0 -0 0" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="meshes/drive.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin rpy="-0 1.5707963 0" xyz="-0.0595 0 0" />
+      <geometry>
+        <cylinder length="0.119" radius="0.05375" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin rpy="0 -0 1.5707963" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="meshes/thigh.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin rpy="1.5707963 -0 -1.5707963" xyz="-0.105195 -6.441336e-18 0" />
+      <geometry>
+        <cylinder length="0.08313000000000001" radius="0.07" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin rpy="0 -0 -1.5707963" xyz="-0.09513 -5.8250325e-18 -0.1425" />
+      <geometry>
+        <box size="0.093 0.063 0.285" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin rpy="1.5707963 -0 -1.5707963" xyz="-0.085065 -5.208729e-18 -0.285" />
+      <geometry>
+        <cylinder length="0.08313000000000001" radius="0.07" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin rpy="0 -0 -3.1415927" xyz="-0.1805 -1.1052437e-17 -0.285" />
+      <geometry>
+        <mesh filename="meshes/drive.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin rpy="3.1415927 1.5707963 0" xyz="-0.121 -3.7657889e-18 -0.285" />
+      <geometry>
+        <cylinder length="0.119" radius="0.05375" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="RF_SHANK">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0" />
+      <mass value="0.001" />
+      <inertia ixx="0.000001" ixy="0.0" ixz="0.0" iyy="0.000001" iyz="0.0" izz="0.000001" />
+    </inertial>
+    <visual>
+      <origin rpy="0 -0 1.5707963" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="meshes/shank_r.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin rpy="1.5707963 -0 1.5707963" xyz="0 0 0" />
+      <geometry>
+        <cylinder length="0.05732" radius="0.071" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin rpy="1.5707963 -0 1.5707963" xyz="4.0667459e-18 0.066415 0" />
+      <geometry>
+        <box size="0.13283 0.08302 0.05732" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="RF_FOOT">
+    <visual>
+      <origin rpy="0 0 -3.141592653589793" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="meshes/foot.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0.016891153063699788 0.22824319686592265" />
+      <geometry>
+        <cylinder length="0.39572" radius="0.0175" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0 0.008141153063699788 0.03038319686592264" />
+      <geometry>
+        <sphere radius="0.031455" />
+      </geometry>
+    </collision>
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.0 0.01559 0.15004" />
+      <mass value="0.29644" />
+      <inertia ixx="0.00514263169" ixy="-1.46e-09" ixz="6.85e-09" iyy="0.0051315957" iyz="-0.00016323086" izz="0.00011890148" />
+    </inertial>
+  </link>
+  <link name="LH_HIP">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0" />
+      <mass value="0.001" />
+      <inertia ixx="0.000001" ixy="0.0" ixz="0.0" iyy="0.000001" iyz="0.0" izz="0.000001" />
+    </inertial>
+    <visual>
+      <origin rpy="-3.1415927 -0 2.4492936e-16" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="meshes/hip.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+  </link>
+  <link name="LH_THIGH">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0" />
+      <mass value="0.001" />
+      <inertia ixx="0.000001" ixy="0.0" ixz="0.0" iyy="0.000001" iyz="0.0" izz="0.000001" />
+    </inertial>
+    <visual>
+      <origin rpy="0 -0 0" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="meshes/drive.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin rpy="-0 1.5707963 0" xyz="-0.0595 0 0" />
+      <geometry>
+        <cylinder length="0.119" radius="0.05375" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin rpy="0 -0 1.5707963" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="meshes/thigh.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin rpy="1.5707963 -0 1.5707963" xyz="-0.105195 6.441336e-18 0" />
+      <geometry>
+        <cylinder length="0.08313000000000001" radius="0.07" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin rpy="0 -0 1.5707963" xyz="-0.09513 5.8250325e-18 -0.1425" />
+      <geometry>
+        <box size="0.093 0.063 0.285" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin rpy="1.5707963 -0 1.5707963" xyz="-0.085065 5.208729e-18 -0.285" />
+      <geometry>
+        <cylinder length="0.08313000000000001" radius="0.07" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin rpy="0 -0 3.1415927" xyz="-0.1805 1.1052437e-17 -0.285" />
+      <geometry>
+        <mesh filename="meshes/drive.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin rpy="-3.1415927 1.5707963 0" xyz="-0.121 3.7657889e-18 -0.285" />
+      <geometry>
+        <cylinder length="0.119" radius="0.05375" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="LH_SHANK">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0" />
+      <mass value="0.001" />
+      <inertia ixx="0.000001" ixy="0.0" ixz="0.0" iyy="0.000001" iyz="0.0" izz="0.000001" />
+    </inertial>
+    <visual>
+      <origin rpy="0 -0 1.5707963" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="meshes/shank_r.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin rpy="1.5707963 -0 -1.5707963" xyz="0 0 0" />
+      <geometry>
+        <cylinder length="0.05732" radius="0.071" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin rpy="1.5707963 -0 -1.5707963" xyz="-4.0667459e-18 0.066415 0" />
+      <geometry>
+        <box size="0.13283 0.08302 0.05732" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="LH_FOOT">
+    <visual>
+      <origin rpy="0 0 0.0" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="meshes/foot.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 -0.016891153063699788 0.22824319686592265" />
+      <geometry>
+        <cylinder length="0.39572" radius="0.0175" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0 -0.008141153063699788 0.03038319686592264" />
+      <geometry>
+        <sphere radius="0.031455" />
+      </geometry>
+    </collision>
+    <inertial>
+      <origin rpy="0 0 0" xyz="-0.0 -0.01559 0.15004" />
+      <mass value="0.29644" />
+      <inertia ixx="0.00514263169" ixy="-1.46e-09" ixz="-6.85e-09" iyy="0.0051315957" iyz="0.00016323086" izz="0.00011890148" />
+    </inertial>
+  </link>
+  <link name="RH_HIP">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0" />
+      <mass value="0.001" />
+      <inertia ixx="0.000001" ixy="0.0" ixz="0.0" iyy="0.000001" iyz="0.0" izz="0.000001" />
+    </inertial>
+    <visual>
+      <origin rpy="0 -0 2.4492936e-16" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="meshes/hip.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+  </link>
+  <link name="RH_THIGH">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0" />
+      <mass value="0.001" />
+      <inertia ixx="0.000001" ixy="0.0" ixz="0.0" iyy="0.000001" iyz="0.0" izz="0.000001" />
+    </inertial>
+    <visual>
+      <origin rpy="0 -0 0" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="meshes/drive.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin rpy="-0 1.5707963 0" xyz="-0.0595 0 0" />
+      <geometry>
+        <cylinder length="0.119" radius="0.05375" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin rpy="0 -0 1.5707963" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="meshes/thigh.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin rpy="1.5707963 -0 -1.5707963" xyz="-0.105195 -6.441336e-18 0" />
+      <geometry>
+        <cylinder length="0.08313000000000001" radius="0.07" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin rpy="0 -0 -1.5707963" xyz="-0.09513 -5.8250325e-18 -0.1425" />
+      <geometry>
+        <box size="0.093 0.063 0.285" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin rpy="1.5707963 -0 -1.5707963" xyz="-0.085065 -5.208729e-18 -0.285" />
+      <geometry>
+        <cylinder length="0.08313000000000001" radius="0.07" />
+      </geometry>
+    </collision>
+    <visual>
+      <origin rpy="0 -0 -3.1415927" xyz="-0.1805 -1.1052437e-17 -0.285" />
+      <geometry>
+        <mesh filename="meshes/drive.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin rpy="3.1415927 1.5707963 0" xyz="-0.121 -3.7657889e-18 -0.285" />
+      <geometry>
+        <cylinder length="0.119" radius="0.05375" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="RH_SHANK">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0" />
+      <mass value="0.001" />
+      <inertia ixx="0.000001" ixy="0.0" ixz="0.0" iyy="0.000001" iyz="0.0" izz="0.000001" />
+    </inertial>
+    <visual>
+      <origin rpy="0 -0 -1.5707963" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="meshes/shank_l.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin rpy="1.5707963 -0 1.5707963" xyz="0 0 0" />
+      <geometry>
+        <cylinder length="0.05732" radius="0.071" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin rpy="1.5707963 -0 1.5707963" xyz="-4.0667459e-18 -0.066415 0" />
+      <geometry>
+        <box size="0.13283 0.08302 0.05732" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="RH_FOOT">
+    <visual>
+      <origin rpy="0 0 -3.141592653589793" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="meshes/foot.obj" scale="1.0 1.0 1.0" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0.016891153063699788 0.22824319686592265" />
+      <geometry>
+        <cylinder length="0.39572" radius="0.0175" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="0 0.008141153063699788 0.03038319686592264" />
+      <geometry>
+        <sphere radius="0.031455" />
+      </geometry>
+    </collision>
+    <inertial>
+      <origin rpy="0 0 0" xyz="-0.0 0.01559 0.15004" />
+      <mass value="0.29644" />
+      <inertia ixx="0.00514263169" ixy="1.46e-09" ixz="-6.85e-09" iyy="0.0051315957" iyz="-0.00016323086" izz="0.00011890148" />
+    </inertial>
+  </link>
+  <joint name="LF_HAA" type="revolute">
+    <origin xyz="0.304 0.109 0" rpy="0 -0 0" />
+    <parent link="base" />
+    <child link="LF_HIP" />
+    <axis xyz="1 0 0" />
+    <limit command_effort="80.0" current="32.0" effort="80.0" gear_velocity="8.5" lower="-0.7853985" upper="0.6108655" velocity="8.5" />
+    <dynamics damping="0.0" friction="0.0" />
+  </joint>
+  <joint name="LF_HFE" type="revolute">
+    <origin xyz="0.069 0.006 0" rpy="0 -0 -1.5707963" />
+    <parent link="LF_HIP" />
+    <child link="LF_THIGH" />
+    <axis xyz="-1 0 0" />
+    <limit command_effort="80.0" current="32.0" effort="80.0" gear_velocity="8.5" lower="-9.42477796076938" upper="9.42477796076938" velocity="8.5" />
+    <dynamics damping="0.0" friction="0.0" />
+  </joint>
+  <joint name="LF_KFE" type="revolute">
+    <origin xyz="-0.1805 1.1052437e-17 -0.285" rpy="0 -0 3.1415927" />
+    <parent link="LF_THIGH" />
+    <child link="LF_SHANK" />
+    <axis xyz="1 0 0" />
+    <limit command_effort="80.0" current="32.0" effort="80.0" gear_velocity="8.5" lower="-9.42477796076938" upper="9.42477796076938" velocity="8.5" />
+    <dynamics damping="0.0" friction="0.0" />
+  </joint>
+  <joint name="LF_shank_fixed_LF_FOOT" type="fixed">
+    <origin xyz="0.02225 -0.1 -0.39246" rpy="0 -0 -1.5707963" />
+    <parent link="LF_SHANK" />
+    <child link="LF_FOOT" />
+  </joint>
+  <joint name="RF_HAA" type="revolute">
+    <origin xyz="0.304 -0.109 0" rpy="0 -0 0" />
+    <parent link="base" />
+    <child link="RF_HIP" />
+    <axis xyz="1 0 0" />
+    <limit command_effort="80.0" current="32.0" effort="80.0" gear_velocity="8.5" lower="-0.6108655" upper="0.7853985" velocity="8.5" />
+    <dynamics damping="0.0" friction="0.0" />
+  </joint>
+  <joint name="RF_HFE" type="revolute">
+    <origin xyz="0.069 -0.006 0" rpy="0 -0 1.5707963" />
+    <parent link="RF_HIP" />
+    <child link="RF_THIGH" />
+    <axis xyz="1 0 0" />
+    <limit command_effort="80.0" current="32.0" effort="80.0" gear_velocity="8.5" lower="-9.42477796076938" upper="9.42477796076938" velocity="8.5" />
+    <dynamics damping="0.0" friction="0.0" />
+  </joint>
+  <joint name="RF_KFE" type="revolute">
+    <origin xyz="-0.1805 -1.1052437e-17 -0.285" rpy="0 -0 -3.1415927" />
+    <parent link="RF_THIGH" />
+    <child link="RF_SHANK" />
+    <axis xyz="-1 0 0" />
+    <limit command_effort="80.0" current="32.0" effort="80.0" gear_velocity="8.5" lower="-9.42477796076938" upper="9.42477796076938" velocity="8.5" />
+    <dynamics damping="0.0" friction="0.0" />
+  </joint>
+  <joint name="RF_shank_fixed_RF_FOOT" type="fixed">
+    <origin xyz="0.02225 0.1 -0.39246" rpy="0 -0 1.5707963" />
+    <parent link="RF_SHANK" />
+    <child link="RF_FOOT" />
+  </joint>
+  <joint name="LH_HAA" type="revolute">
+    <origin xyz="-0.304 0.109 0" rpy="0 -0 -3.1415927" />
+    <parent link="base" />
+    <child link="LH_HIP" />
+    <axis xyz="-1 0 0" />
+    <limit command_effort="80.0" current="32.0" effort="80.0" gear_velocity="8.5" lower="-0.7853985" upper="0.6108655" velocity="8.5" />
+    <dynamics damping="0.0" friction="0.0" />
+  </joint>
+  <joint name="LH_HFE" type="revolute">
+    <origin xyz="0.069 -0.006 0" rpy="0 -0 1.5707963" />
+    <parent link="LH_HIP" />
+    <child link="LH_THIGH" />
+    <axis xyz="-1 0 0" />
+    <limit command_effort="80.0" current="32.0" effort="80.0" gear_velocity="8.5" lower="-9.42477796076938" upper="9.42477796076938" velocity="8.5" />
+    <dynamics damping="0.0" friction="0.0" />
+  </joint>
+  <joint name="LH_KFE" type="revolute">
+    <origin xyz="-0.1805 1.1052437e-17 -0.285" rpy="0 -0 3.1415927" />
+    <parent link="LH_THIGH" />
+    <child link="LH_SHANK" />
+    <axis xyz="1 0 0" />
+    <limit command_effort="80.0" current="32.0" effort="80.0" gear_velocity="8.5" lower="-9.42477796076938" upper="9.42477796076938" velocity="8.5" />
+    <dynamics damping="0.0" friction="0.0" />
+  </joint>
+  <joint name="LH_shank_fixed_LH_FOOT" type="fixed">
+    <origin xyz="0.02225 0.1 -0.39246" rpy="0 -0 -1.5707963" />
+    <parent link="LH_SHANK" />
+    <child link="LH_FOOT" />
+  </joint>
+  <joint name="RH_HAA" type="revolute">
+    <origin xyz="-0.304 -0.109 0" rpy="0 -0 -3.1415927" />
+    <parent link="base" />
+    <child link="RH_HIP" />
+    <axis xyz="-1 0 0" />
+    <limit command_effort="80.0" current="32.0" effort="80.0" gear_velocity="8.5" lower="-0.6108655" upper="0.7853985" velocity="8.5" />
+    <dynamics damping="0.0" friction="0.0" />
+  </joint>
+  <joint name="RH_HFE" type="revolute">
+    <origin xyz="0.069 0.006 0" rpy="0 -0 -1.5707963" />
+    <parent link="RH_HIP" />
+    <child link="RH_THIGH" />
+    <axis xyz="1 0 0" />
+    <limit command_effort="80.0" current="32.0" effort="80.0" gear_velocity="8.5" lower="-9.42477796076938" upper="9.42477796076938" velocity="8.5" />
+    <dynamics damping="0.0" friction="0.0" />
+  </joint>
+  <joint name="RH_KFE" type="revolute">
+    <origin xyz="-0.1805 -1.1052437e-17 -0.285" rpy="0 -0 -3.1415927" />
+    <parent link="RH_THIGH" />
+    <child link="RH_SHANK" />
+    <axis xyz="-1 0 0" />
+    <limit command_effort="80.0" current="32.0" effort="80.0" gear_velocity="8.5" lower="-9.42477796076938" upper="9.42477796076938" velocity="8.5" />
+    <dynamics damping="0.0" friction="0.0" />
+  </joint>
+  <joint name="RH_shank_fixed_RH_FOOT" type="fixed">
+    <origin xyz="0.02225 -0.1 -0.39246" rpy="0 -0 1.5707963" />
+    <parent link="RH_SHANK" />
+    <child link="RH_FOOT" />
+  </joint>
+</robot>

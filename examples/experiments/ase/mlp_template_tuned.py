@@ -37,6 +37,12 @@ from examples.experiments.ase.mlp import (  # noqa: F401  (loader re-exports)
 from examples.experiments.ase import mlp as _base
 
 
+def _zero_root_height_obs(component) -> None:
+    """Keep the 1-D root-height channel but zero it (dim stays the same)."""
+    if component is not None and hasattr(component, "static_params"):
+        component.static_params["root_height_obs"] = False
+
+
 def env_config(robot_cfg, args: argparse.Namespace):
     """Base env config MINUS the power penalty.
 
@@ -49,6 +55,11 @@ def env_config(robot_cfg, args: argparse.Namespace):
     cfg = _base.env_config(robot_cfg, args)
     if hasattr(cfg, "reward_components") and cfg.reward_components:
         cfg.reward_components.pop("pow_rew", None)
+    # Atlas: do not observe root height. The max-coords slot is zeroed so
+    # the actor/disc input size stays 493 and a v16 checkpoint can load.
+    if getattr(args, "robot_name", None) == "atlas":
+        for name in ("max_coords_obs", "historical_max_coords_obs"):
+            _zero_root_height_obs(cfg.observation_components.get(name))
     return cfg
 
 
@@ -64,4 +75,43 @@ def agent_config(robot_config, env_config, args: argparse.Namespace):
     # Template effective mix: disc(x2 scale, w .5) : enc(w .5) = 2 : 1
     cfg.amp_parameters.discriminator_reward_w = 1.0
     cfg.ase_parameters.mi_reward_w = 0.5
+    if getattr(args, "robot_name", None) == "atlas":
+        refs = getattr(cfg, "reference_obs_components", None) or {}
+        _zero_root_height_obs(refs.get("historical_max_coords_obs"))
     return cfg
+
+
+def additional_experiment_arguments(parser):
+    parser.add_argument(
+        "--sim-dr", action="store_true",
+        help="Engine-transfer domain randomization: per-env constant PD-target "
+             "offsets (actuator calibration error, robust to implicit-vs-"
+             "explicit PD differences) and foot friction/restitution buckets "
+             "(robust to contact-model differences). For policies that must "
+             "also run under Newton/MuJoCo, not just IsaacLab.")
+    parser.add_argument(
+        "--sim-dr-action-noise", type=float, default=0.02,
+        help="Half-range (radians) of the per-env constant PD-target offset "
+             "when --sim-dr is on. 0.02 rad ~= 1.1 deg per joint.")
+
+
+def configure_robot_and_simulator(robot_cfg, simulator_cfg, args: argparse.Namespace):
+    if not getattr(args, "sim_dr", False):
+        return
+    from protomotions.simulator.base_simulator.config import (
+        DomainRandomizationConfig,
+        ActionNoiseDomainRandomizationConfig,
+        FrictionDomainRandomizationConfig,
+    )
+    a = float(getattr(args, "sim_dr_action_noise", 0.02))
+    simulator_cfg.domain_randomization = DomainRandomizationConfig(
+        action_noise=ActionNoiseDomainRandomizationConfig(
+            action_noise_range=(-a, a),
+            dof_names=[".*"],
+        ),
+        friction=FrictionDomainRandomizationConfig(
+            # Feet are the contact interface; engine transfer lives or dies
+            # on ground contact. Ranges are the repo defaults (0.5-1.5 mu).
+            body_names=["Foot_.*"],
+        ),
+    )

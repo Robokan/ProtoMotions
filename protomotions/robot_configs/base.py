@@ -94,6 +94,14 @@ class RobotAssetConfig:
     # Optional fields
     asset_file_name: str = None
     usd_asset_file_name: str = None
+    # Isaac Lab 3 / Sim 6 spawn USD. When set, Lab 3 uses this file instead of
+    # converting the MJCF (which yields collider-only visuals). Leave unset to
+    # keep the MJCF→USD convert path.
+    lab3_usd_asset_file_name: Optional[str] = None
+    # Official URDF for Newton / Isaac Gym. asset_file_name stays MJCF so
+    # kinematic_info matches the motion clips; these simulators load the URDF
+    # when this field is set.
+    urdf_asset_file_name: Optional[str] = None
     # Viewer/exhibition: spawn the OPPONENT half of paired battle envs from a
     # different USD (e.g. a recolored variant) so the fighters are visually
     # distinguishable. Forces per-env spawning (replicate_physics off) — use
@@ -108,6 +116,9 @@ class RobotAssetConfig:
     angular_damping: Optional[float] = None
     linear_damping: Optional[float] = None
     disable_gravity: Optional[bool] = None
+    # None leaves the USD/MJCF collision flag alone. Visualizer sets False
+    # so leftover contacts cannot kick the kinematic pose.
+    collision_enabled: Optional[bool] = None
     fix_base_link: Optional[bool] = None
     apply_default_visual_material: bool = True
     """Apply the uniform light-gray override material when spawning in IsaacLab.

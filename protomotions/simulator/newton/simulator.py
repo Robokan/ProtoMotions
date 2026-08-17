@@ -175,7 +175,8 @@ class NewtonSimulator(Simulator):
         on the builder BEFORE finalize, then use replicate() for multi-env.
         """
         asset_root = self.robot_config.asset.asset_root
-        asset_file = self.robot_config.asset.asset_file_name
+        urdf_file = getattr(self.robot_config.asset, "urdf_asset_file_name", None)
+        asset_file = urdf_file or self.robot_config.asset.asset_file_name
         asset_path = os.path.join(asset_root, asset_file)
 
         print(f"Loading robot from: {asset_path}")
@@ -186,17 +187,24 @@ class NewtonSimulator(Simulator):
         self.robot.default_joint_cfg = newton.ModelBuilder.JointDofConfig()
         self.robot.default_shape_cfg.mu = 1.0
 
-        # 2. Load MJCF
-        self.robot.add_mjcf(
-            asset_path,
-            ignore_names=["floor", "ground"],
-            collapse_fixed_joints=False,
-            floating=not self.robot_config.asset.fix_base_link,
-            enable_self_collisions=self.robot_config.asset.self_collisions,
-        )
-
-        # 2b. Colour the shapes from the MJCF's materials (see the method).
-        self._apply_mjcf_visual_colors(asset_path)
+        # 2. Official URDF when configured (ANYmal/Go2); otherwise MJCF.
+        if urdf_file:
+            self.robot.add_urdf(
+                asset_path,
+                floating=not self.robot_config.asset.fix_base_link,
+                collapse_fixed_joints=False,
+                enable_self_collisions=self.robot_config.asset.self_collisions,
+            )
+        else:
+            self.robot.add_mjcf(
+                asset_path,
+                ignore_names=["floor", "ground"],
+                collapse_fixed_joints=False,
+                floating=not self.robot_config.asset.fix_base_link,
+                enable_self_collisions=self.robot_config.asset.self_collisions,
+            )
+            # Colour the shapes from the MJCF's materials (see the method).
+            self._apply_mjcf_visual_colors(asset_path)
 
         # 3. Set per-DOF joint properties ON THE BUILDER (before finalize)
         self._configure_builder_joint_properties()
@@ -637,6 +645,12 @@ class NewtonSimulator(Simulator):
             body_indices = self._domain_randomization["friction"]["body_indices"]
             static_friction = self._domain_randomization["friction"]["static_friction"]
             restitution = self._domain_randomization["friction"]["restitution"]
+            # The processed DR tensors may live on cpu while the warp-backed
+            # material views (and bucket_ids below) are on self.device.
+            if static_friction is not None:
+                static_friction = static_friction.to(self.device)
+            if restitution is not None:
+                restitution = restitution.to(self.device)
 
             num_buckets = static_friction.shape[0] if static_friction is not None else 0
 

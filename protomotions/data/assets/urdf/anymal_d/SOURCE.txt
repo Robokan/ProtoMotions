@@ -1,0 +1,9 @@
+Official ANYmal-D description, stripped to the ProtoMotions 17-body skeleton.
+
+Upstream: https://github.com/ANYbotics/anymal_d_simple_description
+License: BSD-3-Clause (see LICENSE)
+
+The manufacturer URDF has 96 links (cameras, lidar, inspection payload).
+`data/scripts/vendor_official_urdfs.py` keeps base + 4 legs, folds fixed-link
+visuals onto those bodies, and converts Collada meshes to OBJ for Newton.
+Joint names (LF_HAA / LF_HFE / LF_KFE, …) match mjcf/anymal_d_nomesh.xml.

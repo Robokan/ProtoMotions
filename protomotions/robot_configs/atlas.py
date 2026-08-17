@@ -64,6 +64,9 @@ class AtlasRobotConfig(RobotConfig):
             asset_file_name="mjcf/atlas.xml",
             override_visual_material=False,  # USD carries the rig's textures
             usd_asset_file_name="usd/atlas/atlas_flat.usda",
+            # Isaac Lab 3 USD from mjcf/atlas.xml via MjcfConverter.
+            # Articulation root is /Geometry/Hip; 33 rigid bodies match MJCF.
+            lab3_usd_asset_file_name="usd/atlas/lab3/atlas/atlas.usda",
             usd_bodies_root_prim_path="/World/envs/env_.*/Robot/Hip/",
             max_linear_velocity=1000.0,
             max_angular_velocity=1000.0,

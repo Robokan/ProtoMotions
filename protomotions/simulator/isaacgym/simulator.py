@@ -331,7 +331,12 @@ class IsaacGymSimulator(Simulator):
             )
             setattr(asset_options, option, option_value)
 
-        asset_options.collapse_fixed_joints = True  # Always collapse fixed joints. The MJCF file can define whether a fixed joint should not be collapsed.
+        # Official URDFs keep feet as fixed-joint links that must remain
+        # separate bodies so they match MJCF kinematic_info. MJCF still
+        # collapses authored fixed joints.
+        asset_options.collapse_fixed_joints = (
+            getattr(self.robot_config.asset, "urdf_asset_file_name", None) is None
+        )
 
         return asset_options
 
@@ -342,7 +347,10 @@ class IsaacGymSimulator(Simulator):
             Loaded asset handle (opaque gymapi handle)
         """
         asset_root = self.robot_config.asset.asset_root
-        asset_file = self.robot_config.asset.asset_file_name
+        asset_file = (
+            getattr(self.robot_config.asset, "urdf_asset_file_name", None)
+            or self.robot_config.asset.asset_file_name
+        )
         asset_path = os.path.join(asset_root, asset_file)
         asset_root = os.path.dirname(asset_path)
         asset_file = os.path.basename(asset_path)

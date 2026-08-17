@@ -11,9 +11,15 @@ class PerspectiveViewer(object):
     def __init__(self):
         self.viewport_api = None
         self.get_viewport_api()
-        _ = rep.create.render_product(
-            "/OmniverseKit_Persp", resolution=(500, 500)
-        )  # Lower resolution
+        # Lab 2 always has /OmniverseKit_Persp. Lab 3 Kit viewport may use a
+        # different camera; Replicator then raises "No valid sensor paths".
+        # The product is unused except as a resolution hint, so skip on fail.
+        try:
+            _ = rep.create.render_product(
+                self._camera_prim_path(), resolution=(500, 500)
+            )
+        except (ValueError, RuntimeError, AttributeError) as exc:
+            carb.log_warn(f"Replicator render_product skipped: {exc}")
 
         # Disable advanced rendering features
         self.disable_advanced_rendering()
@@ -72,12 +78,19 @@ class PerspectiveViewer(object):
             if self.viewport_api is None:
                 carb.log_warn("could not get active viewport, cannot set camera view")
 
+    def _camera_prim_path(self) -> str:
+        if self.viewport_api is not None:
+            path = getattr(self.viewport_api, "camera_path", None)
+            if path:
+                return str(path)
+        return "/OmniverseKit_Persp"
+
     def get_camera_state(self):
         self.get_viewport_api()
 
         from omni.kit.viewport.utility.camera_state import ViewportCameraState
 
-        prim = self.viewport_api.stage.GetPrimAtPath("/OmniverseKit_Persp")
+        prim = self.viewport_api.stage.GetPrimAtPath(self._camera_prim_path())
 
         coi_prop = prim.GetProperty("omni:kit:centerOfInterest")
         if not coi_prop or not coi_prop.IsValid():
@@ -87,7 +100,9 @@ class PerspectiveViewer(object):
                 True,
                 Sdf.VariabilityUniform,
             ).Set(Gf.Vec3d(0, 0, -10))
-        camera_state = ViewportCameraState("/OmniverseKit_Persp", self.viewport_api)
+        camera_state = ViewportCameraState(
+            self._camera_prim_path(), self.viewport_api
+        )
         camera_position = camera_state.position_world
         return camera_position[0], camera_position[1], camera_position[2]
 
@@ -98,7 +113,7 @@ class PerspectiveViewer(object):
 
         camera_position = np.asarray(eye, dtype=np.double)
         camera_target = np.asarray(target, dtype=np.double)
-        prim = self.viewport_api.stage.GetPrimAtPath("/OmniverseKit_Persp")
+        prim = self.viewport_api.stage.GetPrimAtPath(self._camera_prim_path())
 
         coi_prop = prim.GetProperty("omni:kit:centerOfInterest")
         if not coi_prop or not coi_prop.IsValid():
@@ -108,7 +123,9 @@ class PerspectiveViewer(object):
                 True,
                 Sdf.VariabilityUniform,
             ).Set(Gf.Vec3d(0, 0, -10))
-        camera_state = ViewportCameraState("/OmniverseKit_Persp", self.viewport_api)
+        camera_state = ViewportCameraState(
+            self._camera_prim_path(), self.viewport_api
+        )
         camera_state.set_position_world(
             Gf.Vec3d(camera_position[0], camera_position[1], camera_position[2]), True
         )

@@ -86,6 +86,15 @@ class IsaacLabSimulatorConfig(SimulatorConfig):
             "min": 0.0,
         },
     )
+    physics_backend: str = field(
+        default="physx",
+        metadata={
+            "help": (
+                "Isaac Lab physics backend: 'physx' (default) or 'newton' "
+                "(Lab 3 Newton / MJWarp via NewtonCfg)."
+            )
+        },
+    )
     opponent_robot_config: Optional[Any] = field(
         default=None,
         metadata={

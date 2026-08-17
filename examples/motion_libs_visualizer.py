@@ -532,10 +532,20 @@ class MotionVisualizerSmoothness:
             experiment_name="motion_viz_smoothness",
         )
 
+        # Projectiles are unused here and crash Isaac Lab 3 scene init
+        # (write_root_state_to_sim before the first physics step).
+        if hasattr(self.simulator_cfg, "projectile"):
+            self.simulator_cfg.projectile.num_projectiles = 0
+
         # Override robot asset settings for motion visualization
         self.robot_cfg.asset.disable_gravity = True
         self.robot_cfg.asset.fix_base_link = False
         self.robot_cfg.asset.self_collisions = False
+        self.robot_cfg.asset.collision_enabled = False
+        # Contact sensors need a live PhysX tensor view; kinematic playback
+        # never uses them and Lab 3 raises if they are created too early.
+        if simulator_type == "isaaclab":
+            self.robot_cfg.contact_bodies = None
 
         # Use torque control (zero torque) to maintain poses
         self.robot_cfg.control.control_type = ControlType.TORQUE
@@ -979,31 +989,33 @@ class MotionVisualizerSmoothness:
 
     def _set_robot_pose(self, dof_pos, rigid_body_pos=None, rigid_body_rot=None):
         """Set the robot to the specified pose"""
-        # for visualize, so we don't need to set the velocities, so just put to zero so it does not move before we reset pose
-        current_state = self.simulator.get_robot_state()
-
-        # Set DOF positions (already has the correct shape [num_envs, num_dofs])
-        current_state.dof_pos = dof_pos.detach()
-        current_state.dof_vel = torch.zeros_like(current_state.dof_pos).detach()
-
-        # set root position and orientation
-        current_state.rigid_body_pos[:, 0, :] = rigid_body_pos.detach()[:, 0, :]
-        current_state.rigid_body_rot[:, 0, :] = rigid_body_rot.detach()[:, 0, :]
-        current_state.rigid_body_vel[:, 0, :] = torch.zeros(
-            self.num_envs, 3, device=self.device
-        )
-        current_state.rigid_body_ang_vel[:, 0, :] = torch.zeros(
-            self.num_envs, 3, device=self.device
+        from protomotions.simulator.base_simulator.simulator_state import (
+            ResetState,
+            StateConversion,
         )
 
-        # if rigid_body_pos is not None and rigid_body_rot is not None:
-        #     current_state.rigid_body_pos = rigid_body_pos.detach()  # Already [num_envs, num_bodies, 3]
-        #     current_state.rigid_body_rot = rigid_body_rot.detach()  # Already [num_envs, num_bodies, 4]
-        #     current_state.rigid_body_vel = torch.zeros(self.num_envs, rigid_body_pos.shape[1], 3, device=self.device)
-        #     current_state.rigid_body_ang_vel = torch.zeros(self.num_envs, rigid_body_pos.shape[1], 3, device=self.device)
-
+        # MotionLib always exposes COMMON xyzw after load.
+        root_rot = rigid_body_rot.detach()[:, 0, :]
+        reset_state = ResetState(
+            root_pos=rigid_body_pos.detach()[:, 0, :],
+            root_rot=root_rot,
+            root_vel=torch.zeros(self.num_envs, 3, device=self.device),
+            root_ang_vel=torch.zeros(self.num_envs, 3, device=self.device),
+            dof_pos=dof_pos.detach(),
+            dof_vel=torch.zeros_like(dof_pos).detach(),
+            state_conversion=StateConversion.COMMON,
+        )
         env_ids = torch.arange(self.num_envs, device=self.device)
-        self.simulator.reset_envs(current_state, env_ids=env_ids)
+        self.simulator.reset_envs(reset_state, env_ids=env_ids)
+        # Lab 3 Kit does not show the written pose until PhysX ticks.
+        # Collisions and gravity are off in this visualizer, so the step
+        # only flushes fabric — it should not yank the body off mocap.
+        inner_sim = getattr(self.simulator, "_sim", None)
+        scene = getattr(self.simulator, "_scene", None)
+        if inner_sim is not None and scene is not None:
+            scene.write_data_to_sim()
+            inner_sim.step(render=False)
+            scene.update(inner_sim.get_physics_dt())
 
     def _get_updated_marker_positions(self):
         """Update marker positions to follow the specified bodies"""
@@ -1384,6 +1396,17 @@ class MotionVisualizerSmoothness:
                         or getattr(self, "_clip_frame0_idx", None) != self.current_motion_idx):
                     self._clip_t0 = _now
                     self._clip_frame0_idx = self.current_motion_idx
+                    # Announce at the moment the clip STARTS RENDERING -- an
+                    # announce at library-load time scrolls away under the
+                    # simulator's boot log before the window even opens, and
+                    # the switch handler never covers the first clip.
+                    if getattr(self, "_announced_idx", None) != self.current_motion_idx:
+                        self._announced_idx = self.current_motion_idx
+                        print(
+                            f"NOW PLAYING [{self.current_motion_idx}/{self.total_motions - 1}]: "
+                            f"{self.motion_libs[0].motion_files[self.current_motion_idx]}",
+                            flush=True,
+                        )
                 self.current_frame = int(
                     (_now - self._clip_t0) * self.playback_speed / max(_mdt, 1e-6)
                 )
@@ -1452,6 +1475,13 @@ def main():
             # # Performance settings for faster-than-realtime rendering
             # "rendering_mode": "performance",  # Options: "performance", "balanced", "quality"
         }
+        # Isaac Lab 3: the Kit viewport is opt-in. Without this the sim
+        # runs but no window opens (NVlabs/ProtoMotions#250 / a6df301).
+        # Lab 2 has no visualizer CLI; skip there so Sim 5 still works.
+        if not args.headless and hasattr(
+            AppLauncher, "sync_visualizer_cli_settings_to_carb"
+        ):
+            app_launcher_flags["visualizer"] = ["kit"]
         app_launcher = AppLauncher(app_launcher_flags)
         simulation_app = app_launcher.app
         extra_simulator_params["simulation_app"] = simulation_app

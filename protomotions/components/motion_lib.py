@@ -32,7 +32,7 @@ from protomotions.simulator.base_simulator.simulator_state import (
     RobotState,
     StateConversion,
 )
-from protomotions.utils.rotations import quat_to_exp_map
+from protomotions.utils.rotations import quat_to_exp_map, wxyz_to_xyzw
 from dataclasses import dataclass, field
 
 from protomotions.utils.motion_interpolation_utils import (
@@ -52,6 +52,56 @@ _motion_field_mapping = {
     "dvs": "dof_vel",
     "dps": "dof_pos",
 }
+
+# In-memory MotionLib quats are always COMMON xyzw. On-disk files without a
+# layout key are treated as COMMON xyzw. Only an explicit wxyz key converts.
+_QUAT_FORMAT_KEYS = ("quat_format", "quat_convention", "quaternion_format")
+
+
+def _decode_quat_format_value(value) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, torch.Tensor):
+        if value.numel() == 1:
+            return "xyzw" if bool(value.item()) else "wxyz"
+        return None
+    if isinstance(value, bytes):
+        value = value.decode()
+    text = str(value).strip().lower()
+    if text in ("xyzw", "w_last", "wlast"):
+        return "xyzw"
+    if text in ("wxyz", "w_first", "wfirst"):
+        return "wxyz"
+    if text in ("true", "1"):
+        return "xyzw"
+    if text in ("false", "0"):
+        return "wxyz"
+    raise ValueError(
+        f"Unknown quaternion format {value!r}; expected 'xyzw' or 'wxyz'"
+    )
+
+
+def read_motion_quat_format(data) -> str:
+    """Return on-disk quat layout. Missing key means COMMON xyzw."""
+    if not isinstance(data, dict):
+        return "xyzw"
+    for key in _QUAT_FORMAT_KEYS:
+        if key in data:
+            parsed = _decode_quat_format_value(data[key])
+            if parsed is not None:
+                return parsed
+    if "w_last" in data:
+        parsed = _decode_quat_format_value(data["w_last"])
+        if parsed is not None:
+            return parsed
+    return "xyzw"
+
+
+def quats_to_common_xyzw(quats, src_format: str):
+    """Convert stored quats into COMMON xyzw. No-op if already xyzw."""
+    if quats is None or src_format == "xyzw":
+        return quats
+    return wxyz_to_xyzw(quats)
 
 
 @dataclass
@@ -521,9 +571,19 @@ class MotionLib:
                 )
             )
 
-            curr_motion = torch.load(curr_file, weights_only=False)
+            curr_raw = torch.load(curr_file, weights_only=False)
+            src_format = read_motion_quat_format(curr_raw)
+            if isinstance(curr_raw, dict):
+                skip = set(_QUAT_FORMAT_KEYS) | {"w_last"}
+                curr_raw = {k: v for k, v in curr_raw.items() if k not in skip}
             curr_motion = RobotState.from_dict(
-                curr_motion, state_conversion=StateConversion.COMMON
+                curr_raw, state_conversion=StateConversion.COMMON
+            )
+            curr_motion.rigid_body_rot = quats_to_common_xyzw(
+                curr_motion.rigid_body_rot, src_format
+            )
+            curr_motion.local_rigid_body_rot = quats_to_common_xyzw(
+                curr_motion.local_rigid_body_rot, src_format
             )
 
             if (
@@ -712,6 +772,10 @@ class MotionLib:
 
         for field in loaded_data:
             setattr(self, field, loaded_data[field])
+
+        src_format = read_motion_quat_format(loaded_data)
+        self.grs = quats_to_common_xyzw(self.grs, src_format)
+        self.lrs = quats_to_common_xyzw(self.lrs, src_format)
 
         if (
             self.contacts is not None

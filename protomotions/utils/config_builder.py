@@ -39,6 +39,8 @@ def build_standard_configs(
     simulator_cfg = simulator_config_func(
         args.simulator, robot_cfg, args.headless, args.num_envs, args.experiment_name
     )
+    if args.simulator == "isaaclab" and hasattr(simulator_cfg, "physics_backend"):
+        simulator_cfg.physics_backend = getattr(args, "physics", "physx")
 
     # Configure robot and simulator for this experiment (if function provided)
     if configure_robot_and_simulator_fn is not None:

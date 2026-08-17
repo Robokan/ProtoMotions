@@ -9,10 +9,22 @@ import isaaclab.sim as sim_utils
 
 log = logging.getLogger(__name__)
 from isaaclab.scene import InteractiveScene
-from isaaclab.sim import SimulationContext, PhysxCfg
+from isaaclab.sim import SimulationContext
 from isaaclab.markers import VisualizationMarkers as IsaacLabVisualizationMarkers
 from isaaclab.markers import VisualizationMarkersCfg as IsaacLabVisualizationMarkersCfg
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
+
+try:
+    # Isaac Lab 3: PhysX config moved out of isaaclab.sim
+    from isaaclab_physx.physics import PhysxCfg
+
+    _SIM_PHYSX_KW = "physics"
+    _ISAACLAB_W_LAST = True  # Lab 3 uses xyzw
+except ImportError:
+    from isaaclab.sim import PhysxCfg
+
+    _SIM_PHYSX_KW = "physx"
+    _ISAACLAB_W_LAST = False  # Lab 2.x uses wxyz
 
 from protomotions.components.terrains.terrain import Terrain
 from protomotions.components.scene_lib import (
@@ -77,6 +89,11 @@ class IsaacLabSimulator(Simulator):
             simulation_app (Any): The simulation application instance.
             scene_lib (SceneLib): Scene library (always provided, can be empty).
         """
+        # Lab 3 switched the public quat convention from wxyz to xyzw.
+        # Must flip before Simulator.__init__ builds StateConversion.
+        if _ISAACLAB_W_LAST:
+            config.w_last = True
+
         super().__init__(
             config=config,
             robot_config=robot_config,
@@ -87,11 +104,36 @@ class IsaacLabSimulator(Simulator):
 
         self._register_custom_user_interface_keys(custom_key_handlers or {})
 
-        sim_cfg = sim_utils.SimulationCfg(
-            device=str(device),
-            dt=1.0 / self.config.sim.fps,
-            render_interval=self.config.sim.decimation,
-            physx=PhysxCfg(
+        sim_kwargs = {
+            "device": str(device),
+            "dt": 1.0 / self.config.sim.fps,
+            "render_interval": self.config.sim.decimation,
+        }
+        physics_backend = getattr(self.config, "physics_backend", "physx")
+        if physics_backend in ("newton", "newton_mjwarp"):
+            if not _ISAACLAB_W_LAST:
+                raise RuntimeError(
+                    "Isaac Lab Newton backend requires Isaac Lab 3 "
+                    "(use .venv-isaacsim6)."
+                )
+            # Official Lab 3 switch: SimulationCfg(physics=NewtonCfg()).
+            # ProtoMotions terrain is a trimesh plane; MuJoCo contact gen
+            # rejects that mesh. Newton's own pipeline handles it.
+            from isaaclab_newton.physics import (
+                MJWarpSolverCfg,
+                NewtonCfg,
+                NewtonShapeCfg,
+            )
+
+            sim_kwargs["physics"] = NewtonCfg(
+                solver_cfg=MJWarpSolverCfg(use_mujoco_contacts=False),
+                default_shape_cfg=NewtonShapeCfg(margin=0.01),
+            )
+            log.info(
+                "Isaac Lab physics backend: Newton (MJWarp, Newton contacts)"
+            )
+        else:
+            sim_kwargs[_SIM_PHYSX_KW] = PhysxCfg(
                 solver_type=self.config.sim.physx.solver_type,
                 max_position_iteration_count=self.config.sim.physx.num_position_iterations,
                 max_velocity_iteration_count=self.config.sim.physx.num_velocity_iterations,
@@ -100,11 +142,36 @@ class IsaacLabSimulator(Simulator):
                 gpu_found_lost_pairs_capacity=self.config.sim.physx.gpu_found_lost_pairs_capacity,
                 gpu_found_lost_aggregate_pairs_capacity=self.config.sim.physx.gpu_found_lost_aggregate_pairs_capacity,
                 gpu_max_rigid_patch_count=self.config.sim.physx.gpu_max_rigid_patch_count,
-            ),
-        )
+            )
+            log.info("Isaac Lab physics backend: PhysX")
+        # Lab 3 Kit viewport needs an explicit visualizer + camera. Without
+        # this the window opens but looks at an empty default view.
+        # Headless Kit has no omni.kit.viewport — skip or SimulationContext
+        # raises during visualizer init.
+        if _ISAACLAB_W_LAST and not self.headless:
+            try:
+                from isaaclab_visualizers.kit import KitVisualizerCfg
+
+                sim_kwargs["visualizer_cfgs"] = [
+                    KitVisualizerCfg(
+                        eye=(3.0, -5.0, 2.0),
+                        lookat=(0.0, 0.0, 0.6),
+                    )
+                ]
+            except ImportError:
+                pass
+
+        sim_cfg = sim_utils.SimulationCfg(**sim_kwargs)
         self._simulation_app = simulation_app
         self._sim = SimulationContext(sim_cfg)
         self._sim.set_camera_view([2.5, 0.0, 4.0], [0.0, 0.0, 2.0])
+
+        if _ISAACLAB_W_LAST and not self.headless:
+            import omni.kit.app
+
+            omni.kit.app.get_app().get_extension_manager().set_extension_enabled_immediate(
+                "omni.replicator.core", True
+            )
 
         # Scene construction below needs _proj_config before _init_projectiles runs
         self._resolve_proj_config()
@@ -150,6 +217,10 @@ class IsaacLabSimulator(Simulator):
         if self._visualization_markers:
             self._build_markers(self._visualization_markers)
         self._sim.reset()
+        # Lab 3 fabric/Kit does not show articulations until state is flushed
+        # and kinematics are forwarded. Lab 2 forward() is a no-op-safe extra.
+        self._scene.write_data_to_sim()
+        self._sim.forward()
 
     def _get_scene_cfg(self) -> SceneCfg:
         """
@@ -200,8 +271,9 @@ class IsaacLabSimulator(Simulator):
             device=self.device,
             dtype=torch.float,
         )
-        # Set identity quaternions (wxyz format for IsaacLab)
-        initial_obj_pos[..., 3] = 1.0  # w=1 for identity quaternion
+        # Identity quaternion in the active Isaac Lab convention.
+        # Lab 2 is wxyz (index 3); Lab 3 is xyzw (index 6).
+        initial_obj_pos[..., 6 if _ISAACLAB_W_LAST else 3] = 1.0
 
         # Build object configurations for IsaacLab
         objects_cfgs = []
@@ -319,14 +391,49 @@ class IsaacLabSimulator(Simulator):
             return sim_utils.MassPropertiesCfg(mass=options.mass, density=-1)
         return sim_utils.MassPropertiesCfg(mass=-1, density=options.density)
 
-    def _setup_keyboard(self) -> None:
+    def _ensure_omni_appwindow(self) -> bool:
+        """Make ``omni.appwindow`` importable.
+
+        Isaac Sim 6 keeps it as a Kit extension. ``import omni`` does not
+        load it, and Lab 3's experience file does not always enable it
+        before scene construction.
         """
-        Set up keyboard callbacks for control using the Se2Keyboard interface.
-        """
+        try:
+            import omni.appwindow  # noqa: F401
+
+            return True
+        except ImportError:
+            pass
+        try:
+            import omni.kit.app
+
+            ext_manager = omni.kit.app.get_app().get_extension_manager()
+            if not ext_manager.is_extension_enabled("omni.appwindow"):
+                ext_manager.set_extension_enabled_immediate("omni.appwindow", True)
+            app = getattr(self, "_simulation_app", None)
+            if app is not None:
+                app.update()
+            import omni.appwindow  # noqa: F401
+
+            return True
+        except Exception as exc:
+            log.warning("Could not enable omni.appwindow: %s", exc)
+            return False
+
+    def _create_keyboard_interface(self):
+        """Build an Isaac Lab Se2Keyboard, across Lab 2.x and 3.x APIs."""
         from isaaclab.devices.keyboard.se2_keyboard import Se2Keyboard
 
+        self._ensure_omni_appwindow()
+
         try:
-            # Try Isaac Sim 5.0.0+ API - requires a cfg parameter with sim_device
+            from isaaclab.devices.keyboard.se2_keyboard_cfg import Se2KeyboardCfg
+
+            return Se2Keyboard(cfg=Se2KeyboardCfg(sim_device=str(self.device)))
+        except Exception:
+            pass
+
+        try:
             from dataclasses import dataclass
 
             @dataclass
@@ -334,19 +441,30 @@ class IsaacLabSimulator(Simulator):
                 v_x_sensitivity: float = 0.8
                 v_y_sensitivity: float = 0.4
                 omega_z_sensitivity: float = 1.0
-                sim_device: str = "cuda:0"  # Add required sim_device attribute
+                sim_device: str = "cuda:0"
 
-            cfg = Se2KeyboardCfg()
-            self.keyboard_interface = Se2Keyboard(cfg=cfg)
-        except (TypeError, ImportError):
-            try:
-                # Try older API without cfg parameter
-                self.keyboard_interface = Se2Keyboard()
-            except TypeError:
-                # Fallback for older versions with individual parameters
-                self.keyboard_interface = Se2Keyboard(
-                    v_x_sensitivity=0.8, v_y_sensitivity=0.4, omega_z_sensitivity=1.0
-                )
+            return Se2Keyboard(cfg=Se2KeyboardCfg())
+        except Exception:
+            pass
+
+        try:
+            return Se2Keyboard()
+        except TypeError:
+            return Se2Keyboard(
+                v_x_sensitivity=0.8, v_y_sensitivity=0.4, omega_z_sensitivity=1.0
+            )
+
+    def _setup_keyboard(self) -> None:
+        """Set up keyboard callbacks for control using the Se2Keyboard interface."""
+        try:
+            self.keyboard_interface = self._create_keyboard_interface()
+        except Exception as exc:
+            log.warning(
+                "IsaacLab keyboard setup failed (%s). Viewer will run without hotkeys.",
+                exc,
+            )
+            self.keyboard_interface = None
+            return
 
         self.user_interface.add_registration_callback(
             self._register_user_interface_key_callback,
@@ -457,76 +575,92 @@ class IsaacLabSimulator(Simulator):
             self._domain_randomization is not None
             and "friction" in self._domain_randomization
         ):
-            # Adapted from https://github.com/isaac-sim/IsaacLab/blob/be083bf1f70466e1d41bf9ffdc405bb89394e92c/source/isaaclab/isaaclab/envs/mdp/events.py#L203
-            num_shapes_per_body = []
-            for link_path in self._robot.root_physx_view.link_paths[0]:
-                link_physx_view = self._robot._physics_sim_view.create_rigid_body_view(
-                    link_path
+            if not hasattr(self._robot, "root_physx_view"):
+                log.warning(
+                    "Skipping friction domain randomization: no PhysX view "
+                    "(Isaac Lab Newton backend)."
                 )
-                num_shapes_per_body.append(link_physx_view.max_shapes)
-            # ensure the parsing is correct
-            num_shapes = sum(num_shapes_per_body)
-            expected_shapes = self._robot.root_physx_view.max_shapes
-            if num_shapes != expected_shapes:
-                raise ValueError(
-                    "Randomization term 'randomize_rigid_body_material' failed to parse the number of shapes per body."
-                    f" Expected total shapes: {expected_shapes}, but got: {num_shapes}."
-                )
-
-            materials = self._robot.root_physx_view.get_material_properties()
-            body_names = [
-                self.robot_config.kinematic_info.body_names[
-                    self._domain_randomization["friction"]["body_indices"][idx]
-                ]
-                for idx in range(
-                    len(self._domain_randomization["friction"]["body_indices"])
-                )
-            ]
-            isaaclab_body_ids, _ = self._robot.find_bodies(
-                body_names, preserve_order=True
-            )
-            for idx in range(
-                len(self._domain_randomization["friction"]["body_indices"])
-            ):
-                # bodies may span multiple "shapes" in the physx view, so we need to assign the materials to the correct shapes
-                start_idx = sum(num_shapes_per_body[: isaaclab_body_ids[idx]])
-                end_idx = start_idx + num_shapes_per_body[isaaclab_body_ids[idx]]
-
-                num_buckets = self._domain_randomization["friction"][
-                    "static_friction"
-                ].shape[0]
-                bucket_ids = torch.randint(0, num_buckets, (self.num_envs,))
-                # assign the new materials
-                # material samples are of shape: num_env_ids x total_num_shapes x 3
-                materials[:, start_idx:end_idx, 0] = self._domain_randomization[
-                    "friction"
-                ]["static_friction"][bucket_ids, idx].unsqueeze(-1)
-                materials[:, start_idx:end_idx, 1] = self._domain_randomization[
-                    "friction"
-                ]["dynamic_friction"][bucket_ids, idx].unsqueeze(-1)
-                materials[:, start_idx:end_idx, 2] = self._domain_randomization[
-                    "friction"
-                ]["restitution"][bucket_ids, idx].unsqueeze(-1)
-            self._robot.root_physx_view.set_material_properties(
-                materials, indices=all_env_ids
-            )
+            else:
+                self._apply_physx_friction_randomization()
 
         if (
             self._domain_randomization is not None
             and "center_of_mass" in self._domain_randomization
         ):
-            # get the current com of the bodies (num_assets, num_bodies)
-            coms = self._robot.root_physx_view.get_coms().clone()
-
-            # Randomize the com in range
-            coms[
-                :, self._domain_randomization["center_of_mass"]["body_indices"], :3
-            ] += self._domain_randomization["center_of_mass"]["com"].to(coms.device)
-
-            # Set the new COMs.
-            self._robot.root_physx_view.set_coms(coms, all_env_ids)
+            if not hasattr(self._robot, "root_physx_view"):
+                log.warning(
+                    "Skipping COM domain randomization: no PhysX view "
+                    "(Isaac Lab Newton backend)."
+                )
+            else:
+                self._apply_physx_com_randomization(all_env_ids)
 
         self._apply_scene_object_properties_after_spawn(all_env_ids)
+
+    def _apply_physx_friction_randomization(self) -> None:
+        # Adapted from https://github.com/isaac-sim/IsaacLab/blob/be083bf1f70466e1d41bf9ffdc405bb89394e92c/source/isaaclab/isaaclab/envs/mdp/events.py#L203
+        all_env_ids = torch.arange(self.config.num_envs, dtype=torch.int)
+        num_shapes_per_body = []
+        for link_path in self._robot.root_physx_view.link_paths[0]:
+            link_physx_view = self._robot._physics_sim_view.create_rigid_body_view(
+                link_path
+            )
+            num_shapes_per_body.append(link_physx_view.max_shapes)
+        # ensure the parsing is correct
+        num_shapes = sum(num_shapes_per_body)
+        expected_shapes = self._robot.root_physx_view.max_shapes
+        if num_shapes != expected_shapes:
+            raise ValueError(
+                "Randomization term 'randomize_rigid_body_material' failed to parse the number of shapes per body."
+                f" Expected total shapes: {expected_shapes}, but got: {num_shapes}."
+            )
+
+        materials = self._as_torch(
+            self._robot.root_physx_view.get_material_properties()
+        )
+        body_names = [
+            self.robot_config.kinematic_info.body_names[
+                self._domain_randomization["friction"]["body_indices"][idx]
+            ]
+            for idx in range(
+                len(self._domain_randomization["friction"]["body_indices"])
+            )
+        ]
+        isaaclab_body_ids, _ = self._robot.find_bodies(
+            body_names, preserve_order=True
+        )
+        for idx in range(
+            len(self._domain_randomization["friction"]["body_indices"])
+        ):
+            # bodies may span multiple "shapes" in the physx view, so we need to assign the materials to the correct shapes
+            start_idx = sum(num_shapes_per_body[: isaaclab_body_ids[idx]])
+            end_idx = start_idx + num_shapes_per_body[isaaclab_body_ids[idx]]
+
+            num_buckets = self._domain_randomization["friction"][
+                "static_friction"
+            ].shape[0]
+            bucket_ids = torch.randint(0, num_buckets, (self.num_envs,))
+            # assign the new materials
+            # material samples are of shape: num_env_ids x total_num_shapes x 3
+            materials[:, start_idx:end_idx, 0] = self._domain_randomization[
+                "friction"
+            ]["static_friction"][bucket_ids, idx].unsqueeze(-1)
+            materials[:, start_idx:end_idx, 1] = self._domain_randomization[
+                "friction"
+            ]["dynamic_friction"][bucket_ids, idx].unsqueeze(-1)
+            materials[:, start_idx:end_idx, 2] = self._domain_randomization[
+                "friction"
+            ]["restitution"][bucket_ids, idx].unsqueeze(-1)
+        self._robot.root_physx_view.set_material_properties(
+            materials, indices=all_env_ids
+        )
+
+    def _apply_physx_com_randomization(self, all_env_ids: torch.Tensor) -> None:
+        coms = self._robot.root_physx_view.get_coms().clone()
+        coms[
+            :, self._domain_randomization["center_of_mass"]["body_indices"], :3
+        ] += self._domain_randomization["center_of_mass"]["com"].to(coms.device)
+        self._robot.root_physx_view.set_coms(coms, all_env_ids)
 
     def _apply_scene_object_properties_after_spawn(
         self, all_env_ids: torch.Tensor
@@ -611,11 +745,13 @@ class IsaacLabSimulator(Simulator):
 
     def _apply_simulator_pd_targets(self, pd_targets: torch.Tensor) -> None:
         """Applies PD position targets using IsaacLab's internal PD controller."""
-        self._robot.set_joint_position_target(pd_targets, joint_ids=None)
+        # Lab 3 Warp kernels need __cuda_array_interface__, which torch
+        # refuses on Variables that still require grad.
+        self._robot.set_joint_position_target(pd_targets.detach(), joint_ids=None)
 
     def _apply_simulator_torques(self, torques: torch.Tensor) -> None:
         """Applies torques to the robot DOFs."""
-        self._robot.set_joint_effort_target(torques, joint_ids=None)
+        self._robot.set_joint_effort_target(torques.detach(), joint_ids=None)
 
     def _set_simulator_env_state(
         self,
@@ -639,13 +775,13 @@ class IsaacLabSimulator(Simulator):
                 new_states.root_ang_vel,
             ],
             dim=-1,
-        )
+        ).detach()
         self._robot.write_root_state_to_sim(init_root_state, env_ids)
         self._robot.set_joint_position_target(
-            new_states.dof_pos, joint_ids=None, env_ids=env_ids
+            new_states.dof_pos.detach(), joint_ids=None, env_ids=env_ids
         )
         self._robot.write_joint_state_to_sim(
-            new_states.dof_pos, new_states.dof_vel, None, env_ids
+            new_states.dof_pos.detach(), new_states.dof_vel.detach(), None, env_ids
         )
         if new_object_states is not None and len(self._object) > 0:
             init_object_root_state = torch.cat(
@@ -661,6 +797,19 @@ class IsaacLabSimulator(Simulator):
                 self._object[object_idx].write_root_state_to_sim(
                     init_object_root_state[:, object_idx], env_ids
                 )
+        # Push written state into PhysX/USD so the Kit viewport can see it.
+        # Kinematic playback never calls sim.step(), so this flush is required.
+        self._scene.write_data_to_sim()
+        self._sim.forward()
+
+    @staticmethod
+    def _as_torch(value):
+        """Clone a sim data buffer as a torch tensor (Lab 3 returns Warp)."""
+        if torch.is_tensor(value):
+            return value.clone()
+        import warp as wp
+
+        return wp.to_torch(value).clone()
 
     # =====================================================
     # Group 4: State Getters
@@ -672,6 +821,27 @@ class IsaacLabSimulator(Simulator):
         Returns:
             SimBodyOrdering: An object containing the body names and DOF names.
         """
+        if _ISAACLAB_W_LAST:
+            from protomotions.simulator.isaaclab.utils.actuator_groups import (
+                build_isaaclab_joint_name_map,
+            )
+
+            joint_names = build_isaaclab_joint_name_map(
+                self.robot_config.kinematic_info
+            )
+            try:
+                semantic_joint_names = [
+                    joint_names.backend_to_semantic[name]
+                    for name in self._robot.joint_names
+                ]
+            except KeyError as error:
+                raise ValueError(
+                    f"Unexpected IsaacLab joint name: {error.args[0]}"
+                ) from error
+            return SimBodyOrdering(
+                body_names=self._robot.body_names,
+                dof_names=semantic_joint_names,
+            )
         return SimBodyOrdering(
             body_names=self._robot.data.body_names,
             dof_names=self._robot.data.joint_names,
@@ -694,10 +864,10 @@ class IsaacLabSimulator(Simulator):
         Returns:
             RobotState: The state of the bodies.
         """
-        isaacsim_bodies_positions = self._robot.data.body_pos_w.clone()
-        isaacsim_bodies_rotations = self._robot.data.body_quat_w.clone()
-        isaacsim_bodies_velocities = self._robot.data.body_lin_vel_w.clone()
-        isaacsim_bodies_ang_velocities = self._robot.data.body_ang_vel_w.clone()
+        isaacsim_bodies_positions = self._as_torch(self._robot.data.body_pos_w)
+        isaacsim_bodies_rotations = self._as_torch(self._robot.data.body_quat_w)
+        isaacsim_bodies_velocities = self._as_torch(self._robot.data.body_lin_vel_w)
+        isaacsim_bodies_ang_velocities = self._as_torch(self._robot.data.body_ang_vel_w)
 
         isaacsim_bodies_positions = isaacsim_bodies_positions.view(
             self.num_envs, self._num_bodies, 3
@@ -872,10 +1042,10 @@ class IsaacLabSimulator(Simulator):
         Returns:
             RootOnlyState: The robot's root state.
         """
-        isaacsim_root_pos = self._robot.data.root_pos_w.clone()
-        isaacsim_root_rot = self._robot.data.root_quat_w.clone()
-        isaacsim_root_vel = self._robot.data.root_lin_vel_w.clone()
-        isaacsim_root_ang_vel = self._robot.data.root_ang_vel_w.clone()
+        isaacsim_root_pos = self._as_torch(self._robot.data.root_pos_w)
+        isaacsim_root_rot = self._as_torch(self._robot.data.root_quat_w)
+        isaacsim_root_vel = self._as_torch(self._robot.data.root_lin_vel_w)
+        isaacsim_root_ang_vel = self._as_torch(self._robot.data.root_ang_vel_w)
         if env_ids is not None:
             isaacsim_root_pos = isaacsim_root_pos[env_ids]
             isaacsim_root_rot = isaacsim_root_rot[env_ids]
@@ -1013,16 +1183,22 @@ class IsaacLabSimulator(Simulator):
         """
         Render the simulation view. Initializes or updates the camera if the simulator is not in headless mode.
         """
-        if not self.headless:
-            if not hasattr(self, "_perspective_view"):
-                from protomotions.simulator.isaaclab.utils.perspective_viewer import (
-                    PerspectiveViewer,
-                )
+        if not self.headless and not getattr(self, "_perspective_view_failed", False):
+            try:
+                if not hasattr(self, "_perspective_view"):
+                    from protomotions.simulator.isaaclab.utils.perspective_viewer import (
+                        PerspectiveViewer,
+                    )
 
-                self._perspective_view = PerspectiveViewer()
-                self._init_camera()
-            else:
-                self._update_camera()
+                    self._perspective_view = PerspectiveViewer()
+                    self._init_camera()
+                else:
+                    self._update_camera()
+            except Exception as e:
+                log.warning(
+                    "PerspectiveViewer unavailable, using default viewport: %s", e
+                )
+                self._perspective_view_failed = True
         super().render()
 
     def _init_camera(self) -> None:

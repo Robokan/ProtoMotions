@@ -52,6 +52,20 @@ DEFAULT_JOINT_POS = {
 
 @dataclass
 class AnymalDRobotConfig(RobotConfig):
+    # ASE/AMP discriminator body subset. IsaacLabASE's working ANYmal ASE
+    # shows the discriminator FOUR key bodies (the shanks) rather than all
+    # 17; the un-subsetted version has the raptor's failure mode -- hips and
+    # thighs move in ways the policy cannot reproduce, so the discriminator
+    # separates agent from reference on jitter instead of gait. Feet are
+    # omitted here for the same reason they are named on the raptor: the
+    # shank already carries the swing, and the foot adds a fast segment the
+    # policy would be judged on but cannot track.
+    disc_bodies_subset: List[str] = field(
+        default_factory=lambda: [
+            "LF_SHANK", "RF_SHANK", "LH_SHANK", "RH_SHANK",
+        ]
+    )
+
     common_naming_to_robot_body_names: Dict[str, List[str]] = field(
         default_factory=lambda: {
             "all_left_foot_bodies": ["LF_FOOT", "LH_FOOT"],
@@ -93,7 +107,11 @@ class AnymalDRobotConfig(RobotConfig):
     asset: RobotAssetConfig = field(
         default_factory=lambda: RobotAssetConfig(
             asset_file_name="mjcf/anymal_d_nomesh.xml",
+            urdf_asset_file_name="urdf/anymal_d/anymal.urdf",
             usd_asset_file_name="usd/anymal_d/anymal_d.usd",
+            # Byte-identical to Isaac Lab 6.0 Nucleus
+            # Isaac/IsaacLab/Robots/ANYbotics/ANYmal-D/anymal_d.usd
+            lab3_usd_asset_file_name="usd/anymal_d/anymal_d.usd",
             usd_bodies_root_prim_path="/World/envs/env_.*/Robot/",
             apply_default_visual_material=False,  # keep the USD's authored textures
             replace_cylinder_with_capsule=True,

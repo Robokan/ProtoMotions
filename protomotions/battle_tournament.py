@@ -296,6 +296,10 @@ def main():
         if recording:
             # Offscreen rendering pipeline (no X display required).
             launch_flags["enable_cameras"] = True
+        if not app_headless and hasattr(
+            AppLauncher, "sync_visualizer_cli_settings_to_carb"
+        ):
+            launch_flags["visualizer"] = ["kit"]
         app_launcher = AppLauncher(launch_flags)
         simulator_extra_params["simulation_app"] = app_launcher.app
 

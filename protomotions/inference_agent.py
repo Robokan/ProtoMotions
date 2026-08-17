@@ -121,11 +121,14 @@ def create_parser():
         default=False,
         help=(
             "Enable AMP/ASE discriminator kill during the viewer: restore "
-            "discriminator_reward_threshold to the training default (0.05) "
-            "if it was zeroed for inference, score each transition, and "
-            "reset envs that stay below threshold for "
-            "discriminator_max_cumulative_bad_transitions steps. Prints "
-            "[AMP disc term] when a kill fires."
+            "discriminator_reward_threshold from the training "
+            "resolved_configs.pt (fallback 0.05) if it was zeroed for "
+            "inference, score each transition, and reset envs that stay "
+            "below threshold for "
+            "discriminator_max_cumulative_bad_transitions steps. Also "
+            "restores the training max_episode_length so episodes time out "
+            "and reset (inference normally sets this to 1e6). Prints "
+            "[AMP disc term] / [episode timeout] when a reset fires."
         ),
     )
     parser.add_argument(
@@ -179,6 +182,19 @@ def create_parser():
             "target=keyboard. A bare value applies to the single target "
             "control component."
         ),
+    )
+    parser.add_argument(
+        "--stream-ue",
+        default=None,
+        metavar="HOST:PORT",
+        help="Send env-0 (or --stream-ue-env) body pos/rot as NPOS UDP "
+        "packets for UnrealProtoMotions to puppet. Example: 127.0.0.1:27015",
+    )
+    parser.add_argument(
+        "--stream-ue-env",
+        type=int,
+        default=0,
+        help="Which parallel env to stream when --stream-ue is set.",
     )
 
     return parser
@@ -341,6 +357,12 @@ def main():
         if args.overlay_skeleton == "cc":      # i.e. left at the default
             args.overlay_skeleton = "identity"
     simulator_config = resolved_configs["simulator"]
+    # Training-time domain randomization (action noise, friction buckets) is
+    # baked into the frozen config, but evaluation should run nominal
+    # dynamics -- we want to see the policy, not the noise it trained under.
+    if getattr(simulator_config, "domain_randomization", None) is not None:
+        log.info("Stripping training-time domain_randomization for inference")
+        simulator_config.domain_randomization = None
     terrain_config = resolved_configs.get("terrain")
     scene_lib_config = resolved_configs["scene_lib"]
     motion_lib_config = resolved_configs["motion_lib"]
@@ -417,6 +439,15 @@ def main():
     # wired in keep their frozen behavior.
     if args.experiment_path is not None:
         import importlib.util
+        import sys
+        from pathlib import Path as _Path
+
+        # Same fix as train_agent.py: experiment files import from sibling
+        # packages (`from examples.experiments... import ...`), which only
+        # resolves with the repo root on sys.path.
+        _repo_root = str(_Path(__file__).resolve().parent.parent)
+        if _repo_root not in sys.path:
+            sys.path.insert(0, _repo_root)
 
         spec = importlib.util.spec_from_file_location(
             "experiment_module", args.experiment_path
@@ -464,14 +495,53 @@ def main():
             raise ValueError(
                 "--amp-disc-term requires an AMP/ASE agent with amp_parameters"
             )
-        # Inference freezes threshold at 0.0; restore training default unless
-        # the user already set a positive value via --overrides.
+        train_configs_path = checkpoint.parent / "resolved_configs.pt"
+        train_configs = None
+        if train_configs_path.exists():
+            train_configs = torch.load(
+                train_configs_path, map_location="cpu", weights_only=False
+            )
+
+        # Inference freezes threshold at 0.0; restore the training value
+        # (not a hardcoded 0.05 — runs differ, e.g. utah walk AMP uses 0.02).
         if amp.discriminator_reward_threshold <= 0.0:
-            amp.discriminator_reward_threshold = 0.05
+            train_amp = None
+            if train_configs is not None:
+                train_amp = getattr(
+                    train_configs.get("agent"), "amp_parameters", None
+                )
+            if (
+                train_amp is not None
+                and getattr(train_amp, "discriminator_reward_threshold", 0.0)
+                > 0.0
+            ):
+                amp.discriminator_reward_threshold = float(
+                    train_amp.discriminator_reward_threshold
+                )
+            else:
+                amp.discriminator_reward_threshold = 0.05
+
+        # Inference configs usually set max_episode_length to 1e6 so the
+        # viewer never times out. For disc-term debugging, restore the
+        # training horizon (unless the user already overrode it to a
+        # finite value via --overrides).
+        if env_config.max_episode_length >= 1_000_000:
+            if train_configs is not None:
+                env_config.max_episode_length = int(
+                    train_configs["env"].max_episode_length
+                )
+            else:
+                log.warning(
+                    "AMP disc term: could not find %s to restore "
+                    "max_episode_length; timeouts stay disabled",
+                    train_configs_path,
+                )
         log.info(
-            "AMP disc termination enabled: threshold=%s max_bad=%s",
+            "AMP disc termination enabled: threshold=%s max_bad=%s "
+            "max_episode_length=%s",
             amp.discriminator_reward_threshold,
             amp.discriminator_max_cumulative_bad_transitions,
+            env_config.max_episode_length,
         )
 
     if args.command_source:
@@ -495,6 +565,12 @@ def main():
     simulator_extra_params = {}
     if args.simulator == "isaaclab":
         app_launcher_flags = {"headless": args.headless, "device": str(fabric.device)}
+        # Isaac Lab 3: Kit viewport is opt-in. Without this the sim runs
+        # but no window opens. Lab 2 has no visualizer CLI.
+        if not args.headless and hasattr(
+            AppLauncher, "sync_visualizer_cli_settings_to_carb"
+        ):
+            app_launcher_flags["visualizer"] = ["kit"]
         app_launcher = AppLauncher(app_launcher_flags)
         simulator_extra_params["simulation_app"] = app_launcher.app
 
@@ -811,6 +887,15 @@ def main():
 
     agent.setup()
     agent.load(args.checkpoint, load_env=False, load_training_state=False)
+    if args.stream_ue:
+        import sys as _sys
+
+        _ue = Path(__file__).resolve().parents[2] / "UnrealProtoMotions" / "python"
+        if _ue.is_dir() and str(_ue) not in _sys.path:
+            _sys.path.insert(0, str(_ue))
+        from pmue.pose_packet import attach_env_stream
+
+        attach_env_stream(env, args.stream_ue, args.stream_ue_env)
     headless = getattr(env.simulator, "headless", True)
     ui = getattr(env.simulator, "user_interface", None)
     if not headless and ui is not None:
