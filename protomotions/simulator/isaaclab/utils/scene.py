@@ -134,9 +134,26 @@ class SceneCfg(InteractiveSceneCfg):
                 setattr(self, f"projectile_{proj_idx}", proj_cfg)
 
         actuators = {}
+        # Newton (Lab 3) cannot use IMPLICIT PD. Newton drives a joint from
+        # joint_target_ke/kd only when its joint_target_mode is POSITION, and
+        # MuJoCo builds its actuator array at model FINALIZE -- our own Newton
+        # engine therefore sets the mode on the builder beforehand
+        # (simulator/newton/simulator.py::_set_builder_dof_properties). Lab 3
+        # binds ke/kd (a read-back shows the configured 40/5) but leaves the
+        # mode at NONE/EFFORT and offers no pre-finalize hook, so the gains sit
+        # inert: measured, joints missed the commanded default pose by 0.68 rad
+        # mean / 3.78 rad worst while burning 26 Nm -- the legs flop. Setting
+        # the mode after finalize does NOT help (verified). Explicit PD has Lab
+        # compute the torque and Newton apply it: 0.097 rad / 3.4 Nm, matching
+        # PhysX's 0.069 / 2.0.
+        _newton_backend = getattr(config, "physics_backend", "physx") in (
+            "newton",
+            "newton_mjwarp",
+        )
         ActuatorConfig = (
             ImplicitActuatorCfg
             if robot_config.control.control_type == ControlType.BUILT_IN_PD
+            and not _newton_backend
             else IdealPDActuatorCfg
         )
         body_prim_paths = None
@@ -370,6 +387,17 @@ class SceneCfg(InteractiveSceneCfg):
             sensing_filter = ["/World/ground/terrain/mesh"]
             for obj_idx in range(num_objects_per_scene):
                 sensing_filter.append(f"/World/envs/env_.*/Object_{obj_idx}")
+            if getattr(config, "physics_backend", "physx") in (
+                "newton",
+                "newton_mjwarp",
+            ):
+                # Lab 3's Newton contact sensor resolves each filter entry to a
+                # BODY label in the Newton model. The ground plane is not a body
+                # there, so a ground filter fails initialization outright ("No
+                # bodies matched the counterpart pattern(s)"). Unfiltered sensing
+                # reports the body's NET contact force, which is what the foot
+                # contact observations consume anyway.
+                sensing_filter = []
             for body_name in robot_config.contact_bodies:
                 if _ISAACLAB3:
                     from protomotions.simulator.isaaclab.utils.usd_body_paths import (

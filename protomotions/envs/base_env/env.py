@@ -48,6 +48,7 @@ Key Features:
 from functools import cached_property
 from typing import Any, Dict, Optional, TYPE_CHECKING, Tuple
 
+import os
 import torch
 from torch import Tensor
 from protomotions.utils.hydra_replacement import get_class
@@ -393,6 +394,27 @@ class BaseEnv:
             name: tensor.clone() for name, tensor in self._observation_buffer.items()
         }
         obs.update(dynamic_obs)
+
+        if os.environ.get("PROTOMOTIONS_DEBUG_NONFINITE"):
+            # Opt-in probe for new simulator backends: a NaN/Inf in the state
+            # reaches the policy as a NaN action distribution many steps later,
+            # where the traceback says nothing about its origin. Report the
+            # first offending observation with the bodies/dofs involved.
+            for name, tensor in obs.items():
+                if not torch.is_floating_point(tensor):
+                    continue
+                bad = ~torch.isfinite(tensor)
+                if bool(bad.any()):
+                    rows = bad.any(dim=tuple(range(1, tensor.dim()))).nonzero().flatten()
+                    cols = bad.any(dim=0).nonzero().flatten()
+                    raise RuntimeError(
+                        f"non-finite observation '{name}' at step "
+                        f"{int(self.progress_buf.max())}: {int(bad.sum())} values "
+                        f"in {rows.numel()} envs (first envs {rows[:5].tolist()}, "
+                        f"first feature indices {cols[:10].tolist()}); "
+                        f"finite range [{tensor[~bad].min():.3g}, "
+                        f"{tensor[~bad].max():.3g}]"
+                    )
 
         return obs
 

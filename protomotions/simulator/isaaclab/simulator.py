@@ -222,6 +222,53 @@ class IsaacLabSimulator(Simulator):
         self._scene.write_data_to_sim()
         self._sim.forward()
 
+        if os.environ.get("PROTOMOTIONS_DEBUG_ACTUATORS"):
+            # Read the gains BACK out of the simulator. Implicit actuators are
+            # a PhysX concept; a backend that ignores ImplicitActuatorCfg
+            # leaves stiffness/damping at zero and the robot's legs go limp
+            # while every config file still reads 40/5.
+            data = self._robot.data
+            names = list(self._robot.joint_names)
+            for label, attr in (
+                ("stiffness", "joint_stiffness"),
+                ("damping", "joint_damping"),
+                ("effort_limit", "joint_effort_limits"),
+                ("velocity_limit", "joint_velocity_limits"),
+            ):
+                t = getattr(data, attr, None)
+                if t is None:
+                    print(f"[actuator-probe] {label}: attribute {attr} MISSING")
+                    continue
+                row = torch.as_tensor(t)[0].flatten()
+                pairs = ", ".join(
+                    f"{n}={row[i].item():.4g}" for i, n in enumerate(names[:4])
+                )
+                print(f"[actuator-probe] {label}: {pairs} | min {row.min():.4g} "
+                      f"max {row.max():.4g}", flush=True)
+
+            # Hold test: command the default pose and step. Correct gains mean
+            # nothing if the TARGETS never reach the solver -- the legs then
+            # flop under gravity while every config still reads 40/5.
+            try:
+                default = self._robot.data.default_joint_pos.clone()
+                self._robot.set_joint_position_target(default)
+                self._scene.write_data_to_sim()
+                for _ in range(60):
+                    self._sim.step(render=False)
+                    self._scene.update(self._sim.get_physics_dt())
+                    self._robot.set_joint_position_target(default)
+                    self._scene.write_data_to_sim()
+                err = (self._robot.data.joint_pos - default).abs()
+                print(f"[actuator-probe] HOLD TEST after 60 steps: mean |q - "
+                      f"target| = {err.mean():.4f} rad, max = {err.max():.4f} rad "
+                      f"({'TRACKING' if err.mean() < 0.15 else 'NOT TRACKING -- '
+                         'targets are not reaching the solver'})", flush=True)
+                print(f"[actuator-probe] applied_torque: "
+                      f"mean |tau| = {self._robot.data.applied_torque.abs().mean():.4f} "
+                      f"Nm (zero means no actuation)", flush=True)
+            except Exception as exc:  # probe must never break a real run
+                print(f"[actuator-probe] hold test failed: {exc!r}", flush=True)
+
     def _get_scene_cfg(self) -> SceneCfg:
         """
         Construct and return the scene configuration from the current config, scene library, and terrain.
@@ -1172,9 +1219,20 @@ class IsaacLabSimulator(Simulator):
                 ],
                 dim=-1,
             )
-            self._projectile_objects[pid.item()].write_root_state_to_sim(
-                state, env_ids=eids
-            )
+            obj = self._projectile_objects[pid.item()]
+            # Lab 3's Newton RigidObject.write_root_state_to_sim is broken: it
+            # forwards positionally into write_root_link_pose_to_sim_index,
+            # which is keyword-only, so the composite call raises TypeError.
+            # Drive the index variants directly when they exist.
+            if hasattr(obj, "write_root_pose_to_sim_index"):
+                obj.write_root_pose_to_sim_index(
+                    root_pose=state[:, :7], env_ids=eids
+                )
+                obj.write_root_velocity_to_sim_index(
+                    root_velocity=state[:, 7:], env_ids=eids
+                )
+            else:
+                obj.write_root_state_to_sim(state, env_ids=eids)
 
     # =====================================================
     # Group 6: Rendering & Visualization

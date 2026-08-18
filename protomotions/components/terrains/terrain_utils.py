@@ -66,6 +66,24 @@ def get_height_maps_jit(
     ) + (base_pos[:, :3]).unsqueeze(1)
 
     points = points / terrain_horizontal_scale
+    # Clamp the SAMPLE COORDINATES, not just the integer indices below. A robot
+    # that leaves the height field (or whose root goes non-finite when a
+    # backend destabilizes) otherwise carries its overshoot into fx/fy, and the
+    # bilinear blend returns +-inf/NaN -- which reaches the policy as a NaN
+    # action distribution hundreds of steps later, with a traceback that says
+    # nothing about terrain. Sampling the nearest edge is the right fallback:
+    # the reading stays finite and the episode ends on its own terms.
+    points = torch.nan_to_num(points, nan=0.0, posinf=0.0, neginf=0.0)
+    max_x = float(height_samples.shape[0] - 2)
+    max_y = float(height_samples.shape[1] - 2)
+    points = torch.stack(
+        [
+            points[..., 0].clamp(0.0, max_x),
+            points[..., 1].clamp(0.0, max_y),
+            points[..., 2],
+        ],
+        dim=-1,
+    )
     floored_points = points.long()
     # this encompasses 4 possible points.
     # points are the top left corner of the 4 points
