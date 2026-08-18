@@ -66,6 +66,23 @@ class AnymalDRobotConfig(RobotConfig):
         ]
     )
 
+    # Action-scaling ranges, measured from anymal_d_flat.pt (164k frames,
+    # 372 clips) and widened by 20 deg. The URDF declares every HFE/KFE as
+    # +-9.42 rad (+-540 deg), so scaling actions to the asset limits put the
+    # entire usable range inside ~2% of the action space and the policy could
+    # only flail -- 12k epochs of it. IsaacLabASE dodges this by disabling
+    # action scaling for ANYmal entirely (its comment cites the same +-540).
+    # Simulator joint limits are unchanged; this only rescales actions.
+    action_scaling_limits: Dict[str, tuple] = field(
+        default_factory=lambda: {
+            r".*HAA": (-1.13, 1.13),      # mocap +-0.79, symmetric
+            r".*F_HFE": (-1.30, 2.51),    # front hips swing forward
+            r".*H_HFE": (-3.01, 0.68),    # hind hips swing back
+            r".*F_KFE": (-2.93, 0.55),
+            r".*H_KFE": (-0.55, 3.19),
+        }
+    )
+
     common_naming_to_robot_body_names: Dict[str, List[str]] = field(
         default_factory=lambda: {
             "all_left_foot_bodies": ["LF_FOOT", "LH_FOOT"],

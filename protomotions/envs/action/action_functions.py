@@ -307,10 +307,25 @@ def make_pd_action_config(
     Example:
         action_config = make_pd_action_config(robot_cfg)
     """
+    lower = robot_config.kinematic_info.dof_limits_lower.clone()
+    upper = robot_config.kinematic_info.dof_limits_upper.clone()
+    # Per-robot action-scaling ranges (see RobotConfig.action_scaling_limits):
+    # an asset may declare a joint as effectively continuous, which would
+    # spread the action space over revolutions the robot never uses.
+    overrides = getattr(robot_config, "action_scaling_limits", None)
+    if overrides:
+        import re as _re
+
+        for i, joint in enumerate(robot_config.kinematic_info.dof_names):
+            for expr, (lo, hi) in overrides.items():
+                if _re.fullmatch(expr, joint):
+                    lower[i], upper[i] = float(lo), float(hi)
+                    break
+
     pd_action_offset, pd_action_scale = build_pd_action_offset_scale(
         robot_config.kinematic_info.hinge_axes_map,
-        robot_config.kinematic_info.dof_limits_lower,
-        robot_config.kinematic_info.dof_limits_upper,
+        lower,
+        upper,
         action_scale,
         torch.device("cpu"),
     )

@@ -142,6 +142,16 @@ class ControlConfig:
     # Control info overrides for specific joints instead of the values from the MJCF asset
     override_control_info: Optional[Dict[str, ControlInfo]] = None
 
+    # Joint ranges used to map a normalized action onto a PD target, as
+    # {joint-name regex: (lower, upper)} in radians. Defaults to the asset's
+    # own joint limits, which is wrong when an asset declares a joint as
+    # effectively continuous: ANYmal's URDF gives every hip and knee +-9.42
+    # rad, so action=+-1 commanded three revolutions and the whole useful
+    # range was squeezed into ~2% of the action space -- the policy could
+    # only flail. Set this from the motion data's actual range plus a margin.
+    # The SIMULATOR's joint limits are untouched; this only rescales actions.
+    action_scaling_limits: Optional[Dict[str, tuple]] = None
+
     # Can be "built_in_pd" or "proportional"/"velocity"/"torque" for Proportional, Velocity, Torque control
     control_type: ControlType = ControlType.BUILT_IN_PD
 
