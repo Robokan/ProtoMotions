@@ -34,11 +34,16 @@ from protomotions.components.pose_lib import ControlInfo
 from typing import List, Dict
 from dataclasses import dataclass, field
 
-# ANYdrive 3.0 specs (from IsaacLab ANYDRIVE_3_SIMPLE_ACTUATOR_CFG)
+# ANYdrive 3.0 specs (from IsaacLab ANYDRIVE_3_SIMPLE_ACTUATOR_CFG and the
+# ANYDRIVE_3_LSTM actuator net IsaacLabASE trains ANYmal with). The gains were
+# right, but effort/velocity were placeholders at 200 Nm / 40 rad/s -- 2.5x and
+# 5.3x the real drive. A policy that can whip a leg at 2300 deg/s thrashes in
+# ways no ANYmal can, and the AMP discriminator separates it from the mocap on
+# sight: style reward sat at ~0.03 for 12k epochs across three runs.
 KP = 40.0
 KD = 5.0
-EFFORT = 200.0
-VELOCITY_LIMIT = 40.0
+EFFORT = 80.0          # ANYdrive continuous limit (saturation 120)
+VELOCITY_LIMIT = 7.5
 
 # Default X-stance matching IsaacLab ANYMAL_D_CFG init_state
 DEFAULT_JOINT_POS = {
