@@ -132,6 +132,21 @@ def create_parser():
         ),
     )
     parser.add_argument(
+        "--do-terminations",
+        action="store_true",
+        default=False,
+        help=(
+            "End episodes exactly the way training did: keep the run's "
+            "termination_components (they are already in the frozen config), "
+            "restore the discriminator kill EXACTLY as trained (its real "
+            "threshold -- including 0 = off -- grace, ramp, decay, and the "
+            "checkpoint epoch), and restore the training max_episode_length. "
+            "Unlike --amp-disc-term there is no 0.05 fallback: a run trained "
+            "without the style kill is shown without it. Override the horizon "
+            "with --overrides env.max_episode_length=N to watch longer."
+        ),
+    )
+    parser.add_argument(
         "--headless",
         action="store_true",
         default=False,
@@ -449,6 +464,15 @@ def main():
         log.info(f"CLI override: headless = {args.headless}")
         simulator_config.headless = args.headless
 
+    if args.do_terminations:
+        # Subsumes --amp-disc-term (minus its 0.05 fallback: training's
+        # threshold is taken verbatim, so a run trained with the style kill
+        # off is shown with it off). Promoted BEFORE the experiment's
+        # apply_inference_overrides hook runs -- that hook checks
+        # args.amp_disc_term to decide whether to lift max_episode_length to
+        # 1e6, and terminations-as-trained needs the training horizon kept.
+        args.amp_disc_term = True
+
     # Apply the experiment's apply_inference_overrides hook (documented in the
     # precedence list above but historically never invoked: frozen configs
     # carry the hook's state from *training time*, so repo-side changes to the
@@ -561,7 +585,21 @@ def main():
 
         # Inference freezes threshold at 0.0; restore the training value
         # (not a hardcoded 0.05 — runs differ, e.g. utah walk AMP uses 0.02).
-        if amp.discriminator_reward_threshold <= 0.0:
+        if args.do_terminations:
+            # Verbatim: 0 means training had no style kill, so the viewer has
+            # none either. No fallback.
+            if train_amp is not None:
+                amp.discriminator_reward_threshold = float(
+                    getattr(train_amp, "discriminator_reward_threshold", 0.0)
+                )
+            if amp.discriminator_reward_threshold <= 0.0:
+                log.info(
+                    "do-terminations: training had no discriminator kill "
+                    "(threshold 0) -- episodes end only on "
+                    "termination_components %s or timeout",
+                    list(getattr(env_config, "termination_components", {}) or {}),
+                )
+        elif amp.discriminator_reward_threshold <= 0.0:
             if (
                 train_amp is not None
                 and getattr(train_amp, "discriminator_reward_threshold", 0.0)
@@ -586,10 +624,15 @@ def main():
         )
 
         # Inference configs usually set max_episode_length to 1e6 so the
-        # viewer never times out. For disc-term debugging, restore the
-        # training horizon (unless the user already overrode it to a
-        # finite value via --overrides).
-        if env_config.max_episode_length >= 1_000_000:
+        # viewer never times out. For terminations-as-trained, restore the
+        # training horizon -- but an explicit --overrides
+        # env.max_episode_length=N always wins, whatever N is: the horizon is
+        # the one knob the user is invited to turn while everything else
+        # stays exactly as trained.
+        user_set_horizon = bool(
+            cli_overrides and "env.max_episode_length" in cli_overrides
+        )
+        if not user_set_horizon and env_config.max_episode_length >= 1_000_000:
             if train_configs is not None:
                 env_config.max_episode_length = int(
                     train_configs["env"].max_episode_length
