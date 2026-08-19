@@ -43,32 +43,49 @@ mkdir -p "$DEST" 2>/dev/null || { echo "Cannot create $DEST (read-only or no per
 DRY=()
 [ "${1:-}" = "--dry-run" ] && DRY=(--dry-run) && echo "== DRY RUN =="
 
-RS=(rsync -rlt --info=progress2 --human-readable
+# --inplace writes straight into the destination file instead of rsync's
+# default "write .tmp then rename". The drive is NTFS, and a directory whose
+# index is damaged accepts writes but fails EVERY rename with EIO -- which is
+# how a whole stage can fail while the disk looks fine. --inplace also avoids
+# a second full-size temp copy, which matters for 173 MB checkpoints.
+RS=(rsync -rlt --inplace --info=progress2 --human-readable
     --no-perms --no-owner --no-group --modify-window=1 "${DRY[@]}")
 
 cd "$REPO"
 
-echo "== corpora (data/*.pt, recipes, manifests) =="
-mkdir -p "$DEST/data"
-"${RS[@]}" --include='*.pt' --include='*.yaml' --include='*.txt' --include='*.json' \
-           --exclude='*' data/ "$DEST/data/"
+# Each stage is independent, so a failure must not abort the ones after it:
+# with `set -e` a corrupt data/ directory took the whole script down before it
+# ever reached the checkpoints, silently, looking like a clean run.
+FAILED=()
+stage() {  # stage <label> <rsync args...>
+    local label="$1"; shift
+    echo "== $label =="
+    "${RS[@]}" "$@" || { FAILED+=("$label"); echo "!! STAGE FAILED: $label"; }
+}
 
-echo "== motion clip sets (data/motions/) =="
-"${RS[@]}" --delete-excluded --exclude='*_pre_*' --exclude='*.bak*' \
-           data/motions/ "$DEST/data/motions/"
-
-echo "== robot assets (USD / MJCF / meshes / textures) =="
-mkdir -p "$DEST/protomotions/data/assets"
-"${RS[@]}" --exclude='*.bak*' --exclude='*_pre_*' --exclude='*pre_scale*' \
-           protomotions/data/assets/ "$DEST/protomotions/data/assets/"
-
-echo "== checkpoints (last + epoch_1000 + configs per run) =="
+# Checkpoints go FIRST: they are the payload that cannot be regenerated from
+# git, and they used to sit behind three stages that could fail ahead of them.
 mkdir -p "$DEST/results"
-"${RS[@]}" --include='*/' \
-           --include='last.ckpt' --include='epoch_1000.ckpt' \
-           --include='config.yaml' --include='resolved_configs*.pt' \
-           --include='resolved_configs*.yaml' --include='experiment_config.py' \
-           --exclude='*' --prune-empty-dirs results/ "$DEST/results/"
+stage "checkpoints (last + epoch_1000 + configs per run)" \
+      --include='*/' \
+      --include='last.ckpt' --include='epoch_1000.ckpt' \
+      --include='config.yaml' --include='resolved_configs*.pt' \
+      --include='resolved_configs*.yaml' --include='experiment_config.py' \
+      --exclude='*' --prune-empty-dirs results/ "$DEST/results/"
+
+mkdir -p "$DEST/data"
+stage "corpora (data/*.pt, recipes, manifests)" \
+      --include='*.pt' --include='*.yaml' --include='*.txt' --include='*.json' \
+      --exclude='*' data/ "$DEST/data/"
+
+stage "motion clip sets (data/motions/)" \
+      --delete-excluded --exclude='*_pre_*' --exclude='*.bak*' \
+      data/motions/ "$DEST/data/motions/"
+
+mkdir -p "$DEST/protomotions/data/assets"
+stage "robot assets (USD / MJCF / meshes / textures)" \
+      --exclude='*.bak*' --exclude='*_pre_*' --exclude='*pre_scale*' \
+      protomotions/data/assets/ "$DEST/protomotions/data/assets/"
 
 echo
 echo "== verify: newest local run vs the copy on the drive =="
@@ -81,4 +98,11 @@ if [ -n "$NEWEST" ]; then
 fi
 
 echo
+if [ ${#FAILED[@]} -gt 0 ]; then
+    echo "!! ${#FAILED[@]} STAGE(S) FAILED: ${FAILED[*]}"
+    echo "   Repeated 'Input/output error' means a damaged NTFS directory index."
+    echo "   Fix: unmount, then 'sudo ntfsfix -d /dev/sdb1' (or chkdsk /f on Windows)."
+    echo "$DEST holds $(du -sh "$DEST" 2>/dev/null | cut -f1)"
+    exit 1
+fi
 echo "done. $DEST now holds $(du -sh "$DEST" 2>/dev/null | cut -f1)"
