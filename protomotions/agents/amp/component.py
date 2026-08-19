@@ -55,6 +55,25 @@ class AMPTrainingComponent:
             device=agent.device,
             dtype=torch.int32,
         )
+        # Grace-gate state (see evaluate_grace_gate). Sum/count accumulate the
+        # episode's style reward across the protected opening; evaluated/passed
+        # record the one-time verdict taken when the grace expires.
+        self.grace_reward_sum = torch.zeros(agent.num_envs, device=agent.device)
+        self.grace_reward_count = torch.zeros(
+            agent.num_envs, device=agent.device, dtype=torch.int32
+        )
+        self.grace_evaluated = torch.zeros(
+            agent.num_envs, device=agent.device, dtype=torch.bool
+        )
+        self.grace_passed = torch.zeros(
+            agent.num_envs, device=agent.device, dtype=torch.bool
+        )
+        # Verdict computed in record_rollout_step, consumed by the next
+        # post_env_step_modifications -- the rollout loop checks before it
+        # updates, so the streak kill already carries the same one-step lag.
+        self.failed_grace_gate = torch.zeros(
+            agent.num_envs, device=agent.device, dtype=torch.bool
+        )
         if agent.config.normalize_rewards:
             self.running_reward_norm = RewardRunningMeanStd(
                 shape=(1,),
@@ -101,10 +120,88 @@ class AMPTrainingComponent:
             horizon = float(getattr(env.config, "max_episode_length", 0) or 0)
             steps = int(frac * horizon)
         if steps <= 0 or progress is None:
-            return torch.ones(
-                self.agent.num_envs, dtype=torch.bool, device=self.device
+            # Shape from the streak buffer, not agent.num_envs: this runs from
+            # the inference viewer too, where the agent is a thinner object.
+            return torch.ones_like(
+                self.num_cumulative_bad_transitions, dtype=torch.bool
             )
         return progress >= steps
+
+    @property
+    def grace_gate_enabled(self) -> bool:
+        params = self.config.amp_parameters
+        return (
+            int(getattr(params, "discriminator_termination_grace_steps", 0) or 0) > 0
+            or float(getattr(params, "discriminator_termination_grace_frac", 0.0) or 0.0)
+            > 0.0
+        )
+
+    def evaluate_grace_gate(self, amp_rewards: Tensor) -> Tensor:
+        """One verdict per episode, taken the step the grace window expires.
+
+        The guillotine falls at the grace boundary UNLESS the policy did well
+        over the protected window. Survivors then continue NORMALLY -- the
+        ordinary consecutive-bad-transition kill resumes for the rest of the
+        episode, so passing the gate buys a fair start, not immunity.
+
+        "Did well" is the MEAN style reward across the whole window measured
+        against the epoch's active threshold. A mean is what makes this a
+        judgement about the stretch rather than about whichever step happened
+        to land on the boundary.
+
+        The streak is held at zero inside the window, which is what lets
+        "continue normally" mean anything: left running it saturates during the
+        protected steps and fires on the first step past the boundary. That is
+        what anymal_v8 measured -- mean episode length pinned to 100.0 against
+        a 300-step horizon, nothing surviving the boundary. Zeroed, a survivor
+        faces a fresh count and its earliest later kill is grace + streak
+        limit.
+
+        Returns the mask of envs to terminate now.
+        """
+        env = getattr(self.agent, "env", None)
+        if env is None or not self.grace_gate_enabled:
+            return torch.zeros_like(
+                self.num_cumulative_bad_transitions, dtype=torch.bool
+            )
+
+        if getattr(self, "grace_reward_sum", None) is None:
+            return torch.zeros_like(
+                self.num_cumulative_bad_transitions, dtype=torch.bool
+            )
+
+        past = self.past_kill_grace(env)
+        in_grace = ~past
+
+        # Accumulate only inside the window, and keep the streak from building
+        # up there so survivors resume judging from a clean count.
+        self.grace_reward_sum[in_grace] += amp_rewards[in_grace]
+        self.grace_reward_count[in_grace] += 1
+        self.num_cumulative_bad_transitions[in_grace] = 0
+
+        # The verdict is taken once, on the first step at or past the boundary.
+        newly_past = past & ~self.grace_evaluated
+        if not bool(newly_past.any()):
+            return torch.zeros_like(past)
+
+        counts = self.grace_reward_count.clamp(min=1).float()
+        window_mean = self.grace_reward_sum / counts
+        did_well = window_mean >= self.active_disc_threshold
+
+        self.grace_passed[newly_past] = did_well[newly_past]
+        self.grace_evaluated[newly_past] = True
+        return newly_past & ~did_well
+
+    def reset_grace_state(self, done_indices) -> None:
+        """Clear per-episode gate state for envs that just reset."""
+        if done_indices is None or len(done_indices) == 0:
+            return
+        if getattr(self, "grace_reward_sum", None) is None:
+            return
+        self.grace_reward_sum[done_indices] = 0.0
+        self.grace_reward_count[done_indices] = 0
+        self.grace_evaluated[done_indices] = False
+        self.grace_passed[done_indices] = False
 
     @property
     def active_disc_threshold(self) -> float:
@@ -125,7 +222,10 @@ class AMPTrainingComponent:
         base = float(params.discriminator_reward_threshold)
         if base <= 0.0:
             return base
-        epoch = float(self.agent.current_epoch)
+        # Default to epoch 0 rather than requiring the attribute: the inference
+        # viewer sets it from the checkpoint, and lighter agent objects may not
+        # carry it at all.
+        epoch = float(getattr(self.agent, "current_epoch", 0) or 0)
         ramp = int(getattr(params, "discriminator_termination_ramp_epochs", 0) or 0)
         if ramp > 0:
             # Ramp IN, then OFF at the end of the ramp. Harmless while the
@@ -376,6 +476,15 @@ class AMPTrainingComponent:
             discriminator_termination = discriminator_termination & (counter <= 0)
         discriminator_termination = discriminator_termination & self.past_kill_grace(env)
 
+        # The grace verdict: episodes whose window mean fell short of the
+        # threshold die at the boundary. Survivors fall through to the streak
+        # logic above and continue normally.
+        gate_kill = getattr(self, "failed_grace_gate", None)
+        if gate_kill is not None and gate_kill.shape == discriminator_termination.shape:
+            if counter is not None:
+                gate_kill = gate_kill & (counter <= 0)
+            discriminator_termination = discriminator_termination | gate_kill
+
         terminated = terminated | discriminator_termination
         dones = dones | terminated
 
@@ -383,6 +492,8 @@ class AMPTrainingComponent:
             self.num_cumulative_bad_transitions
         )
         extras["amp_discriminator_termination"] = discriminator_termination
+        extras["amp_grace_gate_kill"] = gate_kill
+        extras["amp_grace_passed"] = getattr(self, "grace_passed", None)
         return dones, terminated, extras
 
     @torch.no_grad()
@@ -424,6 +535,7 @@ class AMPTrainingComponent:
         bad_transition = amp_rewards < self.active_disc_threshold
         self.num_cumulative_bad_transitions[bad_transition] += 1
         self.num_cumulative_bad_transitions[~bad_transition] = 0
+        failed_gate = self.evaluate_grace_gate(amp_rewards)
 
         discriminator_termination = (
             self.num_cumulative_bad_transitions
@@ -434,6 +546,9 @@ class AMPTrainingComponent:
         if counter is not None:
             discriminator_termination = discriminator_termination & (counter <= 0)
         discriminator_termination = discriminator_termination & self.past_kill_grace(env)
+        if counter is not None:
+            failed_gate = failed_gate & (counter <= 0)
+        discriminator_termination = discriminator_termination | failed_gate
 
         terminated = terminated | discriminator_termination
         dones = dones | terminated
@@ -441,6 +556,7 @@ class AMPTrainingComponent:
         done_indices = dones.nonzero(as_tuple=False).squeeze(-1)
         if done_indices.numel() > 0:
             self.num_cumulative_bad_transitions[done_indices] = 0
+            self.reset_grace_state(done_indices)
 
         extras["amp_rewards"] = amp_rewards
         extras["amp_cumulative_bad_transitions"] = (
@@ -469,9 +585,11 @@ class AMPTrainingComponent:
         bad_transition = amp_rewards < self.active_disc_threshold
         self.num_cumulative_bad_transitions[bad_transition] += 1
         self.num_cumulative_bad_transitions[~bad_transition] = 0
+        self.failed_grace_gate = self.evaluate_grace_gate(amp_rewards)
 
         if len(done_indices) > 0:
             self.num_cumulative_bad_transitions[done_indices] = 0
+            self.reset_grace_state(done_indices)
 
         if self.use_disc_critic:
             next_disc_value = self.disc_critic(next_obs_td)[
