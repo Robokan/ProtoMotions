@@ -21,11 +21,15 @@ def grad_norm(params):
     Returns:
         Scalar tensor with gradient norm.
     """
-    grad_norm = 0.0
-    for p in params:
-        if p.grad is not None:
-            grad_norm += torch.sum(p.grad**2)
-    return torch.sqrt(grad_norm)
+    grads = [p.grad for p in params if p.grad is not None]
+    if not grads:
+        return torch.zeros(())
+    # Fused multi-tensor norm. The old loop launched two kernels per parameter
+    # (p.grad**2 also allocated a full-size temporary) and this is called
+    # TWICE per optimizer step per model -- five models on ASE -- which put it
+    # at ~5.6% of total training time in a py-spy profile. Same value, one
+    # fused launch.
+    return torch.linalg.vector_norm(torch.stack(torch._foreach_norm(grads)))
 
 
 def to_torch(
