@@ -137,25 +137,26 @@ class AMPTrainingComponent:
         )
 
     def evaluate_grace_gate(self, amp_rewards: Tensor) -> Tensor:
-        """One verdict per episode, taken the step the grace window expires.
+        """Judge the episode one window at a time, on the window's MEAN.
 
-        The guillotine falls at the grace boundary UNLESS the policy did well
-        over the protected window. Survivors then continue NORMALLY -- the
-        ordinary consecutive-bad-transition kill resumes for the rest of the
-        episode, so passing the gate buys a fair start, not immunity.
+        The episode is cut into consecutive windows of grace_steps. Each window
+        accumulates style reward; when it closes, its mean is compared against
+        the epoch's active threshold. Below it the episode ends there; at or
+        above it, the next window opens and the policy gets that stretch too.
+        Every window is judged the same way, including the first -- so the
+        opening stretch is protected exactly as much as any later one, no more.
 
-        "Did well" is the MEAN style reward across the whole window measured
-        against the epoch's active threshold. A mean is what makes this a
-        judgement about the stretch rather than about whichever step happened
-        to land on the boundary.
-
-        The streak is held at zero inside the window, which is what lets
-        "continue normally" mean anything: left running it saturates during the
-        protected steps and fires on the first step past the boundary. That is
-        what anymal_v8 measured -- mean episode length pinned to 100.0 against
-        a 300-step horizon, nothing surviving the boundary. Zeroed, a survivor
-        faces a fresh count and its earliest later kill is grace + streak
-        limit.
+        This REPLACES the consecutive-bad-transition streak whenever a grace is
+        configured; the caller must not also apply the streak. The two ask
+        incompatible questions and the streak is strictly harsher: measured on
+        anymal_v9 at epoch 450, style reward had mean 0.102 against a 0.0155
+        threshold, so a 100-step mean cleared it by 3.7 sigma while ten
+        CONSECUTIVE sub-threshold steps still arrived within a few steps of the
+        window opening -- the distribution is skewed with a floor near zero.
+        Every episode passed the mean test and died on the streak anyway,
+        pinning episode length to exactly grace + streak limit (110.0). A mean
+        answers "is this stretch good"; a streak answers "was there a bad
+        patch", and at this variance the latter fires on noise.
 
         Returns the mask of envs to terminate now.
         """
@@ -170,27 +171,50 @@ class AMPTrainingComponent:
                 self.num_cumulative_bad_transitions, dtype=torch.bool
             )
 
-        past = self.past_kill_grace(env)
-        in_grace = ~past
+        window = self.grace_window_steps(env)
+        if window <= 0:
+            return torch.zeros_like(
+                self.num_cumulative_bad_transitions, dtype=torch.bool
+            )
 
-        # Accumulate only inside the window, and keep the streak from building
-        # up there so survivors resume judging from a clean count.
-        self.grace_reward_sum[in_grace] += amp_rewards[in_grace]
-        self.grace_reward_count[in_grace] += 1
-        self.num_cumulative_bad_transitions[in_grace] = 0
+        # Accumulate this step into the open window. The streak is held at zero
+        # throughout: it is not the judge here, and leaving it to climb would
+        # let the caller's streak check fire the moment a window closes.
+        self.grace_reward_sum += amp_rewards
+        self.grace_reward_count += 1
+        self.num_cumulative_bad_transitions.zero_()
 
-        # The verdict is taken once, on the first step at or past the boundary.
-        newly_past = past & ~self.grace_evaluated
-        if not bool(newly_past.any()):
-            return torch.zeros_like(past)
+        # A window closes once it has collected `window` steps.
+        closing = self.grace_reward_count >= window
+        if not bool(closing.any()):
+            return torch.zeros_like(closing)
 
-        counts = self.grace_reward_count.clamp(min=1).float()
-        window_mean = self.grace_reward_sum / counts
+        window_mean = self.grace_reward_sum / self.grace_reward_count.clamp(min=1)
         did_well = window_mean >= self.active_disc_threshold
 
-        self.grace_passed[newly_past] = did_well[newly_past]
-        self.grace_evaluated[newly_past] = True
-        return newly_past & ~did_well
+        # Roll the survivors into a fresh window; the failures terminate.
+        rolling = closing & did_well
+        self.grace_passed = torch.where(closing, did_well, self.grace_passed)
+        self.grace_evaluated |= closing
+        self.grace_reward_sum[rolling] = 0.0
+        self.grace_reward_count[rolling] = 0
+        return closing & ~did_well
+
+    def grace_window_steps(self, env) -> int:
+        """Length of one judging window, in control steps."""
+        params = self.config.amp_parameters
+        steps = int(
+            getattr(params, "discriminator_termination_grace_steps", 0) or 0
+        )
+        if steps > 0:
+            return steps
+        frac = float(
+            getattr(params, "discriminator_termination_grace_frac", 0.0) or 0.0
+        )
+        if frac <= 0.0 or env is None:
+            return 0
+        horizon = float(getattr(env.config, "max_episode_length", 0) or 0)
+        return int(frac * horizon)
 
     def reset_grace_state(self, done_indices) -> None:
         """Clear per-episode gate state for envs that just reset."""
@@ -483,7 +507,13 @@ class AMPTrainingComponent:
         if gate_kill is not None and gate_kill.shape == discriminator_termination.shape:
             if counter is not None:
                 gate_kill = gate_kill & (counter <= 0)
-            discriminator_termination = discriminator_termination | gate_kill
+            # The windowed gate REPLACES the streak -- running both means the
+            # harsher one decides, and the streak is harsher at any realistic
+            # reward variance. See evaluate_grace_gate.
+            if self.grace_gate_enabled:
+                discriminator_termination = gate_kill
+            else:
+                discriminator_termination = discriminator_termination | gate_kill
 
         terminated = terminated | discriminator_termination
         dones = dones | terminated
@@ -548,7 +578,11 @@ class AMPTrainingComponent:
         discriminator_termination = discriminator_termination & self.past_kill_grace(env)
         if counter is not None:
             failed_gate = failed_gate & (counter <= 0)
-        discriminator_termination = discriminator_termination | failed_gate
+        # Windowed gate replaces the streak (see evaluate_grace_gate).
+        if self.grace_gate_enabled:
+            discriminator_termination = failed_gate
+        else:
+            discriminator_termination = discriminator_termination | failed_gate
 
         terminated = terminated | discriminator_termination
         dones = dones | terminated
