@@ -26,7 +26,19 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DRIVE="${ELEMENTS_DIR:-/mnt/usb-WD_Elements_2621_575846324434334A5246534B-0:0-part1}"
 DEST="$DRIVE/ProtoMotionsData"
 
-[ -d "$DRIVE" ] || { echo "Elements drive not mounted at $DRIVE"; exit 1; }
+# The mount POINT is a permanent root-owned directory that exists whether or
+# not the drive is plugged in, so `[ -d ]` is not a mount check: with the drive
+# absent it passes, and the run then dies on the first mkdir with a permission
+# error that looks like a completed run. Demand an actual mounted filesystem,
+# and prove it is writable before copying 32 GB at it.
+if ! mountpoint -q "$DRIVE"; then
+    echo "Elements drive is NOT mounted at $DRIVE"
+    echo "Plug it in, or point ELEMENTS_DIR at where it actually mounted:"
+    lsblk -o NAME,LABEL,SIZE,MOUNTPOINT | grep -iE 'elements|part1' || true
+    exit 1
+fi
+mkdir -p "$DEST" 2>/dev/null || { echo "Cannot create $DEST (read-only or no permission)"; exit 1; }
+[ -w "$DEST" ] || { echo "$DEST is not writable -- NTFS may have mounted read-only after an unclean eject"; exit 1; }
 
 DRY=()
 [ "${1:-}" = "--dry-run" ] && DRY=(--dry-run) && echo "== DRY RUN =="
@@ -57,6 +69,16 @@ mkdir -p "$DEST/results"
            --include='config.yaml' --include='resolved_configs*.pt' \
            --include='resolved_configs*.yaml' --include='experiment_config.py' \
            --exclude='*' --prune-empty-dirs results/ "$DEST/results/"
+
+echo
+echo "== verify: newest local run vs the copy on the drive =="
+# Only last.ckpt and epoch_1000.ckpt are copied per run -- the epoch_N series
+# stays behind. Print the newest run both sides so a silent no-op is visible.
+NEWEST="$(ls -1dt results/*/ 2>/dev/null | head -1 | xargs -r basename)"
+if [ -n "$NEWEST" ]; then
+    echo "newest local run: $NEWEST"
+    ls -l "$DEST/results/$NEWEST/" 2>&1 | tail -n +2 || echo "  MISSING on drive"
+fi
 
 echo
 echo "done. $DEST now holds $(du -sh "$DEST" 2>/dev/null | cut -f1)"
