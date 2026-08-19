@@ -1008,6 +1008,35 @@ def fall_termination_factory(termination_height: float = 0.15) -> MdpComponent:
     )
 
 
+def rolled_over_term_factory(
+    max_tilt_deg: float = 120.0, min_progress: int = 5
+) -> MdpComponent:
+    """Factory for orientation-based rollover termination.
+
+    Ends the episode when the base tilts more than `max_tilt_deg` from upright.
+    Unlike the discriminator kill this asks a physical question the mocap can
+    answer unambiguously -- a quadruped on its back is somewhere the corpus
+    never goes -- so it does not depend on the discriminator's reward scale
+    drifting over training.
+
+    The env gates all termination_components on `recovery_counter <= 0`, so a
+    get-up episode spawned on the floor keeps its full recovery window.
+    """
+    from protomotions.envs.terminations import rolled_over_termination
+
+    return MdpComponent(
+        compute_func=rolled_over_termination,
+        dynamic_vars={
+            "root_rot": EnvContext.current.root_rot,
+            "progress_buf": EnvContext.progress_buf,
+        },
+        static_params={
+            "max_tilt_deg": max_tilt_deg,
+            "min_progress": min_progress,
+        },
+    )
+
+
 # =============================================================================
 # BeyondMimic Reward Factories
 # =============================================================================

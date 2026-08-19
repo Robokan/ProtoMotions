@@ -164,6 +164,19 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
         ),
     )
 
+    roll_deg = float(getattr(args, "roll_term_deg", 0.0) or 0.0)
+    if roll_deg > 0.0:
+        from protomotions.envs.component_factories import rolled_over_term_factory
+
+        # A physical kill, independent of the discriminator: on its back is a
+        # state the corpus never contains, so the style reward has no opinion
+        # worth acting on there. The env suppresses this during the get-up
+        # recovery window (termination_components are gated on
+        # recovery_counter <= 0), so fallen starts keep their full window.
+        env_config.termination_components["rolled_over"] = rolled_over_term_factory(
+            max_tilt_deg=roll_deg
+        )
+
     if wants_deployable_obs(args):
         from protomotions.envs.component_factories import reduced_coords_obs_factory
 
@@ -503,6 +516,14 @@ def additional_experiment_arguments(parser):
         "--privileged-obs", action="store_true",
         help="Force the actor onto privileged whole-body simulator state, "
              "overriding the per-robot deployable default.")
+    parser.add_argument(
+        "--roll-term-deg", type=float, default=0.0,
+        help="End the episode when the base tilts more than N degrees from "
+             "upright (0 = off). A physical rollover test, independent of the "
+             "discriminator: on its back is a state the mocap never visits, so "
+             "the style reward has nothing useful to say there. 90 fires at "
+             "horizontal, 120 means clearly onto its back. Suppressed during "
+             "the get-up recovery window.")
     parser.add_argument(
         "--disc-term-grace-steps", type=int, default=0,
         help="Per-episode grace: the style kill cannot fire for the first N "

@@ -9,6 +9,8 @@ Provides core functions for checking common termination conditions:
 - Generic threshold termination
 """
 
+import math
+
 import torch
 from torch import Tensor
 
@@ -260,3 +262,48 @@ def contact_termination(
         progress_buf=progress_buf,
     )
 
+
+
+def rolled_over_termination(
+    root_rot: Tensor,
+    max_tilt_deg: float,
+    progress_buf: Tensor,
+    min_progress: int = 5,
+    w_last: bool = True,
+) -> Tensor:
+    """Terminate when the base has tilted past `max_tilt_deg` from upright.
+
+    A quadruped on its back is in a state the mocap corpus never visits, so the
+    discriminator has nothing sensible to say about it and the policy can spend
+    whole episodes there. This is the physical, corpus-independent version of
+    that judgement: it asks where the robot's own up-axis points, not whether
+    the style reward liked the last few frames.
+
+    Gravity in the base frame reads -1 in z when upright, 0 on its side, and +1
+    fully inverted, so the test is a direct cosine comparison. 90 deg fires the
+    moment the base passes horizontal; 120 deg means clearly past onto its back
+    rather than merely stumbling.
+
+    Episodes inside the get-up recovery window are NOT excluded here -- the env
+    gates every termination_component on `recovery_counter <= 0` (see
+    check_resets_and_terminations), so a robot deliberately spawned on the floor
+    keeps its whole window to stand up. `min_progress` only guards the first few
+    steps of ordinary episodes against a bad reset pose.
+
+    Args:
+        root_rot: Base orientation quaternion [num_envs, 4].
+        max_tilt_deg: Tilt from upright, in degrees, that ends the episode.
+        progress_buf: Episode progress counter [num_envs].
+        min_progress: Steps to skip at episode start.
+        w_last: True if quaternions are xyzw ordered.
+
+    Returns:
+        Boolean tensor [num_envs], True where the robot has rolled over.
+    """
+    from protomotions.envs.obs.humanoid import root_projected_gravity
+
+    proj_gravity = root_projected_gravity(root_rot, w_last=w_last)
+    # cos(tilt) between the body up-axis and world up; -1 upright, +1 inverted.
+    cos_tilt = -proj_gravity[:, 2]
+    rolled = cos_tilt < math.cos(math.radians(max_tilt_deg))
+    return rolled & (progress_buf > min_progress)
