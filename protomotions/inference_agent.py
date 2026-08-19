@@ -527,14 +527,41 @@ def main():
         # training, not as it stands now: a run past its decay window has the
         # kill off, yet the viewer still guillotines every episode. Pre-decay
         # the restored value using the checkpoint's own epoch.
+        train_amp = None
+        if train_configs is not None:
+            train_amp = getattr(train_configs.get("agent"), "amp_parameters", None)
+
+        # Restore the WHOLE kill configuration, not just the threshold. These
+        # fields come from CLI flags at train time, so an inference run that
+        # only passes --checkpoint gets the experiment file's defaults -- all
+        # zeros -- for every one of them. That silently disables the grace
+        # gate, and the viewer then kills at max_cumulative_bad_transitions
+        # while training kills at grace + that, i.e. the flag shows behaviour
+        # the trained policy never experienced. Whatever the run was actually
+        # trained with wins; anything the user passed explicitly is left alone.
+        SHAPE_FIELDS = (
+            "discriminator_termination_grace_steps",
+            "discriminator_termination_grace_frac",
+            "discriminator_termination_ramp_epochs",
+            "discriminator_termination_decay_epochs",
+            "discriminator_max_cumulative_bad_transitions",
+        )
+        if train_amp is not None:
+            for field_name in SHAPE_FIELDS:
+                train_value = getattr(train_amp, field_name, None)
+                if train_value is None:
+                    continue
+                if getattr(amp, field_name, None) != train_value:
+                    log.info(
+                        "AMP disc term: restoring %s = %s from the training run",
+                        field_name,
+                        train_value,
+                    )
+                    setattr(amp, field_name, train_value)
+
         # Inference freezes threshold at 0.0; restore the training value
         # (not a hardcoded 0.05 — runs differ, e.g. utah walk AMP uses 0.02).
         if amp.discriminator_reward_threshold <= 0.0:
-            train_amp = None
-            if train_configs is not None:
-                train_amp = getattr(
-                    train_configs.get("agent"), "amp_parameters", None
-                )
             if (
                 train_amp is not None
                 and getattr(train_amp, "discriminator_reward_threshold", 0.0)
@@ -546,32 +573,17 @@ def main():
             else:
                 amp.discriminator_reward_threshold = 0.05
 
-        ramp_epochs = int(
-            getattr(amp, "discriminator_termination_ramp_epochs", 0) or 0
-        )
-        decay_epochs = int(
-            getattr(amp, "discriminator_termination_decay_epochs", 0) or 0
-        )
-        if ramp_epochs > 0 or decay_epochs > 0:
-            ckpt_epoch = int(
-                torch.load(checkpoint, map_location="cpu", weights_only=False)
-                .get("epoch", 0)
+        # The ramp/decay is NOT applied here. active_disc_threshold computes it
+        # from agent.current_epoch, which is set from this checkpoint right
+        # after agent.load() -- doing it in both places multiplied the schedule
+        # in twice, and for a ramped run that resolved the threshold to exactly
+        # zero (epoch/ramp with epoch treated as 0), silently disabling the
+        # kill the flag exists to display.
+        _AMP_DISC_TERM_CKPT_EPOCH = int(
+            torch.load(checkpoint, map_location="cpu", weights_only=False).get(
+                "epoch", 0
             )
-            if ramp_epochs > 0:
-                frac = 0.0 if ckpt_epoch >= ramp_epochs else ckpt_epoch / ramp_epochs
-                shape = f"ramp over {ramp_epochs} epochs, then off"
-            else:
-                frac = max(0.0, 1.0 - ckpt_epoch / decay_epochs)
-                shape = f"decay over {decay_epochs} epochs"
-            amp.discriminator_reward_threshold *= frac
-            log.info(
-                "AMP disc term at checkpoint epoch %d: threshold %.5f "
-                "(%.0f%% of the configured value; %s)",
-                ckpt_epoch,
-                amp.discriminator_reward_threshold,
-                100 * frac,
-                shape,
-            )
+        )
 
         # Inference configs usually set max_episode_length to 1e6 so the
         # viewer never times out. For disc-term debugging, restore the
@@ -939,6 +951,28 @@ def main():
 
     agent.setup()
     agent.load(args.checkpoint, load_env=False, load_training_state=False)
+
+    if args.amp_disc_term:
+        # load_training_state=False leaves current_epoch at 0, but the kill's
+        # ramp/decay is a function of the epoch. Set it from the checkpoint so
+        # the runtime schedule resolves to the same threshold the policy was
+        # last trained under -- one source of truth, rather than pre-computing
+        # the value here and having active_disc_threshold apply the schedule a
+        # second time on top of it.
+        agent.current_epoch = _AMP_DISC_TERM_CKPT_EPOCH
+        amp_comp = getattr(agent, "amp_component", None)
+        if amp_comp is not None:
+            params = agent.config.amp_parameters
+            log.info(
+                "AMP disc term ACTIVE: epoch=%d threshold=%.5f grace_steps=%s "
+                "max_bad=%s  -> earliest style kill at step %s",
+                agent.current_epoch,
+                amp_comp.active_disc_threshold,
+                params.discriminator_termination_grace_steps,
+                params.discriminator_max_cumulative_bad_transitions,
+                int(params.discriminator_termination_grace_steps or 0)
+                + int(params.discriminator_max_cumulative_bad_transitions),
+            )
     if args.stream_ue:
         import sys as _sys
 
