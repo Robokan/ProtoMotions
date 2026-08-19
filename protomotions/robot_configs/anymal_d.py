@@ -57,19 +57,17 @@ DEFAULT_JOINT_POS = {
 
 @dataclass
 class AnymalDRobotConfig(RobotConfig):
-    # ASE/AMP discriminator body subset. IsaacLabASE's working ANYmal ASE
-    # shows the discriminator FOUR key bodies (the shanks) rather than all
-    # 17; the un-subsetted version has the raptor's failure mode -- hips and
-    # thighs move in ways the policy cannot reproduce, so the discriminator
-    # separates agent from reference on jitter instead of gait. Feet are
-    # omitted here for the same reason they are named on the raptor: the
-    # shank already carries the swing, and the foot adds a fast segment the
-    # policy would be judged on but cannot track.
-    disc_bodies_subset: List[str] = field(
-        default_factory=lambda: [
-            "LF_SHANK", "RF_SHANK", "LH_SHANK", "RH_SHANK",
-        ]
-    )
+    # NO disc_bodies_subset -- the discriminator sees ALL 17 bodies, like
+    # Atlas. The subset (base + 4 shanks) was added by analogy to the raptor,
+    # whose 1.4 g digit segments genuinely are unreproducible jitter. ANYmal
+    # has no such segments, and its flailing turned out to be the actuator
+    # limits (200 Nm / 40 rad/s vs the real 80 / 7.5) plus action scaling
+    # across +-540 deg joints -- both since fixed. Meanwhile the subset cut
+    # the discriminator from 496 to 76 dims per step and hid every hip, thigh
+    # and foot, i.e. the entire gait: style reward oscillated 0.5 <-> 0.002
+    # over 20k epochs and the MI encoder, which shares the discriminator
+    # trunk, flatlined at 0.500 (zero information about which latent produced
+    # a motion). Atlas trains fine on the full body view.
 
     # Action-scaling ranges, measured from anymal_d_flat.pt (164k frames,
     # 372 clips) and widened by 20 deg. The URDF declares every HFE/KFE as
