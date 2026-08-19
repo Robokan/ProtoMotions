@@ -520,6 +520,13 @@ def main():
                 train_configs_path, map_location="cpu", weights_only=False
             )
 
+        # The DECAY is applied per-epoch from agent.current_epoch, which only
+        # _load_training_state restores -- inference never calls it, so the
+        # agent believes it is at epoch 0 and applies the FULL starting
+        # threshold. That shows the kill as it was at the beginning of
+        # training, not as it stands now: a run past its decay window has the
+        # kill off, yet the viewer still guillotines every episode. Pre-decay
+        # the restored value using the checkpoint's own epoch.
         # Inference freezes threshold at 0.0; restore the training value
         # (not a hardcoded 0.05 — runs differ, e.g. utah walk AMP uses 0.02).
         if amp.discriminator_reward_threshold <= 0.0:
@@ -538,6 +545,33 @@ def main():
                 )
             else:
                 amp.discriminator_reward_threshold = 0.05
+
+        ramp_epochs = int(
+            getattr(amp, "discriminator_termination_ramp_epochs", 0) or 0
+        )
+        decay_epochs = int(
+            getattr(amp, "discriminator_termination_decay_epochs", 0) or 0
+        )
+        if ramp_epochs > 0 or decay_epochs > 0:
+            ckpt_epoch = int(
+                torch.load(checkpoint, map_location="cpu", weights_only=False)
+                .get("epoch", 0)
+            )
+            if ramp_epochs > 0:
+                frac = 0.0 if ckpt_epoch >= ramp_epochs else ckpt_epoch / ramp_epochs
+                shape = f"ramp over {ramp_epochs} epochs, then off"
+            else:
+                frac = max(0.0, 1.0 - ckpt_epoch / decay_epochs)
+                shape = f"decay over {decay_epochs} epochs"
+            amp.discriminator_reward_threshold *= frac
+            log.info(
+                "AMP disc term at checkpoint epoch %d: threshold %.5f "
+                "(%.0f%% of the configured value; %s)",
+                ckpt_epoch,
+                amp.discriminator_reward_threshold,
+                100 * frac,
+                shape,
+            )
 
         # Inference configs usually set max_episode_length to 1e6 so the
         # viewer never times out. For disc-term debugging, restore the

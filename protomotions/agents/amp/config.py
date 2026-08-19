@@ -64,6 +64,52 @@ class AMPParametersConfig:
         default=0.05,
         metadata={"help": "Threshold for discriminator reward termination.", "min": 0.0, "max": 1.0}
     )
+    discriminator_termination_grace_steps: int = field(
+        default=0,
+        metadata={
+            "help": "Absolute per-episode grace, in control steps, before the "
+                    "style kill can fire. Takes precedence over "
+                    "discriminator_termination_grace_frac. Prefer this when "
+                    "comparing runs: a fixed step count means the same amount "
+                    "of protected experience even if the episode horizon "
+                    "changes. 100 steps is 2 s at 50 Hz control.",
+            "min": 0,
+        },
+    )
+    discriminator_termination_grace_frac: float = field(
+        default=0.0,
+        metadata={
+            "help": "Fraction of each episode immune to the style kill. The "
+                    "kill exists to stop a policy from parking in the "
+                    "standing-still minimum, not to cut every episode short: "
+                    "with no grace, a struggling policy died at 16 steps "
+                    "(0.32 s) on ANYmal and never accumulated enough "
+                    "continuous experience to improve. A grace gives every "
+                    "episode a guaranteed floor -- 0.25 of a 300-step episode "
+                    "is 75 steps -- while the remaining 3/4 still punishes "
+                    "loitering. Unlike the epoch schedules this does not care "
+                    "how good the policy is, so it keeps working late in "
+                    "training when the discriminator's reward scale has "
+                    "drifted. 0 = no grace.",
+            "min": 0.0,
+            "max": 1.0,
+        },
+    )
+    discriminator_termination_ramp_epochs: int = field(
+        default=0,
+        metadata={
+            "help": "Linearly RAMP the style kill from 0 up to "
+                    "discriminator_reward_threshold over this many epochs, "
+                    "then hold. Takes precedence over the decay. Use this "
+                    "when the kill is meant to stop a COMPETENT policy from "
+                    "settling into standing still: at epoch 0 a random policy "
+                    "looks unnatural no matter what it does, so a full "
+                    "threshold executes it before it can attempt anything "
+                    "(measured on ANYmal: 0.32 s episodes, flat for 300 "
+                    "epochs). 0 = no ramp.",
+            "min": 0,
+        },
+    )
     discriminator_termination_decay_epochs: int = field(
         default=0,
         metadata={

@@ -287,6 +287,12 @@ def agent_config(
     agent_config.amp_parameters.discriminator_termination_decay_epochs = int(
         getattr(args, "disc_term_decay_epochs", 0) or 0
     )
+    agent_config.amp_parameters.discriminator_termination_ramp_epochs = int(
+        getattr(args, "disc_term_ramp_epochs", 0) or 0
+    )
+    agent_config.amp_parameters.discriminator_termination_grace_steps = int(
+        getattr(args, "disc_term_grace_steps", 0) or 0
+    )
     return agent_config
 
 
@@ -323,6 +329,18 @@ def additional_experiment_arguments(parser):
         help="Pin the warm-started policy's input normalization (the EMA "
              "normalizer otherwise re-centers within epochs and collapses "
              "the inherited behavior while the weights stay intact).")
+    parser.add_argument(
+        "--disc-term-grace-steps", type=int, default=0,
+        help="Per-episode grace: the style kill cannot fire for the first N "
+             "control steps of an episode. Guarantees every episode a floor "
+             "of continuous experience regardless of how good the policy is, "
+             "which the epoch schedules cannot do.")
+    parser.add_argument(
+        "--disc-term-ramp-epochs", type=int, default=0,
+        help="Ramp the style kill from 0 UP to --disc-term-threshold over N "
+             "epochs, then hold. Takes precedence over the decay. A random "
+             "policy cannot satisfy any threshold, so a full kill at epoch 0 "
+             "just executes it before it can try anything.")
     parser.add_argument(
         "--disc-term-decay-epochs", type=int, default=0,
         help="Decay --disc-term-threshold linearly to 0 over N epochs, then "

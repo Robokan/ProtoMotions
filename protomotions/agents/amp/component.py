@@ -80,24 +80,65 @@ class AMPTrainingComponent:
     def config(self):
         return self.agent.config
 
+
+    def past_kill_grace(self, env) -> Tensor:
+        """True where an env is past its per-episode style-kill grace window.
+
+        Every episode gets a guaranteed opening stretch the kill cannot touch,
+        so a struggling policy still accumulates continuous experience instead
+        of dying in a third of a second. grace_steps wins over grace_frac;
+        returns an all-True tensor when neither is configured.
+        """
+        params = self.config.amp_parameters
+        steps = int(
+            getattr(params, "discriminator_termination_grace_steps", 0) or 0
+        )
+        frac = float(
+            getattr(params, "discriminator_termination_grace_frac", 0.0) or 0.0
+        )
+        progress = getattr(env, "progress_buf", None) if env is not None else None
+        if progress is not None and steps <= 0 and frac > 0.0:
+            horizon = float(getattr(env.config, "max_episode_length", 0) or 0)
+            steps = int(frac * horizon)
+        if steps <= 0 or progress is None:
+            return torch.ones(
+                self.agent.num_envs, dtype=torch.bool, device=self.device
+            )
+        return progress >= steps
+
     @property
     def active_disc_threshold(self) -> float:
         """Style-kill threshold for THIS epoch.
 
-        With discriminator_termination_decay_epochs > 0 the configured
-        threshold decays linearly to 0 and the kill switches off for the rest
-        of the run: lethal early (standing still cannot pay), harmless once
-        the policy is worth keeping. NOTE (Eric, 2026-08-16): an earlier
+        Two shapes, ramp taking precedence:
+        * discriminator_termination_ramp_epochs > 0 -- rise from 0 to the
+          configured threshold across N epochs, then switch OFF entirely. The kill exists to stop a COMPETENT
+          policy from settling into standing still; at epoch 0 a random policy
+          cannot satisfy any threshold, so starting at full strength just
+          executes it (ANYmal: 0.32 s episodes, flat for 300 epochs).
+        * discriminator_termination_decay_epochs > 0 -- decay to 0 and stay
+          off: lethal early, harmless once the policy is worth keeping. NOTE (Eric, 2026-08-16): an earlier
         anneal let a from-scratch run retire into standing the moment the
         kill expired -- watch the gait across the decay boundary.
         """
         params = self.config.amp_parameters
         base = float(params.discriminator_reward_threshold)
-        n = int(getattr(params, "discriminator_termination_decay_epochs", 0) or 0)
-        if n <= 0 or base <= 0.0:
+        if base <= 0.0:
             return base
-        remaining = 1.0 - (float(self.agent.current_epoch) / float(n))
-        return base * max(0.0, remaining)
+        epoch = float(self.agent.current_epoch)
+        ramp = int(getattr(params, "discriminator_termination_ramp_epochs", 0) or 0)
+        if ramp > 0:
+            # Ramp IN, then OFF at the end of the ramp. Harmless while the
+            # policy is random (it cannot satisfy any threshold yet), strongest
+            # just as standing still becomes a temptation, then gone before it
+            # can guillotine the converged policy it produced.
+            if epoch >= ramp:
+                return 0.0
+            return base * (epoch / float(ramp))
+        n = int(getattr(params, "discriminator_termination_decay_epochs", 0) or 0)
+        if n <= 0:
+            return base
+        return base * max(0.0, 1.0 - (epoch / float(n)))
 
     @property
     def device(self):
@@ -333,6 +374,7 @@ class AMPTrainingComponent:
         counter = getattr(env, "recovery_counter", None)
         if counter is not None:
             discriminator_termination = discriminator_termination & (counter <= 0)
+        discriminator_termination = discriminator_termination & self.past_kill_grace(env)
 
         terminated = terminated | discriminator_termination
         dones = dones | terminated
@@ -391,6 +433,7 @@ class AMPTrainingComponent:
         counter = getattr(env, "recovery_counter", None)
         if counter is not None:
             discriminator_termination = discriminator_termination & (counter <= 0)
+        discriminator_termination = discriminator_termination & self.past_kill_grace(env)
 
         terminated = terminated | discriminator_termination
         dones = dones | terminated
