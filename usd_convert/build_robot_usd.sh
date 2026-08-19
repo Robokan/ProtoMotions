@@ -21,8 +21,8 @@
 #   - no worldbody strip  -> two prims carry ArticulationRootAPI and the sim
 #                            dies with "Failed to find a single articulation"
 #
-# Run this on any machine that needs the assets (the usd/ trees are gitignored,
-# so a fresh checkout has the MJCF but not the USD).
+# Most robots' USD is committed; ATLAS is gitignored (.gitignore:29), so a
+# fresh checkout has its MJCF but not its USD and must rebuild or restore it.
 #
 #     usd_convert/build_robot_usd.sh --list          # what can be built
 #     usd_convert/build_robot_usd.sh atlas --dry-run # print the commands only

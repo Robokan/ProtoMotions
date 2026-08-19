@@ -3,9 +3,11 @@
 The MJCF is the source of truth for every robot we author (Atlas, T800, tiger,
 raptor, utahraptor). Isaac needs USD. This directory turns one into the other.
 
-**The `usd/` trees are gitignored**, so a fresh checkout — or a new machine like
-the DGX Spark — has the MJCF and none of the USD, and has to rebuild. That is
-what this doc and `build_robot_usd.sh` exist to make survivable.
+Most robots' USD **is** committed (t800, tiger, raptor, utahraptor, samurai, the
+g1/h1 family). **Atlas is the exception** — `.gitignore:29` excludes
+`protomotions/data/assets/usd/atlas/`, so a fresh checkout has Atlas's MJCF and
+none of its USD. Either copy `usd/atlas/` from the Elements backup or rebuild it
+with `build_robot_usd.sh atlas`.
 
 ## Just build it
 
