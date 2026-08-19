@@ -1599,10 +1599,30 @@ class BaseEnv:
         # banked mid-air poses on a misconfigured settle time.
         speed = state.root_vel.norm(dim=-1) if state.root_vel is not None \
             else torch.zeros(num, device=self.device)
+        # A settle that destabilizes (Newton/MJWarp on a mesh-heavy robot does
+        # this) banks NaN poses, and every episode spawned from one is poisoned
+        # from its first step: the terrain observation subtracts a non-finite
+        # root height, the policy sees NaN and its action distribution follows
+        # hundreds of epochs later. Keep only finite entries.
+        finite = (
+            torch.isfinite(root_z_rel)
+            & torch.isfinite(state.root_rot).all(dim=-1)
+            & torch.isfinite(state.dof_pos).all(dim=-1)
+        )
+        n_bad = int((~finite).sum())
+        if n_bad:
+            print(f"[getup] dropped {n_bad}/{num} non-finite fall poses "
+                  f"(unstable settle on this physics backend)", flush=True)
+        if not bool(finite.any()):
+            raise RuntimeError(
+                "fall-state generation produced no finite poses; the settle "
+                "is diverging on this physics backend"
+            )
+        keep = finite.nonzero(as_tuple=False).flatten()
         self._fall_states = {
-            "root_z_rel": root_z_rel.clone(),
-            "root_rot": state.root_rot.clone(),
-            "dof_pos": state.dof_pos.clone(),
+            "root_z_rel": root_z_rel[keep].clone(),
+            "root_rot": state.root_rot[keep].clone(),
+            "dof_pos": state.dof_pos[keep].clone(),
         }
         print(f"[getup] fall-state bank: {num} poses after "
               f"{cfg.fall_state_settle_steps} settle steps "

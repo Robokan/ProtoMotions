@@ -144,6 +144,16 @@ def create_parser():
         help="Simulator to use (e.g., 'isaacgym', 'isaaclab', 'newton', 'genesis')",
     )
     parser.add_argument(
+        "--physics",
+        type=str,
+        default=None,
+        choices=["physx", "newton"],
+        help="Isaac Lab physics backend. Defaults to whatever the checkpoint "
+        "trained under. The backend is bound when the simulation context is "
+        "created, so it CANNOT be switched from the Kit menu mid-session -- "
+        "choose it here.",
+    )
+    parser.add_argument(
         "--num-envs", type=int, default=1, help="Number of parallel environments to run"
     )
     parser.add_argument(
@@ -363,6 +373,14 @@ def main():
     if getattr(simulator_config, "domain_randomization", None) is not None:
         log.info("Stripping training-time domain_randomization for inference")
         simulator_config.domain_randomization = None
+    if getattr(args, "physics", None) and hasattr(simulator_config, "physics_backend"):
+        if simulator_config.physics_backend != args.physics:
+            log.info(
+                "Physics backend: %s (checkpoint trained under %s)",
+                args.physics,
+                simulator_config.physics_backend,
+            )
+        simulator_config.physics_backend = args.physics
     terrain_config = resolved_configs.get("terrain")
     scene_lib_config = resolved_configs["scene_lib"]
     motion_lib_config = resolved_configs["motion_lib"]

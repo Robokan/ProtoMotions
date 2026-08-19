@@ -82,6 +82,11 @@ def agent_config(robot_config, env_config, args: argparse.Namespace):
 
 
 def additional_experiment_arguments(parser):
+    # train_agent.py calls exactly ONE of these hooks, so defining it here
+    # shadows the base file's -- without this delegation --disc-term-threshold
+    # and --disc-term-decay-epochs silently vanish and the launch dies on an
+    # "unrecognized arguments" error.
+    _base.additional_experiment_arguments(parser)
     parser.add_argument(
         "--sim-dr", action="store_true",
         help="Engine-transfer domain randomization: per-env constant PD-target "

@@ -125,8 +125,27 @@ class IsaacLabSimulator(Simulator):
                 NewtonShapeCfg,
             )
 
+            # MJWarp PRE-ALLOCATES a fixed contact buffer and silently DROPS
+            # every contact past it ("Number of Newton contacts (101993)
+            # exceeded MJWarp limit (98304). Increase nconmax." in our logs).
+            # Dropped contacts let bodies interpenetrate and the solver
+            # diverges: Atlas (118 mesh geoms) reached 3e13 in 3 steps, ANYmal
+            # NaN'd once enough robots piled into contact.
+            #
+            # Raise ONLY nconmax. njmax sizes the constraint Jacobian, which is
+            # roughly njmax x total_DOFs, so scaling it by env count asks for a
+            # single tens-of-GB allocation that fails with ~7 GB still free --
+            # it reads as an OOM but is really one oversized request.
             sim_kwargs["physics"] = NewtonCfg(
-                solver_cfg=MJWarpSolverCfg(use_mujoco_contacts=False),
+                solver_cfg=MJWarpSolverCfg(
+                    use_mujoco_contacts=False,
+                    # 64/env, just above the ~50 measured (the overflow was
+                    # 101993 against the 48/env default). Contact memory is
+                    # NOT linear -- each contact carries Jacobian rows sized by
+                    # DOF count, so 96/env asked for a single 8.05 GB array and
+                    # failed with the card half empty.
+                    nconmax=64 * self.config.num_envs,
+                ),
                 default_shape_cfg=NewtonShapeCfg(margin=0.01),
             )
             log.info(
@@ -259,10 +278,13 @@ class IsaacLabSimulator(Simulator):
                     self._robot.set_joint_position_target(default)
                     self._scene.write_data_to_sim()
                 err = (self._robot.data.joint_pos - default).abs()
+                verdict = (
+                    "TRACKING" if err.mean() < 0.15
+                    else "NOT TRACKING -- targets are not reaching the solver"
+                )
                 print(f"[actuator-probe] HOLD TEST after 60 steps: mean |q - "
                       f"target| = {err.mean():.4f} rad, max = {err.max():.4f} rad "
-                      f"({'TRACKING' if err.mean() < 0.15 else 'NOT TRACKING -- '
-                         'targets are not reaching the solver'})", flush=True)
+                      f"({verdict})", flush=True)
                 print(f"[actuator-probe] applied_torque: "
                       f"mean |tau| = {self._robot.data.applied_torque.abs().mean():.4f} "
                       f"Nm (zero means no actuation)", flush=True)
@@ -698,9 +720,31 @@ class IsaacLabSimulator(Simulator):
             materials[:, start_idx:end_idx, 2] = self._domain_randomization[
                 "friction"
             ]["restitution"][bucket_ids, idx].unsqueeze(-1)
-        self._robot.root_physx_view.set_material_properties(
-            materials, indices=all_env_ids
+        self._write_physx_view(
+            self._robot.root_physx_view.set_material_properties,
+            materials,
+            all_env_ids,
         )
+
+    @staticmethod
+    def _write_physx_view(write_fn, data: torch.Tensor, indices: torch.Tensor):
+        """Write to a physics-tensors view across Lab 2 and Lab 3.
+
+        Lab 3's physics-tensors frontend is WARP-based: handed a torch tensor
+        it calls wp.types.type_ctype(tensor.dtype) and dies with
+        "issubclass() arg 1 must be a class", because a torch dtype is not a
+        ctypes class. Lab 2's frontend takes torch directly. Try torch first,
+        fall back to warp arrays.
+        """
+        try:
+            write_fn(data, indices=indices)
+        except TypeError:
+            import warp as wp
+
+            write_fn(
+                wp.from_torch(data.contiguous()),
+                indices=wp.from_torch(indices.contiguous().to(torch.int32)),
+            )
 
     def _apply_physx_com_randomization(self, all_env_ids: torch.Tensor) -> None:
         coms = self._robot.root_physx_view.get_coms().clone()

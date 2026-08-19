@@ -44,6 +44,56 @@ def _disc_body_ids(robot_cfg: RobotConfig):
     return sorted({0} | {names.index(b) for b in subset})
 
 
+
+# Robots that exist (or are being built) in hardware: their ASE actor defaults
+# to real-robot sensing, so a policy is deployable by construction rather than
+# by a later port. Override either way with --deployable-obs/--privileged-obs.
+DEPLOYABLE_ROBOTS = {"atlas", "t800", "anymal_d", "go2"}
+
+
+def wants_deployable_obs(args) -> bool:
+    if getattr(args, "privileged_obs", False):
+        return False
+    if getattr(args, "deployable_obs", False):
+        return True
+    return getattr(args, "robot_name", None) in DEPLOYABLE_ROBOTS
+
+
+def deployable_actor_obs(cfg) -> None:
+    """Point the ACTOR at real-robot proprioception; privileged parts unchanged.
+
+    A real robot has joint encoders and an IMU: dof_pos, dof_vel, base angular
+    velocity and projected gravity -- exactly reduced_coords_obs with root
+    height and root linear velocity off (neither is observable without a state
+    estimator). max_coords_obs is privileged simulator state: every body's pose
+    and velocity, which no onboard sensor provides.
+
+    Only the actor moves. The critic keeps privileged state (asymmetric
+    actor-critic: a training-time baseline, never deployed) and so does the
+    discriminator, which must judge whole-body style. This changes the actor's
+    input, so such a policy cannot warm-start from a max_coords_obs one.
+    """
+    def swap(node):
+        for attr in ("in_keys", "out_keys"):
+            keys = getattr(node, attr, None)
+            if isinstance(keys, list):
+                setattr(node, attr, [
+                    "reduced_coords_obs" if k == "max_coords_obs"
+                    else "reduced_coords_obs_flattened" if k == "max_coords_obs_flattened"
+                    else k
+                    for k in keys
+                ])
+        for child in (getattr(node, "models", None) or []):
+            swap(child)
+        inner = getattr(node, "mu_model", None)
+        if inner is not None:
+            swap(inner)
+
+    swap(cfg.model.actor)
+    if "reduced_coords_obs" not in cfg.model.in_keys:
+        cfg.model.in_keys = list(cfg.model.in_keys) + ["reduced_coords_obs"]
+
+
 def terrain_config(args: argparse.Namespace):
     """Build terrain configuration."""
     from protomotions.components.terrains.config import TerrainConfig
@@ -113,6 +163,15 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
             init_start_prob=0.5  # Bias agent to start at the beginning of the motion to prevent getting stuck in a local-minima (standing still).
         ),
     )
+
+    if wants_deployable_obs(args):
+        from protomotions.envs.component_factories import reduced_coords_obs_factory
+
+        # Real-robot sensing for the actor; max_coords_obs stays for the
+        # critic and the discriminator's style judgement.
+        env_config.observation_components["reduced_coords_obs"] = (
+            reduced_coords_obs_factory(root_height_obs=False, root_vel_obs=False)
+        )
 
     return env_config
 
@@ -387,6 +446,8 @@ def agent_config(
     agent_config.amp_parameters.discriminator_termination_decay_epochs = int(
         getattr(args, "disc_term_decay_epochs", 0) or 0
     )
+    if wants_deployable_obs(args):
+        deployable_actor_obs(agent_config)
     return agent_config
 
 
@@ -427,6 +488,15 @@ def additional_experiment_arguments(parser):
         help="Pin the warm-started policy's input normalization (the EMA "
              "normalizer otherwise re-centers within epochs and collapses "
              "the inherited behavior while the weights stay intact).")
+    parser.add_argument(
+        "--deployable-obs", action="store_true",
+        help="Force the actor onto real-robot sensing (joint pos/vel, base "
+             "angular velocity, projected gravity) instead of privileged "
+             f"whole-body state. Default ON for {sorted(DEPLOYABLE_ROBOTS)}.")
+    parser.add_argument(
+        "--privileged-obs", action="store_true",
+        help="Force the actor onto privileged whole-body simulator state, "
+             "overriding the per-robot deployable default.")
     parser.add_argument(
         "--disc-term-decay-epochs", type=int, default=0,
         help="Decay --disc-term-threshold linearly to 0 over N epochs, then "

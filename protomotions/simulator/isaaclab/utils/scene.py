@@ -205,6 +205,22 @@ class SceneCfg(InteractiveSceneCfg):
                 robot_usd_path = str((asset_root / lab3_usd).resolve())
             else:
                 robot_usd_path = convert_robot_mjcf_to_usd(robot_config.asset)
+            if _newton_backend:
+                # Same recipe our own Newton engine uses before finalize
+                # (simulator/newton/simulator.py: approximate_meshes
+                # "convex_hull"). MuJoCo-Warp generating contacts against raw
+                # meshes diverges: Atlas (118 mesh collision geoms) blew up to
+                # 3e13 by step 3, while shape-based ANYmal was fine. Baking
+                # convexHull collision into the USD is the USD-side equivalent.
+                from protomotions.simulator.isaaclab.utils.collision_baking import (
+                    ensure_baked_collision_usd,
+                )
+
+                robot_usd_path = str(
+                    ensure_baked_collision_usd(
+                        original_path=robot_usd_path, approximation="convexHull"
+                    )
+                )
             contact_body_names = (
                 robot_config.contact_bodies if activate_contact_sensors else []
             )
