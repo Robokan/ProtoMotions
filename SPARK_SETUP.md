@@ -32,11 +32,21 @@ rsync -rlt --inplace --no-perms --no-owner --no-group --modify-window=1 \
 damaged entries that fail every rename with `Input/output error`. Use it and
 those failures do not occur.
 
-**Known gap:** tiger and utahraptor corpora are NOT on the drive — their
-entries on the NTFS volume are corrupt (they appear in `ls` but `stat` and
-`read` fail with EIO). Atlas, ANYmal, Go2, T800 and raptor data are all
-complete. If you need tiger/utahraptor, the drive cannot supply them; they must
-be re-copied from the 4090 after the filesystem is repaired.
+**One extra step — `data_missing/`.** The drive's `data/` directory has damaged
+NTFS records for the tiger and utahraptor files: they appear in `ls`, but
+`stat`, `read`, and rename all fail with EIO, so rsync cannot overwrite them.
+Fresh copies were written to a separate directory instead. Merge it after the
+copy above:
+
+```bash
+rsync -rlt --inplace --no-perms --no-owner --no-group \
+      "$DRIVE/data_missing/motions/" data/motions/
+rsync -rlt --inplace --no-perms --no-owner --no-group \
+      --exclude=motions "$DRIVE/data_missing/" data/
+```
+
+31 corpora + 3 tiger clip sets, 924 MB. Everything else (Atlas, ANYmal, Go2,
+T800, raptor) is complete under `data/` and needs no special handling.
 
 What comes from where:
 
