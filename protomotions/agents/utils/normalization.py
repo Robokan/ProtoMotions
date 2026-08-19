@@ -158,13 +158,31 @@ class RunningMeanStd(nn.Module):
             self.var[:] = d * self.var + (1 - d) * batch_var
             return
 
-        new_mean, new_var, new_count = combine_moments(
-            [self.mean, batch_mean], [self.var, batch_var], [self.count, batch_count]
+        # Chan's parallel update, done ON DEVICE. This used to route through
+        # combine_moments([self.mean, batch_mean], ...), whose
+        # `torch.tensor(counts)` had to convert a list holding a 0-dim CUDA
+        # tensor -- forcing a GPU->CPU SYNC on every update, i.e. once per
+        # rollout step per normalizer. It cost 2.1% of training time in a
+        # py-spy profile and stalls the pipeline besides. Same math, no sync.
+        b = (
+            batch_count.to(self.mean.dtype)
+            if isinstance(batch_count, torch.Tensor)
+            else float(batch_count)
+        )
+        count = self.count.to(self.mean.dtype)
+        total = count + b
+        delta = batch_mean - self.mean
+        m_2 = (
+            self.var * count
+            + batch_var * b
+            + delta.pow(2) * (count * b / total)
         )
 
-        self.mean[:] = new_mean
-        self.var[:] = new_var
-        self.count.fill_(new_count)
+        self.mean.copy_(self.mean + delta * (b / total))
+        self.var.copy_(torch.clamp(m_2 / total, min=0.0))
+        self.count.add_(
+            batch_count if isinstance(batch_count, torch.Tensor) else int(batch_count)
+        )
 
     def maybe_clamp(self, x: Tensor):
         if self.clamp_value is None:
