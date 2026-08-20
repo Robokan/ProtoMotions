@@ -43,6 +43,16 @@ parser.add_argument("--simulator", default="isaaclab")
 parser.add_argument("--physics", default="physx")
 parser.add_argument("--num-envs", type=int, default=1)
 parser.add_argument("--seed", type=int, default=0)
+parser.add_argument(
+    "--no-ground-feet",
+    action="store_true",
+    help="Skip the per-clip vertical shift that grounds the feet. By default "
+    "each clip is lowered (or raised) by a constant so its lowest foot point "
+    "over the whole clip matches the foot height of the robot's default "
+    "STANDING state -- the retargeted ANYmal clips float visibly above the "
+    "ground, which is itself discriminator-separable (expert root/foot "
+    "heights say 'hovering', a physical robot's say 'grounded').",
+)
 args = parser.parse_args()
 args.headless = True
 args.scenes_file = None
@@ -151,6 +161,26 @@ num_bodies = gts_src.shape[1]
 new_gts = torch.zeros_like(gts_src)
 new_grs = torch.zeros_like(grs_src)
 
+# Reference "feet touching" height: teleport to the robot's DEFAULT standing
+# state (feet on the ground by design) and read where the foot link origins
+# sit. This is the target for the per-clip grounding shift -- measured from
+# the sim, not guessed from a collision radius.
+names = robot_config.kinematic_info.body_names
+foot_ids = [i for i, n in enumerate(names) if "FOOT" in n.upper() or "foot" in n]
+ref_foot_z = None
+if foot_ids and not args.no_ground_feet:
+    default_state = sim.get_default_robot_reset_state()
+    sim.reset_envs(default_state, None, env_ids)
+    standing = sim.get_bodies_state(env_ids)
+    # Height of foot origins above the ground under this env (origin offset
+    # cancels: use feet relative to root, plus the default root height).
+    root_z = standing.rigid_body_pos[0, 0, 2]
+    feet_z = standing.rigid_body_pos[0, foot_ids, 2]
+    default_root_h = default_state.root_pos[0, 2]
+    ref_foot_z = float((feet_z - root_z).min() + default_root_h)
+    print(f"feet: {[names[i] for i in foot_ids]}")
+    print(f"reference standing foot-origin height: {ref_foot_z:.4f} m")
+
 # Teleport -> physics step -> readback. The physics step is what propagates
 # the write into the readable link transforms (verified by the parity test:
 # post-teleport readback matched corpus positions to ~2mm). The drift it adds
@@ -176,6 +206,19 @@ for f in range(total_frames):
     new_grs[f] = rot
     if f % 500 == 0:
         print(f"  frame {f}/{total_frames}", flush=True)
+
+# Ground the feet: per clip, one constant vertical shift so the lowest foot
+# point over the whole clip sits at the standing reference. A constant shift
+# is a rigid transform -- gait dynamics, rotations, and (finite-difference)
+# velocities are untouched.
+if ref_foot_z is not None:
+    print("\nper-clip grounding shift:")
+    for m in range(num_motions):
+        s, e = int(src["length_starts"][m]), int(src["length_starts"][m] + src["motion_num_frames"][m])
+        min_foot = float(new_gts[s:e][:, foot_ids, 2].min())
+        dz = min_foot - ref_foot_z
+        new_gts[s:e, :, 2] -= dz
+        print(f"  motion {m} ({src['motion_files'][m]}): lowered by {dz:+.4f} m")
 
 # Finite-difference velocities per motion at the corpus dt.
 from protomotions.utils import rotations  # noqa: E402
