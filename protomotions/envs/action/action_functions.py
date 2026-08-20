@@ -321,6 +321,17 @@ def make_pd_action_config(
                 if _re.fullmatch(expr, joint):
                     lower[i], upper[i] = float(lo), float(hi)
                     break
+        # Explicit scaling limits are an exact spec of the commandable range,
+        # so tanh saturation must land ON them. build_pd_action_offset_scale
+        # widens by `action_scale * (high - low)` used as a HALF-range -- at
+        # the default 1.0 that DOUBLES the span around the midpoint: ANYmal's
+        # knee, specced [-2.93, 0.55] from mocap+-20 deg, was commandable to
+        # [-4.67, +2.29] -- hyperextension far past the joint limit, at KP 40.
+        # (Measured on anymal_v11; flailing.) The 2x widening exists for
+        # limits DERIVED from joint stops, where losing motor authority at
+        # the stop is the concern; an explicit mocap-derived spec is the
+        # opposite case. 0.5 makes offset +- scale reproduce the spec exactly.
+        action_scale = 0.5
 
     pd_action_offset, pd_action_scale = build_pd_action_offset_scale(
         robot_config.kinematic_info.hinge_axes_map,
