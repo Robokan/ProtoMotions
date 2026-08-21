@@ -1520,9 +1520,21 @@ class IsaacLabSimulator(Simulator):
                     else:
                         scale = 0.5
                     marker_scale.append([scale, 0.2 * scale, 0.2 * scale])
+                elif markers_cfg.type == "usd":
+                    # Original assets render at their authored size (the
+                    # IsaacLabASE game markers used scale=(1,1,1)).
+                    scale = marker.scale if marker.scale is not None else 1.0
+                    marker_scale.append([scale, scale, scale])
 
             if len(marker_scale) == 0:
-                continue
+                # A typed branch above must have matched; an empty scale list
+                # here means an unhandled marker type silently vanishing --
+                # which surfaces later as an assert in _update_simulator_markers
+                # ("not defined at instantiation"). Fail loudly instead.
+                raise ValueError(
+                    f"Marker '{marker_name}' (type={markers_cfg.type}) produced "
+                    "no scale entries -- unhandled type in _build_markers"
+                )
 
             self._visualization_markers[marker_name] = ProtoMotionsIsaacLabMarkers(
                 marker=IsaacLabVisualizationMarkers(marker_obj_cfg),
