@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import logging
+import time
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -16,6 +18,8 @@ from protomotions.agents.utils.normalization import (
 )
 from protomotions.utils.config_utils import load_resolved_configs_from_checkpoint
 from protomotions.utils.hydra_replacement import get_class
+
+log = logging.getLogger(__name__)
 
 
 def freeze_module(module: nn.Module) -> None:
@@ -109,7 +113,32 @@ def load_pretrained_model_module(
     model_cls = get_class(model_config._target_)
     model = model_cls(config=model_config).to(device)
 
-    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    # The checkpoint may belong to a run that is STILL TRAINING and rewriting
+    # it every few epochs (the league's two-trainer workflow points
+    # --llc-checkpoint at the live last.ckpt so hot-reload can track it).
+    # torch.save is not atomic, so a read can catch a half-written zip and
+    # die with "failed finding central directory". The hot-reload path
+    # already guards this (quiet-for-5s + retry next epoch); startup had no
+    # guard at all. Retry a few times before giving up.
+    checkpoint = None
+    last_err = None
+    for attempt in range(5):
+        try:
+            checkpoint = torch.load(
+                checkpoint_path, map_location=device, weights_only=False
+            )
+            break
+        except (RuntimeError, EOFError, OSError) as e:
+            last_err = e
+            log.warning(
+                "checkpoint %s unreadable (attempt %d/5, likely mid-save): %s",
+                checkpoint_path, attempt + 1, e,
+            )
+            time.sleep(6.0)
+    if checkpoint is None:
+        raise RuntimeError(
+            f"checkpoint {checkpoint_path} stayed unreadable after 5 attempts"
+        ) from last_err
     state_dict = checkpoint[config.state_dict_key]
     model.materialize_from_state_dict(state_dict)
     materialize_lazy_running_stats_from_state_dict(model, state_dict)
