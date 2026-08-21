@@ -220,6 +220,17 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
         ),
     }
 
+    # DEPLOYABLE LLCs (v17-era: actor sees IMU + encoders, not privileged
+    # state) consume reduced_coords_obs. Params must match the LLC pretrain
+    # exactly (ase/mlp.py deployable path: no root height, no root vel) or
+    # the frozen actor's input distribution shifts. Additive for older
+    # privileged LLCs, which simply ignore the extra key.
+    from protomotions.envs.component_factories import reduced_coords_obs_factory
+
+    observation_components["reduced_coords_obs"] = reduced_coords_obs_factory(
+        root_height_obs=False, root_vel_obs=False
+    )
+
     dense = getattr(args, "dense_reward_scale", 1.0)
 
     # KEEP IN SYNC with battle_league_prior_peft.py — the rules must be
