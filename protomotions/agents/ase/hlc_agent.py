@@ -214,8 +214,13 @@ class ASEHLCAgent(FineTuningAgent):
         z = torch.nn.functional.normalize(latents, dim=-1)
         z = self._apply_button_latents(z)
         key = "mean_action" if self.config.hlc.llc_deterministic else "action"
+        llc_inputs = {"max_coords_obs": obs["max_coords_obs"], "latents": z}
+        # Deployable LLCs act on reduced_coords_obs; forward it when the env
+        # computes it (same contract as the league HLC wrapper).
+        if "reduced_coords_obs" in obs:
+            llc_inputs["reduced_coords_obs"] = obs["reduced_coords_obs"]
         td = TensorDict(
-            {"max_coords_obs": obs["max_coords_obs"], "latents": z},
+            llc_inputs,
             batch_size=z.shape[0],
         )
         td = self._llc(td)

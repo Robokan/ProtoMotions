@@ -91,6 +91,7 @@ def motion_lib_config(args: argparse.Namespace):
 def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
     from protomotions.envs.action import make_pd_action_config
     from protomotions.envs.component_factories import (
+        reduced_coords_obs_factory,
         historical_max_coords_obs_factory,
         max_coords_obs_factory,
     )
@@ -118,6 +119,12 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
             local_obs=True, root_height_obs=True, observe_contacts=False
         ),
         "task_obs": steering_command_obs_factory(),
+        # Deployable LLCs (v17-era: actor on IMU + encoders) consume
+        # reduced_coords_obs; params must match the LLC pretrain exactly
+        # (ase/mlp.py deployable path). Privileged LLCs ignore the extra key.
+        "reduced_coords_obs": reduced_coords_obs_factory(
+            root_height_obs=False, root_vel_obs=False
+        ),
         # Motion-history window for the frozen discriminator's style reward.
         "historical_max_coords_obs": historical_max_coords_obs_factory(
             local_obs=True,
