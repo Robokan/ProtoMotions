@@ -86,8 +86,13 @@ print(
     "  2. STRIKING : %s (kick_attempt %.5f, hit_taken %.5f in recent window)"
     % ("HAPPENING" if striking else "NOT YET", ka, ht)
 )
-win, pool = rows["win"][1], rows["pool_size"][1]
+win_e, win_r = rows["win"]
+pool = rows["pool_size"][1]
+# The win reward sits at a NEGATIVE timeout floor (~-1.7) while every bout
+# times out undecided; "fights are being decided" means it RISES off that
+# floor, or the league gate passed (pool grows beyond the seed member).
+decided = (win_r > win_e + 0.05) or pool > 1.5
 print(
-    "  3. FIGHTS   : %s (win reward %.5f, pool %.0f, elo %.0f)"
-    % ("DECIDED" if abs(win) > 1e-6 else "NOT YET", win, pool, rows["elo"][1])
+    "  3. FIGHTS   : %s (win reward %.5f -> %.5f, pool %.0f, elo %.0f)"
+    % ("DECIDED" if decided else "NOT YET", win_e, win_r, pool, rows["elo"][1])
 )
