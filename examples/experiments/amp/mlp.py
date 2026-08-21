@@ -318,9 +318,15 @@ def apply_inference_overrides(
             args, "amp_disc_term", False
         ):
             env_cfg.max_episode_length = 1000000
+        # Viewing default (per Eric, same as ASE): every reset picks a random
+        # clip and a RANDOM TIME inside it, so R shows the policy mid-motion
+        # with real momentum. 1.0 (always clip start) made every reset a
+        # standstill whenever a clip's first frame is one.
         if hasattr(env_cfg, "motion_manager"):
             if hasattr(env_cfg.motion_manager, "init_start_prob"):
-                env_cfg.motion_manager.init_start_prob = 1.0
+                env_cfg.motion_manager.init_start_prob = 0.0
+            if hasattr(env_cfg.motion_manager, "resample_on_reset"):
+                env_cfg.motion_manager.resample_on_reset = True
 
 
 def additional_experiment_arguments(parser):
