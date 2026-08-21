@@ -298,3 +298,25 @@ def apply_inference_overrides(
     """Drive-around viewing: one long episode, commands keep resampling."""
     if env_cfg is not None:
         env_cfg.max_episode_length = 100000
+
+        # Gamepad auto-detect (per Eric): if a pad is plugged in at launch it
+        # drives the commands; otherwise the random generator keeps them and
+        # the markers still show what is commanded. Explicit override wins:
+        # --command-source steering_cmd=gamepad (wait for a pad) or =random.
+        import glob as _glob
+        import logging as _logging
+
+        _log = _logging.getLogger(__name__)
+        cmd = env_cfg.control_components.get("steering_cmd")
+        if cmd is not None and not getattr(args, "command_source", None):
+            pads = _glob.glob("/dev/input/js*")
+            if pads:
+                cmd.command_source = "gamepad"
+                _log.info("steering: gamepad detected (%s) -- teleop ON", pads[0])
+            else:
+                cmd.command_source = None
+                _log.info(
+                    "steering: no gamepad detected -- random command generator "
+                    "drives (plug a pad in and relaunch, or force with "
+                    "--command-source steering_cmd=gamepad)"
+                )

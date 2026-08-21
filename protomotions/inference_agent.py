@@ -322,6 +322,28 @@ def apply_command_source_overrides(env_config, command_source_specs):
             )
 
         component_config = control_components[component_name]
+        # Steering command component: supports the gamepad teleop source.
+        # Gamepad use is OPT-IN per launch (per Eric: no pad plugged in means
+        # no flag, and the random training generator keeps driving commands).
+        from protomotions.envs.steering.command import SteeringCommandControlConfig
+
+        if isinstance(component_config, SteeringCommandControlConfig):
+            src = source_name.lower()
+            if src in ("gamepad", "joystick", "controller"):
+                component_config.command_source = "gamepad"
+                log.info(
+                    "steering: gamepad teleop enabled (/dev/input/js0; if no "
+                    "pad is connected, commands stay zero until one appears)"
+                )
+            elif src in ("random", "training"):
+                component_config.command_source = None
+            else:
+                raise ValueError(
+                    f"Unsupported command source '{source_name}' for the "
+                    "steering component (use gamepad|random)"
+                )
+            continue
+
         if not isinstance(component_config, TargetControlConfig):
             raise ValueError(
                 f"Command source override '{component_name}={source_name}' only "

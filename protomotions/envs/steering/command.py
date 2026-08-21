@@ -38,6 +38,14 @@ _GRAVITY_MPS2 = 9.81
 # =============================================================================
 
 
+from protomotions.simulator.base_simulator.config import (
+    MarkerConfig,
+    MarkerState,
+    VisualizationMarkerConfig,
+)
+from protomotions.utils import rotations
+
+
 @dataclass
 class SteeringCommandControlConfig(ControlComponentConfig):
     """Configuration for the velocity-command steering control component.
@@ -72,6 +80,12 @@ class SteeringCommandControlConfig(ControlComponentConfig):
     # also see which button is held. 0 = no buttons, obs width unchanged.
     num_buttons: int = 0
     difficulty_epochs: int = 1
+    # "gamepad" = a /dev/input/js0 reader drives the CURRENTLY SELECTED
+    # robot's commands at inference (camera-followed env, cycle with =/-);
+    # all other envs keep the random-walk generator. Auto-detected at viewer
+    # launch by the steering experiment's inference hook; force with
+    # --command-source steering_cmd=gamepad|random. Never set in training.
+    command_source: str = None
 
 
 class SteeringCommandControl(ControlComponent):
@@ -106,6 +120,11 @@ class SteeringCommandControl(ControlComponent):
         self.button_state = torch.zeros(
             num_envs, config.num_buttons, device=device, dtype=torch.float
         )
+        # Spinning-phase accumulator for the turn marker (rad). The original
+        # IsaacLabASE game task animates circle_arrows at the commanded yaw
+        # rate; the marker's spin SPEED is the turn command readout.
+        self._turn_anim = torch.zeros(num_envs, device=device, dtype=torch.float)
+        self._gamepad = None
 
     def set_epoch(self, current_epoch: int):
         """Difficulty curriculum hook, called by the HLC env adapter each epoch."""
@@ -176,12 +195,127 @@ class SteeringCommandControl(ControlComponent):
         step = torch.clamp(goal - self._target, -self._rates, self._rates)
         self._target += step
 
+        if getattr(self.config, "command_source", None) == "gamepad":
+            if self._gamepad is None:
+                from protomotions.envs.steering.gamepad import GamepadReader
+
+                self._gamepad = GamepadReader(
+                    num_buttons=max(self.config.num_buttons, 1)
+                )
+            channels, buttons = self._gamepad.state()
+            pad = torch.tensor(
+                channels, device=self.env.device, dtype=torch.float
+            )
+            # The pad drives ONLY the currently selected robot (the one the
+            # viewer camera follows; cycle with =/-). Everyone else keeps
+            # their random-walk commands, exactly like the original task.
+            sel = 0
+            cam = getattr(self.env.simulator, "_camera_target", None)
+            if isinstance(cam, dict):
+                sel = int(cam.get("env", 0))
+            scale = torch.stack([self._hi[0], self._hi[1], self._hi[2]])
+            self._target[sel] = torch.clamp(pad * scale, self._lo, self._hi)
+            if self.config.num_buttons > 0:
+                self.button_state[sel] = torch.tensor(
+                    buttons[: self.config.num_buttons],
+                    device=self.env.device,
+                    dtype=torch.float,
+                )
+
+        # Advance the turn marker's spin phase at the commanded yaw rate.
+        self._turn_anim += self._target[:, 1] * self.env.dt
+
     def set_buttons(self, state: Tensor, env_ids: Tensor = None) -> None:
         """Teleop hook: set held buttons (1.0 = held) for some/all envs."""
         if env_ids is None:
             self.button_state[:] = state
         else:
             self.button_state[env_ids] = state
+
+    def create_visualization_markers(self, headless: bool):
+        """The IsaacLabASE game-controller indicators, original assets:
+        a green direction arrow offset by the commanded velocity vector and
+        the circle_arrows turn dial spinning at the commanded yaw rate.
+        Inference-only by construction -- headless returns nothing, and
+        training always runs headless."""
+        if headless:
+            return {}
+        return {
+            "steering_dir": VisualizationMarkerConfig(
+                type="usd",
+                usd_path="usd/markers/direction_marker_green.usd",
+                markers=[MarkerConfig(size="regular")],
+            ),
+            "steering_turn": VisualizationMarkerConfig(
+                type="usd",
+                usd_path="usd/markers/circle_arrows.usd",
+                markers=[MarkerConfig(size="regular")],
+            ),
+        }
+
+    def get_markers_state(self):
+        """Original marker math (amp_game_controller_task._update_markers):
+        direction marker at root_xy + heading_frame_velocity * 0.5, oriented
+        to the robot's heading; turn dial at the root, spun by the
+        accumulated phase, flipped about x for negative yaw so the arrows
+        visually reverse. Buttons held -> markers sink to z=-1 (hidden)."""
+        if self.env.simulator.headless:
+            return {}
+        root_state = self.env.simulator.get_root_state()
+        root_pos = root_state.root_pos
+        heading = rotations.calc_heading(root_state.root_rot, True)
+        facing = torch.stack([torch.cos(heading), torch.sin(heading)], dim=-1)
+        side = torch.stack(
+            [torch.cos(heading + torch.pi / 2), torch.sin(heading + torch.pi / 2)],
+            dim=-1,
+        )
+        up = torch.zeros_like(root_pos)
+        up[..., 2] = 1.0
+        heading_q = rotations.quat_from_angle_axis(heading, up, True)
+
+        ground = self.env.terrain.get_ground_heights(root_pos[..., :2]).view(-1)
+
+        # Direction marker: offset by half the commanded velocity vector.
+        fwd = self._target[:, 0].unsqueeze(-1) * 0.5
+        lat = self._target[:, 2].unsqueeze(-1) * 0.5
+        dir_pos = root_pos.clone()
+        dir_pos[..., 0:2] = root_pos[..., 0:2] + facing * fwd + side * lat
+        dir_pos[..., 2] = ground + 0.02
+
+        # Turn dial: at the root, spinning by the accumulated phase; flip
+        # about x for negative yaw command (original convention).
+        flip_axis = torch.zeros_like(root_pos)
+        flip_axis[..., 0] = 1.0
+        flip_angle = torch.where(
+            self._target[:, 1] < 0,
+            torch.full_like(self._turn_anim, torch.pi),
+            torch.zeros_like(self._turn_anim),
+        )
+        turn_q = rotations.quat_mul(
+            rotations.quat_from_angle_axis(flip_angle, flip_axis, True),
+            rotations.quat_from_angle_axis(self._turn_anim, up, True),
+            True,
+        )
+        turn_pos = root_pos.clone()
+        turn_pos[..., 2] = ground + 0.01
+
+        # Hide both while any skill button is held (original behavior).
+        if self.button_state.shape[1]:
+            held = self.button_state.any(dim=-1)
+            dir_pos[held, 2] = -1.0
+            turn_pos[held, 2] = -1.0
+
+        n = self.env.num_envs
+        return {
+            "steering_dir": MarkerState(
+                translation=dir_pos.view(n, -1, 3),
+                orientation=heading_q.view(n, -1, 4),
+            ),
+            "steering_turn": MarkerState(
+                translation=turn_pos.view(n, -1, 3),
+                orientation=turn_q.view(n, -1, 4),
+            ),
+        }
 
     def populate_context(self, ctx) -> None:
         ctx.steering_cmd = SteeringCommandContext(

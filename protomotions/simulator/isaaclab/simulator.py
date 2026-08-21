@@ -1474,6 +1474,29 @@ class IsaacLabSimulator(Simulator):
                         ),
                     },
                 )
+            elif markers_cfg.type == "usd":
+                # Original-asset markers (e.g. the IsaacLabASE game-controller
+                # direction/turn indicators). The USD carries its own
+                # materials; no color/material override is applied.
+                import os as _os
+
+                _assets_root = _os.path.join(
+                    _os.path.dirname(_os.path.dirname(_os.path.dirname(
+                        _os.path.abspath(__file__)
+                    ))),
+                    "data", "assets",
+                )
+                marker_obj_cfg = IsaacLabVisualizationMarkersCfg(
+                    prim_path=f"/Visuals/{marker_name}",
+                    markers={
+                        "marker": sim_utils.UsdFileCfg(
+                            usd_path=_os.path.join(
+                                _assets_root, markers_cfg.usd_path
+                            ),
+                            scale=(1.0, 1.0, 1.0),
+                        ),
+                    },
+                )
             else:
                 raise ValueError(f"Marker type {markers_cfg.type} not supported")
 

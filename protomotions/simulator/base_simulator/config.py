@@ -69,8 +69,17 @@ class MarkerConfig:
 class VisualizationMarkerConfig:
     """Configuration for a group of visualization markers."""
 
-    type: Literal["sphere", "arrow"] = field(
+    type: Literal["sphere", "arrow", "usd"] = field(
         default="sphere", metadata={"help": "Marker geometry type."}
+    )
+    usd_path: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "For type='usd': asset path relative to "
+            "protomotions/data/assets (e.g. 'usd/markers/circle_arrows.usd'). "
+            "The asset's own materials are used verbatim -- this is how the "
+            "IsaacLabASE game-controller markers are reproduced exactly."
+        },
     )
     color: Tuple[float, float, float] = field(
         default=(1.0, 0.0, 0.0), metadata={"help": "RGB color values (0-1)."}
