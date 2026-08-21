@@ -90,9 +90,14 @@ class IsaacLabSimulator(Simulator):
             scene_lib (SceneLib): Scene library (always provided, can be empty).
         """
         # Lab 3 switched the public quat convention from wxyz to xyzw.
-        # Must flip before Simulator.__init__ builds StateConversion.
-        if _ISAACLAB_W_LAST:
-            config.w_last = True
+        # Must be set before Simulator.__init__ builds StateConversion, and it
+        # must be set UNCONDITIONALLY to the RUNNING stack's convention: the
+        # config may be a frozen pickle from a run trained on the OTHER stack
+        # (e.g. a Lab 3-trained checkpoint opened in a Lab 2 viewer). The old
+        # code only forced True for Lab 3, so a pickled True leaked through on
+        # Lab 2 and every root quaternion was written xyzw into a wxyz sim --
+        # 180-degree flips, robots spawning upside down.
+        config.w_last = _ISAACLAB_W_LAST
 
         super().__init__(
             config=config,
