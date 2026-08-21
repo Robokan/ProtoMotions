@@ -67,6 +67,11 @@ def additional_experiment_arguments(parser: argparse.ArgumentParser):
         "--side-vel-max", type=float, default=1.0,
         help="Lateral command bound (m/s, symmetric).")
     parser.add_argument(
+        "--no-terminations", action="store_true",
+        help="Strip every termination component (episodes end on timeout "
+             "only). Pair with --disc-term-threshold 0 to disable the style "
+             "kill too.")
+    parser.add_argument(
         "--task-reward-w", type=float, default=0.5,
         help="Steering task reward weight (original AMP game controller: "
              "0.5 task vs 1.0 effective style).")
@@ -100,6 +105,8 @@ def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
             weight=args.task_reward_w,
         )
     )
+    if getattr(args, "no_terminations", False):
+        cfg.termination_components = {}
     return cfg
 
 
