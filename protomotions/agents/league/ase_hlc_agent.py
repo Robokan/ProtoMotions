@@ -429,10 +429,12 @@ class LeagueASEHLCAgent(FullModelLeagueMixin, FineTuningAgent):
         z = torch.nn.functional.normalize(latents, dim=-1)
         key = "mean_action" if self.config.hlc.llc_deterministic else "action"
         if self._opp_rc is None:
-            td = TensorDict(
-                {"max_coords_obs": obs["max_coords_obs"], "latents": z},
-                batch_size=z.shape[0],
-            )
+            llc_inputs = {"max_coords_obs": obs["max_coords_obs"], "latents": z}
+            # Deployable LLCs (v17-era) act on reduced_coords_obs instead of
+            # the privileged state; forward it whenever the env computes it.
+            if "reduced_coords_obs" in obs:
+                llc_inputs["reduced_coords_obs"] = obs["reduced_coords_obs"]
+            td = TensorDict(llc_inputs, batch_size=z.shape[0])
             td = self._llc(td)
             return td[key]
         # Cross-morphology: each block's latents decode through ITS robot's
