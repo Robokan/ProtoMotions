@@ -125,6 +125,10 @@ def agent_config(robot_cfg, env_cfg, args):
     _add_task_obs(cfg.model.critic)
     if getattr(cfg.model, "disc_critic", None) is not None:
         _add_task_obs(cfg.model.disc_critic)
+    # The model container validates every submodule key against its own
+    # top-level in_keys list.
+    if "task_obs" not in cfg.model.in_keys:
+        cfg.model.in_keys.append("task_obs")
     return cfg
 
 
