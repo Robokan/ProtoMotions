@@ -21,6 +21,7 @@ import logging
 import os
 import struct
 import threading
+import time
 
 log = logging.getLogger(__name__)
 
@@ -45,6 +46,7 @@ class GamepadReader:
         # Normalized command channels [forward, turn, side] in [-1, 1].
         self.channels = [0.0, 0.0, 0.0]
         self.buttons = [0.0] * max(num_buttons, 1)
+        self._last_active = 0.0  # wall time of the last nonzero input
         self._lock = threading.Lock()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
@@ -72,6 +74,8 @@ class GamepadReader:
                             if abs(v) < DEADZONE:
                                 v = 0.0
                             with self._lock:
+                                if v != 0.0:
+                                    self._last_active = time.time()
                                 if number == AXIS_FORWARD:
                                     self.channels[0] = -v  # stick up = forward
                                 elif number == AXIS_TURN:
@@ -80,6 +84,8 @@ class GamepadReader:
                                     self.channels[2] = -v  # stick left = +lateral
                         elif ev_type == _JS_EVENT_BUTTON:
                             with self._lock:
+                                if value:
+                                    self._last_active = time.time()
                                 if number < len(self.buttons):
                                     self.buttons[number] = float(value)
             except OSError as e:
@@ -88,6 +94,15 @@ class GamepadReader:
                 threading.Event().wait(2.0)
 
     def state(self):
-        """Thread-safe snapshot: ([fwd, turn, side] in [-1,1], [buttons])."""
+        """Thread-safe snapshot: ([fwd, turn, side], [buttons], active).
+
+        active is True while the pad is actually being USED: any nonzero
+        input within the last second, or a stick/button currently deflected.
+        An idle pad releases the selected robot back to the random command
+        generator so it behaves like every other env."""
         with self._lock:
-            return list(self.channels), list(self.buttons)
+            deflected = any(abs(c) > 0.0 for c in self.channels) or any(
+                b > 0.0 for b in self.buttons
+            )
+            active = deflected or (time.time() - self._last_active) < 1.0
+            return list(self.channels), list(self.buttons), active

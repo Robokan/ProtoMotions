@@ -202,7 +202,7 @@ class SteeringCommandControl(ControlComponent):
                 self._gamepad = GamepadReader(
                     num_buttons=max(self.config.num_buttons, 1)
                 )
-            channels, buttons = self._gamepad.state()
+            channels, buttons, pad_active = self._gamepad.state()
             pad = torch.tensor(
                 channels, device=self.env.device, dtype=torch.float
             )
@@ -213,14 +213,19 @@ class SteeringCommandControl(ControlComponent):
             cam = getattr(self.env.simulator, "_camera_target", None)
             if isinstance(cam, dict):
                 sel = int(cam.get("env", 0))
-            scale = torch.stack([self._hi[0], self._hi[1], self._hi[2]])
-            self._target[sel] = torch.clamp(pad * scale, self._lo, self._hi)
-            if self.config.num_buttons > 0:
-                self.button_state[sel] = torch.tensor(
-                    buttons[: self.config.num_buttons],
-                    device=self.env.device,
-                    dtype=torch.float,
-                )
+            # Only override while the pad is actually being used (per Eric):
+            # an idle controller releases the selected robot back to the
+            # random generator, so it wanders like every other env until a
+            # stick moves again.
+            if pad_active:
+                scale = torch.stack([self._hi[0], self._hi[1], self._hi[2]])
+                self._target[sel] = torch.clamp(pad * scale, self._lo, self._hi)
+                if self.config.num_buttons > 0:
+                    self.button_state[sel] = torch.tensor(
+                        buttons[: self.config.num_buttons],
+                        device=self.env.device,
+                        dtype=torch.float,
+                    )
 
         # Advance the turn marker's spin phase at the commanded yaw rate.
         self._turn_anim += self._target[:, 1] * self.env.dt
