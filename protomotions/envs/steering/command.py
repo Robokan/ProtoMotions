@@ -179,9 +179,38 @@ class SteeringCommandControl(ControlComponent):
         is_env_reset = self.env.reset_buf[env_ids] | self.env.terminate_buf[env_ids]
         progress = torch.where(is_env_reset, torch.zeros_like(progress), progress)
         self._change_steps[env_ids] = progress + change_steps
-        # Fresh episodes ramp up from standstill; mid-episode resamples keep
-        # ramping from the current target.
-        self._target[env_ids[is_env_reset]] = 0.0
+        # Fresh episodes: seed BOTH the target and the desired command from
+        # the velocity the robot actually spawned with (RSI drops it at a
+        # random mocap frame, so it may already be mid-trot). Original
+        # IsaacLabASE comment, ported verbatim in spirit: "When we reset we
+        # put the robot in a random place in the motion capture. We want to
+        # make sure we set the desired velocities to match what is in the
+        # motion capture. That way it will learn what poses match what
+        # velocities. This is important when doing gait transitions."
+        # Commanding zero to a spawned-running robot punishes it for the pose
+        # it was placed in. reset() runs after the simulator state write
+        # (env.py: simulator.reset_envs -> control_manager.reset), so the
+        # spawn state is readable here.
+        fresh = env_ids[is_env_reset]
+        if len(fresh) > 0:
+            root = self.env.simulator.get_root_state(fresh)
+            heading = rotations.calc_heading(root.root_rot, True)
+            cos_h, sin_h = torch.cos(heading), torch.sin(heading)
+            vx, vy = root.root_vel[:, 0], root.root_vel[:, 1]
+            seeded = torch.stack(
+                [
+                    cos_h * vx + sin_h * vy,       # forward (heading frame)
+                    root.root_ang_vel[:, 2],       # yaw rate
+                    -sin_h * vx + cos_h * vy,      # lateral (heading frame)
+                ],
+                dim=-1,
+            )
+            # Out-of-range mocap velocities: desired is clipped so the robot
+            # ramps back into range (original clip-the-desired behavior, with
+            # clip_initial_targets_also semantics for the live target too).
+            seeded = torch.clamp(seeded, self._lo, self._hi)
+            self._target[fresh] = seeded
+            self._desired[fresh] = seeded
         if self.button_state.shape[1]:
             self.button_state[env_ids[is_env_reset]] = 0.0
 
