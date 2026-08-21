@@ -317,6 +317,49 @@ class FullModelLeagueMixin:
             for key, value in model.state_dict().items()
         }
 
+    def _maybe_resurrect_alumnus(self) -> None:
+        """Every resurrection_epochs, re-admit one RANDOM evicted snapshot
+        from the on-disk archive into the active pool (Eric's anti-forgetting
+        audit). The league itself then runs the experiment: a forgotten
+        strategy wins games and stays via PFSP; a still-mastered one decays
+        and is re-evicted by informed eviction. getattr default keeps frozen
+        configs from before this field existed at 0 = off."""
+        every = int(getattr(self.league_cfg, "resurrection_epochs", 0) or 0)
+        if every <= 0 or not self._host_own_snapshots():
+            return
+        last = getattr(self, "_last_resurrection_epoch", 0)
+        if self.current_epoch - last < every:
+            return
+        self._last_resurrection_epoch = self.current_epoch
+        active = {m.checkpoint_path for m in self.pool.members.values()}
+        alumni = []
+        for path in self.league_dir.glob("policy_*.ckpt"):
+            if str(path) in active:
+                continue
+            meta = pool_io.load_snapshot_meta(path)
+            if meta is None:
+                continue
+            if self._classify_snapshot(path, meta) is None:
+                continue
+            alumni.append((path, meta))
+        if not alumni:
+            return
+        import random as _random
+
+        path, meta = _random.choice(alumni)
+        member = self.pool.add(
+            str(path),
+            label=f"alumnus_{path.stem}",
+            rating=float(meta.get("rating", 1000.0)),
+            family="",
+        )
+        log.info(
+            "league: resurrected alumnus %s (epoch %s snapshot) for re-audition",
+            path.stem,
+            meta.get("epoch", "?"),
+        )
+        return member
+
     def _take_snapshot(self, reason: str) -> PoolMember:
         path = self.league_dir / f"policy_{self.run_id}_{self._snapshot_counter}.ckpt"
         state = self._full_state_cpu()
@@ -596,6 +639,8 @@ class FullModelLeagueMixin:
                 self._take_snapshot(reason="gate")
             elif stale:
                 self._take_snapshot(reason="staleness")
+
+            self._maybe_resurrect_alumnus()
 
             training_log_dict["league/pool_size"] = float(len(self.pool.members))
             training_log_dict["league/pool_avg_win_rate"] = pool_avg

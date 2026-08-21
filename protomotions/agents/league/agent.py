@@ -67,6 +67,17 @@ class LeagueParams:
     gate_win_rate: float = 0.7
     gate_min_games: int = 200  # raw finished matches since the last snapshot
     staleness_epochs: int = 50  # hard cap: force a snapshot regardless of gate
+    # Alumni resurrection (Eric's anti-forgetting audit, 2026-08-21): every N
+    # epochs, re-admit one RANDOM evicted snapshot from the on-disk archive
+    # into the active pool. A resurrected alumnus is a cheap experiment -- if
+    # the ego forgot how to beat that era's strategy it wins games, PFSP
+    # feeds it matches and it stays; if still mastered, its usage EMA decays
+    # and informed eviction removes it again. Random sampling over the whole
+    # archive gives every era an expected re-audition rate, closing the
+    # "mastered, evicted, then forgotten" hole that the earliest-member
+    # canary alone leaves open in the interior of the run's history.
+    # 0 = off.
+    resurrection_epochs: int = 0
 
     # Opponent serving
     num_lanes: int = 4
