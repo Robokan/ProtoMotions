@@ -453,23 +453,32 @@ class LeagueASEHLCAgent(FullModelLeagueMixin, FineTuningAgent):
             self._opp_rc.number_of_actions,
         )
         full = torch.zeros(active_b.shape[0], width, device=z.device, dtype=z.dtype)
-        td_a = TensorDict(
-            {"max_coords_obs": obs["max_coords_obs"][rows_a], "latents": z[rows_a]},
-            batch_size=rows_a.shape[0],
-        )
+        inputs_a = {
+            "max_coords_obs": obs["max_coords_obs"][rows_a],
+            "latents": z[rows_a],
+        }
+        # Deployable LLCs (v17-era) act on reduced_coords_obs; forward the
+        # ego rows' slice whenever the env computes it (same contract as the
+        # single-morphology branch above).
+        if "reduced_coords_obs" in obs:
+            inputs_a["reduced_coords_obs"] = obs["reduced_coords_obs"][rows_a]
+        td_a = TensorDict(inputs_a, batch_size=rows_a.shape[0])
         act_a = self._llc(td_a)[key]
         full[rows_a.unsqueeze(-1), torch.arange(act_a.shape[1], device=z.device)] = act_a
         if rows_b.numel() > 0:
             if self._opp_llc is None:
                 pass  # default-pose hold until the foreign LLC resolves
             else:
-                td_b = TensorDict(
-                    {
-                        "max_coords_obs": self._opp_max_coords(rows_b),
-                        "latents": z[rows_b],
-                    },
-                    batch_size=rows_b.shape[0],
-                )
+                inputs_b = {
+                    "max_coords_obs": self._opp_max_coords(rows_b),
+                    "latents": z[rows_b],
+                }
+                # The foreign LLC may be deployable too; its reduced obs must
+                # be computed with ITS dof count from raw sim state, exactly
+                # as _opp_max_coords does for the privileged obs. Always
+                # included -- privileged LLCs ignore extra keys.
+                inputs_b["reduced_coords_obs"] = self._opp_reduced_coords(rows_b)
+                td_b = TensorDict(inputs_b, batch_size=rows_b.shape[0])
                 act_b = self._opp_llc(td_b)[key]
                 full[
                     rows_b.unsqueeze(-1),
@@ -508,6 +517,39 @@ class LeagueASEHLCAgent(FullModelLeagueMixin, FineTuningAgent):
             root_height_obs=True,
             observe_contacts=False,
             w_last=True,
+        )
+
+    @torch.no_grad()
+    def _opp_reduced_coords(self, rows: Tensor = None) -> Tensor:
+        """The opponent block's DEPLOYABLE self-observation (IMU + encoders),
+        computed with ITS dof count from raw (padded) sim state. Settings
+        MUST match the deployable pretrain (ase/mlp.py deployable path:
+        no root height, no root vel) -- the same contract as
+        _opp_max_coords."""
+        from protomotions.envs.obs import (
+            compute_humanoid_reduced_coords_observations,
+        )
+        from protomotions.utils import rotations
+
+        nd = self._opp_rc.number_of_actions
+        anchor = int(getattr(self._opp_rc, "anchor_body_index", 0) or 0)
+        state = self.env.simulator.get_robot_state()
+        dof_state = self.env.simulator.get_dof_state()
+        if rows is None:
+            n = self.env.num_matches
+            rows = torch.arange(n, 2 * n, device=self.device)
+        root_rot = state.rigid_body_rot[rows, 0]
+        root_ang_vel = state.rigid_body_ang_vel[rows, 0]
+        return compute_humanoid_reduced_coords_observations(
+            dof_pos=dof_state.dof_pos[rows, :nd],
+            dof_vel=dof_state.dof_vel[rows, :nd],
+            anchor_rot=state.rigid_body_rot[rows, anchor],
+            root_local_ang_vel=rotations.quat_rotate_inverse(
+                root_rot, root_ang_vel, w_last=True
+            ),
+            w_last=True,
+            root_height_obs=False,
+            root_vel_obs=False,
         )
 
     def _opponent_obs_td(self, opp_obs: Dict[str, Tensor]):
