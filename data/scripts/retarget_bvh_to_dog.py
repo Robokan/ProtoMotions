@@ -155,6 +155,21 @@ def retarget_clip(bvh_path, tgt_skel, mirror=False):
 
     # Root translation: Hips position cm, Y-up -> Z-up, then scale cm -> m.
     rt = quat_rotate(YUP_TO_ZUP.expand(N, 4), root_trans) * CM_TO_M
+
+    if mirror:
+        # Reflections do not commute with rotations: mirroring in the BVH
+        # Y-up frame and THEN rotating to Z-up leaves every body with a
+        # residual Rx(180) relative to a true target-frame mirror
+        # (C.M_b != M_t.C on orientations; positions are immune, which is
+        # why the bug was invisible everywhere except asymmetric meshes --
+        # the dog's skull rendered upside down in every _mirror clip).
+        # Correct it: right-multiply the root, conjugate non-root locals.
+        X = torch.tensor([0.0, 1.0, 0.0, 0.0]).expand(N, 4)  # wxyz: Rx(180)
+        out_local[:, 0, :] = quat_normalize(quat_mul(out_local[:, 0, :], X))
+        for j in range(1, out_local.shape[1]):
+            out_local[:, j, :] = quat_normalize(
+                quat_mul(X, quat_mul(out_local[:, j, :], X))
+            )
     return out_local, rt, fps
 
 
