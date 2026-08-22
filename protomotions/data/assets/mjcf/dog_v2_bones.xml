@@ -83,7 +83,7 @@
                   <joint name="LeftHand_y" type="hinge" axis="0 1 0" pos="0 0 0" limited="false"/>
                   <joint name="LeftHand_z" type="hinge" axis="0 0 1" pos="0 0 0" limited="false"/>
                   <geom name="geom_LeftHand" type="capsule" fromto="0 0 0 0.073296 0 0" size="0.02" group="0" rgba="0.5 0.5 0.5 0"/>
-          <geom name="bone_LeftHand" type="mesh" mesh="bone_LeftHand" contype="0" conaffinity="0" density="0" group="2" rgba="0.93 0.90 0.83 1"/>
+          <geom name="bone_LeftHand" type="mesh" mesh="bone_LeftHand" quat="0.7071068 0.7071068 0 0" contype="0" conaffinity="0" density="0" group="2" rgba="0.93 0.90 0.83 1"/>
                 </body>
               </body>
             </body>
@@ -111,7 +111,7 @@
                   <joint name="RightHand_y" type="hinge" axis="0 1 0" pos="0 0 0" limited="false"/>
                   <joint name="RightHand_z" type="hinge" axis="0 0 1" pos="0 0 0" limited="false"/>
                   <geom name="geom_RightHand" type="capsule" fromto="0 0 0 0.073296 0 0" size="0.02" group="0" rgba="0.5 0.5 0.5 0"/>
-          <geom name="bone_RightHand" type="mesh" mesh="bone_RightHand" contype="0" conaffinity="0" density="0" group="2" rgba="0.93 0.90 0.83 1"/>
+          <geom name="bone_RightHand" type="mesh" mesh="bone_RightHand" quat="0.7071068 0.7071068 0 0" contype="0" conaffinity="0" density="0" group="2" rgba="0.93 0.90 0.83 1"/>
                 </body>
               </body>
             </body>
