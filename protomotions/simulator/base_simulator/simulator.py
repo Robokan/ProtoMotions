@@ -574,6 +574,33 @@ class Simulator(RecordingMixin, ABC):
                 self.device
             )
 
+            # "Unlimited" has many spellings: MJCF exports use sentinels like
+            # +-1e10, USD/PhysX report float32 max (+-3.4e38). Any magnitude
+            # beyond ~1e6 rad is not a physical limit -- normalize both sides
+            # to the same sentinel so unlimited==unlimited passes (dog_v2's
+            # free spine joints hit this).
+            UNLIMITED = 1e6
+            sim_lower_common = torch.where(
+                sim_lower_common < -UNLIMITED,
+                torch.full_like(sim_lower_common, -UNLIMITED),
+                sim_lower_common,
+            )
+            sim_upper_common = torch.where(
+                sim_upper_common > UNLIMITED,
+                torch.full_like(sim_upper_common, UNLIMITED),
+                sim_upper_common,
+            )
+            dof_limits_lower = torch.where(
+                dof_limits_lower < -UNLIMITED,
+                torch.full_like(dof_limits_lower, -UNLIMITED),
+                dof_limits_lower,
+            )
+            dof_limits_upper = torch.where(
+                dof_limits_upper > UNLIMITED,
+                torch.full_like(dof_limits_upper, UNLIMITED),
+                dof_limits_upper,
+            )
+
             # Compare with MJCF-parsed limits
             lower_diff = torch.abs(sim_lower_common - dof_limits_lower)
             upper_diff = torch.abs(sim_upper_common - dof_limits_upper)
