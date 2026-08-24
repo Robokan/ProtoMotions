@@ -152,6 +152,19 @@ class ControlConfig:
     # The SIMULATOR's joint limits are untouched; this only rescales actions.
     action_scaling_limits: Optional[Dict[str, tuple]] = None
 
+    # MJCF robots whose bodies articulate via THREE stacked hinges
+    # (<Body>_x/_y/_z) get those triplets collapsed into one PhysX D6 joint
+    # by the Isaac Lab importer -- and PhysX parametrizes the 3-DOF rotation
+    # as a ROTATION VECTOR (exp-map), not as sequential Rx*Ry*Rz hinge
+    # rotations (measured: single-axis writes match MuJoCo FK exactly,
+    # combined writes diverge up to 0.5 m on dog_v2 corpus poses). With this
+    # flag the Isaac Lab simulator converts every dof triplet at the wire
+    # (euler XYZ <-> rotvec on writes/reads), so the framework, corpora, and
+    # Newton/MuJoCo variants all keep speaking euler. Opt-in per robot:
+    # ONLY correct for intrinsic-XYZ hinge triplets (never enable for robots
+    # whose corpora already store exp-map dofs, e.g. SMPL humanoids).
+    hinge_triplet_rotvec_adapter: bool = False
+
     # Can be "built_in_pd" or "proportional"/"velocity"/"torque" for Proportional, Velocity, Torque control
     control_type: ControlType = ControlType.BUILT_IN_PD
 

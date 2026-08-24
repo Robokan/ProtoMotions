@@ -94,6 +94,26 @@ def main():
                     need = tag if need in (None, tag) else "CONFLICT"
         assert need != "CONFLICT", names[bi]
         Msel[bi] = need or "y"
+    # Free-body overrides where the default is wrong (Eric's eye, iterated):
+    # the HIND limb chains' frames are twisted relative to the fore limbs
+    # (the mesh bake needed different corrections for hind vs front paws for
+    # the same reason) -- their lateral is z, and y-reflection bends the
+    # knees/ankles backward. Confirmed numerically 2026-08-21: with parents
+    # fixed top-down, the mirrored right limb's LOCAL rotations sit on the
+    # original clips' right-limb locals (<10 deg) only with the whole hind
+    # chain on z -- y-choices land ~110-155 deg away (a 180 roll about the
+    # bone axis). Two apparent visual regressions that day were a STALE
+    # VIEWER showing since-reverted MJCF geom flips, not this data.
+    for n in ("LeftUpLeg", "LeftLeg", "LeftFoot",
+              "RightUpLeg", "RightLeg", "RightFoot",
+              # front paw leaves: with the fore-chain on y, the Hand meshes
+              # rendered 180-deg rolled about x (Eric); flipping just the
+              # leaf's reflection multiplies its orientation by exactly
+              # My.Mz = Rx(180) -- the observed error -- and cannot move
+              # positions (leaves have no children).
+              "LeftHand", "RightHand"):
+        if n in idx:
+            Msel[idx[n]] = "z"
     Mmat = {bi: (My if Msel[bi] == "y" else Mz) for bi in range(B)}
     topo = sorted(range(B), key=lambda bi: int(m.body(names[bi]).id))
 

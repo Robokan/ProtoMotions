@@ -227,8 +227,15 @@ def passthrough_pd_action(
 
 
 def build_pd_action_offset_scale(
-    hinge_axes_map, dof_limits_lower, dof_limits_upper, action_scale, device
+    hinge_axes_map, dof_limits_lower, dof_limits_upper, action_scale, device,
+    explicit_mask=None,
 ):
+    """explicit_mask: optional bool tensor marking dofs whose limits are an
+    explicit commandable-range spec (action_scaling_limits). Those dofs get
+    the exact per-dof offset/scale treatment even inside multi-axis groups --
+    the group-symmetric max|limit|-clamped-to-pi collapse both discards
+    asymmetry and cannot represent arcs whose branch sits far from zero
+    (dog_v2 Spine_z lives at -4.7..-1.6)."""
     sorted_body_ids = list(hinge_axes_map.keys())
     sorted_body_ids.sort()
 
@@ -253,8 +260,20 @@ def build_pd_action_offset_scale(
             curr_scale = 2 * action_scale * curr_scale
             curr_scale = min([curr_scale, np.pi])
 
-            lim_low[dof_offset : (dof_offset + dof_size)] = -curr_scale
-            lim_high[dof_offset : (dof_offset + dof_size)] = curr_scale
+            for k in range(dof_size):
+                di = dof_offset + k
+                if explicit_mask is not None and bool(explicit_mask[di]):
+                    # Explicit spec: exact per-dof branch, same math as the
+                    # 1-DOF case (action_scale 0.5 reproduces the spec).
+                    spec_lo = float(dof_limits_lower[di])
+                    spec_hi = float(dof_limits_upper[di])
+                    mid = 0.5 * (spec_hi + spec_lo)
+                    half = action_scale * (spec_hi - spec_lo)
+                    lim_low[di] = mid - half
+                    lim_high[di] = mid + half
+                else:
+                    lim_low[di] = -curr_scale
+                    lim_high[di] = curr_scale
 
         elif dof_size == 1:
             curr_low = lim_low[dof_offset]
@@ -313,13 +332,16 @@ def make_pd_action_config(
     # an asset may declare a joint as effectively continuous, which would
     # spread the action space over revolutions the robot never uses.
     overrides = getattr(robot_config, "action_scaling_limits", None)
+    explicit_mask = None
     if overrides:
         import re as _re
 
+        explicit_mask = torch.zeros(len(lower), dtype=torch.bool)
         for i, joint in enumerate(robot_config.kinematic_info.dof_names):
             for expr, (lo, hi) in overrides.items():
                 if _re.fullmatch(expr, joint):
                     lower[i], upper[i] = float(lo), float(hi)
+                    explicit_mask[i] = True
                     break
         # Explicit scaling limits are an exact spec of the commandable range,
         # so tanh saturation must land ON them. build_pd_action_offset_scale
@@ -339,6 +361,7 @@ def make_pd_action_config(
         upper,
         action_scale,
         torch.device("cpu"),
+        explicit_mask=explicit_mask,
     )
 
     joint_names = robot_config.kinematic_info.dof_names

@@ -121,8 +121,131 @@ class DogV2RobotConfig(RobotConfig):
 
     # BVH-matched rest-pose root (trunk = Hips) height
     default_root_height: float = 0.47
-    # None -> zeros, which is exactly the MJCF rest pose (a standing dog)
-    default_dof_pos: Dict[str, float] = None
+    # Commandable PD-target range per dof, fitted as the minimal circular
+    # arc covering the full corpus (+-0.1 rad margin). The skeleton's hinges
+    # are UNLIMITED in the MJCF (physical limits are impossible here: the
+    # importer collapses each 3-hinge triplet into a PhysX D6 joint and
+    # mangles per-axis limits to [0,0]), so ROM is enforced on the ACTION
+    # side instead -- the policy cannot command targets outside the mocap
+    # envelope. 18 euler-degenerate dofs (gimbal-smeared ForeArm/Arm/Tail
+    # axes whose per-hinge angles wind) are unlisted and keep the default
+    # +-pi scaling. Values are RADIANS in each dof's own corpus branch
+    # (some arcs are far from zero, e.g. Spine_z ~ -4.7..-1.6).
+    action_scaling_limits: Dict[str, tuple] = field(
+        default_factory=lambda: {
+            r"Spine_x": (-3.540, 0.399),
+            r"Spine_y": (-0.791, 0.953),
+            r"Spine_z": (-4.689, -1.594),
+            r"Spine1_x": (-3.724, 0.582),
+            r"Spine1_y": (-1.337, 1.337),
+            r"Spine1_z": (-1.394, 1.023),
+            r"Neck_x": (-2.658, 2.658),
+            r"Neck_y": (-1.452, 1.452),
+            r"Neck_z": (-1.012, 1.963),
+            r"Head_x": (-1.443, 4.585),
+            r"Head_y": (-1.358, 1.626),
+            r"LeftShoulder_x": (-3.065, -0.862),
+            r"LeftShoulder_y": (-0.788, 1.044),
+            r"LeftShoulder_z": (-2.686, 0.321),
+            r"LeftArm_y": (-1.635, 4.204),
+            r"LeftForeArm_y": (-1.662, 3.773),
+            r"LeftHand_x": (-1.585, 4.381),
+            r"LeftHand_y": (-3.279, 1.619),
+            r"LeftHand_z": (-4.137, 1.897),
+            r"RightShoulder_x": (-2.279, -0.076),
+            r"RightShoulder_y": (-0.788, 1.044),
+            r"RightShoulder_z": (-0.321, 2.686),
+            r"RightHand_x": (-1.240, 4.702),
+            r"RightHand_y": (-1.619, 4.156),
+            r"LeftUpLeg_x": (-1.836, 1.556),
+            r"LeftUpLeg_y": (-1.375, 1.464),
+            r"LeftUpLeg_z": (-4.296, -1.269),
+            r"LeftLeg_x": (-2.254, 2.512),
+            r"LeftLeg_y": (-1.148, 1.099),
+            r"LeftLeg_z": (-0.273, 3.630),
+            r"LeftFoot_x": (-0.507, 1.295),
+            r"LeftFoot_y": (-1.282, 1.100),
+            r"LeftFoot_z": (-1.518, 2.385),
+            r"RightUpLeg_x": (-1.556, 1.836),
+            r"RightUpLeg_y": (-1.464, 1.375),
+            r"RightUpLeg_z": (-4.296, -1.269),
+            r"RightLeg_x": (-2.512, 2.254),
+            r"RightLeg_y": (-1.099, 1.148),
+            r"RightLeg_z": (-0.273, 3.630),
+            r"RightFoot_x": (-3.662, 0.507),
+            r"RightFoot_y": (-3.497, 1.282),
+            r"RightFoot_z": (-1.508, 4.565),
+        }
+    )
+
+    # Median walking pose of clip 33 (unwrapped intrinsic-XYZ dps, the same
+    # convention the corpus plays back through FK). Zeros is NOT a standing
+    # dog here: the all-zero drop test measured foot origins at 0.42 m and
+    # the sim repack grounded clips to it, floating the corpus 0.38 m up.
+    default_dof_pos: Dict[str, float] = field(
+        default_factory=lambda: {
+            "Spine_x": -0.0594,
+            "Spine_y": 0.1204,
+            "Spine_z": -2.6936,
+            "Spine1_x": 0.0323,
+            "Spine1_y": 0.1077,
+            "Spine1_z": -0.3129,
+            "Neck_x": -0.1065,
+            "Neck_y": 0.0669,
+            "Neck_z": -0.2408,
+            "Head_x": 1.6334,
+            "Head_y": 0.2979,
+            "Head_z": -0.1947,
+            "LeftShoulder_x": -2.2458,
+            "LeftShoulder_y": -0.1871,
+            "LeftShoulder_z": -0.9060,
+            "LeftArm_x": 2.4492,
+            "LeftArm_y": 0.8608,
+            "LeftArm_z": 1.8344,
+            "LeftForeArm_x": 0.0866,
+            "LeftForeArm_y": -0.0287,
+            "LeftForeArm_z": -1.2477,
+            "LeftHand_x": 0.0252,
+            "LeftHand_y": -0.3170,
+            "LeftHand_z": 0.0712,
+            "RightShoulder_x": -0.9339,
+            "RightShoulder_y": -0.1519,
+            "RightShoulder_z": 1.0328,
+            "RightArm_x": 0.3225,
+            "RightArm_y": -1.0281,
+            "RightArm_z": 1.5259,
+            "RightForeArm_x": -0.1612,
+            "RightForeArm_y": 0.1816,
+            "RightForeArm_z": -1.3332,
+            "RightHand_x": 0.0200,
+            "RightHand_y": -0.0290,
+            "RightHand_z": 0.0362,
+            "LeftUpLeg_x": -0.3444,
+            "LeftUpLeg_y": 0.1557,
+            "LeftUpLeg_z": -2.2900,
+            "LeftLeg_x": -0.1330,
+            "LeftLeg_y": 0.1878,
+            "LeftLeg_z": 1.8171,
+            "LeftFoot_x": 0.0294,
+            "LeftFoot_y": -0.0758,
+            "LeftFoot_z": 0.4871,
+            "RightUpLeg_x": 0.1358,
+            "RightUpLeg_y": 0.0544,
+            "RightUpLeg_z": -2.2302,
+            "RightLeg_x": 0.0957,
+            "RightLeg_y": -0.1091,
+            "RightLeg_z": 1.8411,
+            "RightFoot_x": -0.0006,
+            "RightFoot_y": -0.0493,
+            "RightFoot_z": 0.4694,
+            "Tail_x": 0.3413,
+            "Tail_y": 0.1230,
+            "Tail_z": 0.2044,
+            "Tail1_x": -0.7764,
+            "Tail1_y": 0.0199,
+            "Tail1_z": 0.1810,
+        }
+    )
     anchor_body_name: str = "trunk"
 
     # ground-contact extremities only
@@ -133,6 +256,7 @@ class DogV2RobotConfig(RobotConfig):
     asset: RobotAssetConfig = field(
         default_factory=lambda: RobotAssetConfig(
             asset_file_name="mjcf/dog_v2_bones.xml",
+            self_collisions=False,
             replace_cylinder_with_capsule=True,
             thickness=0.01,
             max_angular_velocity=1000.0,
@@ -146,6 +270,9 @@ class DogV2RobotConfig(RobotConfig):
         default_factory=lambda: ControlConfig(
             control_type=ControlType.BUILT_IN_PD,
             override_control_info=dict(CONTROL_OVERRIDES),
+            # Lab3-PhysX collapses each 3-hinge body into a rotvec-
+            # parametrized D6; convert euler<->rotvec at the wire.
+            hinge_triplet_rotvec_adapter=True,
         )
     )
 
