@@ -167,20 +167,35 @@ class IsaacLabSimulator(Simulator):
             # roughly njmax x total_DOFs, so scaling it by env count asks for a
             # single tens-of-GB allocation that fails with ~7 GB still free --
             # it reads as an OOM but is really one oversized request.
+            # 64/env, just above the ~50 measured (the overflow was
+            # 101993 against the 48/env default). Contact memory is
+            # NOT linear -- each contact carries Jacobian rows sized by
+            # DOF count, so 96/env asked for a single 8.05 GB array and
+            # failed with the card half empty (24 GB). On unified-memory
+            # boxes (DGX Spark) that ceiling doesn't apply -- raise via
+            # PROTOMOTIONS_NEWTON_NCONMAX_PER_ENV.
+            nconmax_per_env = int(
+                os.environ.get("PROTOMOTIONS_NEWTON_NCONMAX_PER_ENV", "64")
+            )
+            # njmax is PER WORLD (unlike nconmax above): the Lab 3 default of
+            # 300 overflows on Atlas ("nefc overflow - please increase njmax
+            # to 420"), and dropped constraint rows destabilize the solver the
+            # same way dropped contacts do (terrain obs at 5e13 by step 3).
+            # Raising the per-world value is cheap -- this is NOT the
+            # env-count scaling the warning above forbids.
+            njmax = int(os.environ.get("PROTOMOTIONS_NEWTON_NJMAX", "512"))
             sim_kwargs["physics"] = NewtonCfg(
                 solver_cfg=MJWarpSolverCfg(
                     use_mujoco_contacts=False,
-                    # 64/env, just above the ~50 measured (the overflow was
-                    # 101993 against the 48/env default). Contact memory is
-                    # NOT linear -- each contact carries Jacobian rows sized by
-                    # DOF count, so 96/env asked for a single 8.05 GB array and
-                    # failed with the card half empty.
-                    nconmax=64 * self.config.num_envs,
+                    nconmax=nconmax_per_env * self.config.num_envs,
+                    njmax=njmax,
                 ),
                 default_shape_cfg=NewtonShapeCfg(margin=0.01),
             )
             log.info(
-                "Isaac Lab physics backend: Newton (MJWarp, Newton contacts)"
+                "Isaac Lab physics backend: Newton (MJWarp, Newton contacts, "
+                f"nconmax={nconmax_per_env}/env x {self.config.num_envs} envs, "
+                f"njmax={njmax}/world)"
             )
         else:
             sim_kwargs[_SIM_PHYSX_KW] = PhysxCfg(
