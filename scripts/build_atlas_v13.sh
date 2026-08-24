@@ -65,12 +65,21 @@ $PY data/scripts/fix_foot_clips.py --robot atlas --in-dir $W/motion \
 [ $? -ne 0 ] && { say "ABORT: foot fix"; exit 1; }
 say "step 4: foot-fixed $(ls $W/footfix/*.motion | wc -l)"
 
-# 5. trim collisions >1cm and pop damage (tail-aware)
+# 5a. re-path leg collisions (whole-trajectory optimizer, e39931b) --
+# trimming a collision leaves the leg on the trajectory that caused it;
+# the optimizer bends the approach instead. Pops are still trimmed in 5b.
+$PY data/scripts/optimize_leg_trajectories.py --robot atlas --in-dir $W/footfix \
+  --out-dir $W/opt --w-pen 400000 --w-foot 400000 --maxiter 200 >> "$LOG" 2>&1
+[ $? -ne 0 ] && { say "ABORT: trajectory optimizer"; exit 1; }
+say "step 5a: optimized -> $W/opt"
+
+# 5b. trim pop damage (tail-aware) and any collision the optimizer could
+# not clear below 1cm
 rm -rf data/motions/atlas_v13
-$PY data/scripts/trim_motion_collisions.py --robot atlas --in-dir $W/footfix \
+$PY data/scripts/trim_motion_collisions.py --robot atlas --in-dir $W/opt \
   --out-dir data/motions/atlas_v13 --depth-cm 1 --blip-frames 1 >> "$LOG" 2>&1
 [ $? -ne 0 ] && { say "ABORT: trim"; exit 1; }
-say "step 5: trimmed -> $(ls data/motions/atlas_v13/*.motion | wc -l) clips"
+say "step 5b: trimmed -> $(ls data/motions/atlas_v13/*.motion | wc -l) clips"
 
 # 6. recipe + corpus + validation
 $PY - >> "$LOG" 2>&1 <<'PYEOF'

@@ -136,6 +136,17 @@ def agent_config(robot_cfg, env_cfg, args):
     # top-level in_keys list.
     if "task_obs" not in cfg.model.in_keys:
         cfg.model.in_keys.append("task_obs")
+
+    # Reward mix (IsaacLabASE game controller: task_reward_w 0.5,
+    # disc_reward_w 0.5). The base AMP experiment ships agent
+    # task_reward_w=0.1 -- a multiplier sized for tiny TIE-BREAK rewards
+    # (energy preference), not a real task. Left at 0.1 it stacks with the
+    # env-side steering weight (0.5) to an effective 0.05 vs style 1.0 --
+    # a 20:1 style domination that trained dead-flat for 36k epochs on
+    # anymal (2026-08-22). Agent multiplier 1.0 makes the env weight the
+    # single source of truth: effective task = --task-reward-w (0.5).
+    cfg.task_reward_w = 1.0
+    cfg.amp_parameters.discriminator_reward_w = 0.5
     return cfg
 
 

@@ -160,6 +160,10 @@ dvs_src = dvs_src.to(device) if dvs_src is not None else torch.zeros_like(dps_sr
 num_bodies = gts_src.shape[1]
 new_gts = torch.zeros_like(gts_src)
 new_grs = torch.zeros_like(grs_src)
+new_gvs_sim = torch.zeros_like(gts_src)
+new_gavs_sim = torch.zeros_like(gts_src)
+gvs_src = src["gvs"].to(device)
+gavs_src = src["gavs"].to(device)
 
 # Reference "feet touching" height: teleport to the robot's DEFAULT standing
 # state (feet on the ground by design) and read where the foot link origins
@@ -187,14 +191,22 @@ if foot_ids and not args.no_ground_feet:
 # is one control step from the EXACT teleported state and shows up at the
 # ~1e-2 level, an order below the 0.35-2.0 frame mismatch being repaired.
 for f in range(total_frames):
+    # Teleport WITH the corpus root/dof velocities: the sim then reports every
+    # link's velocity in ITS convention -- IsaacLab's body_lin_vel_w is the
+    # COM velocity (both Lab 2 and Lab 3), while retarget corpora store
+    # link-origin finite differences. v_com = v_link + w x r_offset, which on
+    # ANYmal's offset-COM thighs/feet measured 0.3-0.5 m/s of systematic
+    # disagreement against a 1.16 m/s walk -- 51 discriminator channels
+    # separable by convention alone. Recording the readback makes expert
+    # velocities agree with agent rollouts by construction, like the frames.
     reset_state = ResetState(
         state_conversion=StateConversion.COMMON,
         root_pos=gts_src[f, 0].unsqueeze(0).expand(env.num_envs, -1).clone(),
         root_rot=grs_src[f, 0].unsqueeze(0).expand(env.num_envs, -1).clone(),
-        root_vel=torch.zeros(env.num_envs, 3, device=device),
-        root_ang_vel=torch.zeros(env.num_envs, 3, device=device),
+        root_vel=gvs_src[f, 0].unsqueeze(0).expand(env.num_envs, -1).clone(),
+        root_ang_vel=gavs_src[f, 0].unsqueeze(0).expand(env.num_envs, -1).clone(),
         dof_pos=dps_src[f].unsqueeze(0).expand(env.num_envs, -1).clone(),
-        dof_vel=torch.zeros_like(dvs_src[f]).unsqueeze(0).expand(env.num_envs, -1).clone(),
+        dof_vel=dvs_src[f].unsqueeze(0).expand(env.num_envs, -1).clone(),
     )
     sim.reset_envs(reset_state, None, env_ids)
     body_state = sim.get_bodies_state(env_ids)
@@ -204,6 +216,8 @@ for f in range(total_frames):
     delta = pos[0] - gts_src[f, 0]
     new_gts[f] = pos - delta
     new_grs[f] = rot
+    new_gvs_sim[f] = body_state.rigid_body_vel[0]
+    new_gavs_sim[f] = body_state.rigid_body_ang_vel[0]
     if f % 500 == 0:
         print(f"  frame {f}/{total_frames}", flush=True)
 
@@ -220,28 +234,10 @@ if ref_foot_z is not None:
         new_gts[s:e, :, 2] -= dz
         print(f"  motion {m} ({src['motion_files'][m]}): lowered by {dz:+.4f} m")
 
-# Finite-difference velocities per motion at the corpus dt.
-from protomotions.utils import rotations  # noqa: E402
-
-new_gvs = torch.zeros_like(new_gts)
-new_gavs = torch.zeros_like(new_gts)
-ls_ = src["length_starts"]
-nf = src["motion_num_frames"]
-for m in range(num_motions):
-    s, e = int(ls_[m]), int(ls_[m] + nf[m])
-    dt = float(src["motion_dt"][m])
-    p = new_gts[s:e]
-    q = new_grs[s:e]
-    new_gvs[s : e - 1] = (p[1:] - p[:-1]) / dt
-    new_gvs[e - 1] = new_gvs[e - 2]
-    dq = rotations.quat_mul(
-        q[1:].reshape(-1, 4),
-        rotations.quat_conjugate(q[:-1].reshape(-1, 4), w_last=True),
-        w_last=True,
-    )
-    angle, axis = rotations.quat_to_angle_axis(dq, w_last=True)
-    new_gavs[s : e - 1] = (axis * angle.unsqueeze(-1) / dt).reshape(-1, num_bodies, 3)
-    new_gavs[e - 1] = new_gavs[e - 2]
+# Velocities come from the sim readback (COM convention, matching agent
+# rollouts). Grounding is a constant per-clip shift, so it does not alter them.
+new_gvs = new_gvs_sim
+new_gavs = new_gavs_sim
 
 out = dict(src)
 out["gts"] = new_gts.cpu()

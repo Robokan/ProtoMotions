@@ -1,5 +1,5 @@
 <mujoco model="atlas">
-  <compiler angle="radian" meshdir="../mesh/Atlas/" />
+  <compiler angle="radian" meshdir="../mesh/Atlas/" texturedir="." />
   <option gravity="0 0 -9.81" />
   <visual>
     <global offwidth="1280" offheight="960" />
