@@ -725,6 +725,20 @@ class BaseEvaluator:
                 next_obs, _, dones, terminated, extras = self.env.step(action)
 
                 if amp_comp is not None:
+                    # Timeouts set dones without terminated; capture before
+                    # disc kills mark terminated=True on failing envs.
+                    timeout = dones & ~terminated
+                    if bool(timeout.any()):
+                        ids = timeout.nonzero(as_tuple=False).squeeze(-1).tolist()
+                        if not isinstance(ids, list):
+                            ids = [ids]
+                        print(
+                            f"[episode timeout] step={step} envs={ids} "
+                            f"(max_episode_length="
+                            f"{int(self.env.max_episode_length)})",
+                            flush=True,
+                        )
+
                     next_obs = self.agent.add_agent_info_to_next_obs(next_obs)
                     next_obs_td = self.agent.obs_dict_to_tensordict(next_obs)
                     dones, terminated, extras = (

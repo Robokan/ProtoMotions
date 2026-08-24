@@ -588,7 +588,6 @@ class NewtonSimulator(Simulator):
             # attribute lives on the viewer's gui object, so guard for a viewer
             # built without one (imgui_bundle missing) or a newton version that
             # renames it -- zoom speed must never break rendering.
-            gui = getattr(self.viewer, "gui", None)
             # Default in the getattr, not None: configs restored from a
             # checkpoint pickled before this field existed would otherwise skip
             # the fix entirely, which is exactly the case when replaying an
@@ -596,12 +595,20 @@ class NewtonSimulator(Simulator):
             sensitivity = getattr(
                 self.config, "camera_dolly_scroll_sensitivity", 0.04
             )
-            if gui is not None and sensitivity is not None:
-                if hasattr(gui, "_camera_dolly_scroll_sensitivity"):
-                    gui._camera_dolly_scroll_sensitivity = float(sensitivity)
+            if sensitivity is not None:
+                # Newton 1.3 keeps the attribute on the ViewerGL itself
+                # (viewer_gl.py: self._camera_dolly_scroll_sensitivity = 0.15);
+                # older versions kept it on viewer.gui. Write to whichever
+                # object owns it -- zoom speed must never break rendering.
+                for holder in (self.viewer, getattr(self.viewer, "gui", None)):
+                    if holder is not None and hasattr(
+                        holder, "_camera_dolly_scroll_sensitivity"
+                    ):
+                        holder._camera_dolly_scroll_sensitivity = float(sensitivity)
+                        break
                 else:
                     log.warning(
-                        "newton viewer gui has no _camera_dolly_scroll_sensitivity; "
+                        "newton viewer has no _camera_dolly_scroll_sensitivity; "
                         "scroll zoom speed left at the newton default"
                     )
 
@@ -786,8 +793,76 @@ class NewtonSimulator(Simulator):
     def _setup_markers(
         self, visualization_markers: Dict[str, VisualizationMarkerConfig]
     ) -> None:
-        """Setup visualization markers."""
-        return
+        """Store marker configs; drawn via ViewerGL point instancers.
+
+        ViewerGL has no USD/mesh marker pipeline, but log_points renders a
+        named batch of spheres that persists across frames until re-logged --
+        enough for sphere-type markers (battle arena ring, waypoints). Other
+        marker types are skipped."""
+        self._marker_configs = visualization_markers or {}
+
+    def _update_simulator_markers(
+        self, markers_state: Optional[Dict[str, "MarkerState"]] = None
+    ) -> None:
+        """Draw sphere markers with ViewerGL point instancers."""
+        if (
+            self.headless
+            or not markers_state
+            or getattr(self, "viewer", None) is None
+        ):
+            return
+        for name, state in markers_state.items():
+            cfg = getattr(self, "_marker_configs", {}).get(name)
+            if cfg is None or getattr(cfg, "type", "sphere") != "sphere":
+                continue
+            pos = state.translation
+            if pos is None:
+                continue
+            flat = pos.reshape(-1, 3).contiguous()
+            n = flat.shape[0]
+            scales = [
+                float(m.scale) if getattr(m, "scale", None) is not None else 0.05
+                for m in (cfg.markers or [])
+            ] or [0.05]
+            per_env = len(scales)
+            radii = torch.tensor(
+                scales * (n // per_env) + scales[: n % per_env],
+                dtype=torch.float32, device=flat.device,
+            )
+            color = tuple(getattr(cfg, "color", None) or (0.9, 0.15, 0.1))
+
+            # Marker buffers MUST be warp-owned copies. wp.from_torch is
+            # zero-copy, and even wp.clone() of such a view races: the clone
+            # is an ASYNC device copy, and torch can recycle the temporary's
+            # memory before it executes -- the markers then render whatever
+            # tensor reuses that memory (measured twice: ring bouncing in the
+            # sky; line loop tracking a rising, rotating robot). The host
+            # round-trip is synchronous and immune; markers are tiny.
+            def _owned(t, dtype):
+                return wp.array(
+                    t.detach().cpu().numpy(), dtype=dtype, device=str(flat.device)
+                )
+
+            self.viewer.log_points(
+                f"/markers/{name}",
+                _owned(flat, wp.vec3),
+                _owned(radii, wp.float32),
+                color,
+            )
+            if "ring" in name:
+                # Sparse 2 cm spheres around a 16 m arena read as distant
+                # specks, not a boundary. Ring-type marker sets are ordered
+                # boundary traces (per env): also draw the closed line loop.
+                per_env = pos.shape[1]
+                loops = pos.reshape(-1, per_env, 3)
+                starts = loops.reshape(-1, 3).contiguous()
+                ends = loops.roll(-1, dims=1).reshape(-1, 3).contiguous()
+                self.viewer.log_lines(
+                    f"/markers/{name}_loop",
+                    _owned(starts, wp.vec3),
+                    _owned(ends, wp.vec3),
+                    color,
+                )
 
     @staticmethod
     def _get_contact_sensor_body_patterns(body_name: str) -> List[str]:
@@ -851,7 +926,7 @@ class NewtonSimulator(Simulator):
 
     def _simulate(self) -> None:
         """Run physics simulation for one frame (decimation substeps)."""
-        for _ in range(self.decimation):
+        for k in range(self.decimation):
             self.state_0.clear_forces()
             if self.control_type == ControlType.PROPORTIONAL:
                 self._apply_pd_kernel(self.state_0)
@@ -1407,9 +1482,24 @@ class NewtonSimulator(Simulator):
                     key_name, pressed=self.viewer.is_key_down(key_name.lower())
                 )
 
+            # One frame per render() call, at the control/mocap rate -- no
+            # substep interpolation. Real-time governor: draw, then sleep off
+            # whatever's left of this control step's wall-clock budget so
+            # playback speed stays pinned to actual seconds regardless of how
+            # fast the machine can render (measured 40 fps = 1.33x fast-
+            # forward on the 2-env atlas battle before this governor).
+            import time as _time
+
             self.viewer.begin_frame(self.sim_time)
             self.viewer.log_state(self.state_0)
             self.viewer.end_frame()
+            now = _time.perf_counter()
+            last = getattr(self, "_rt_last_frame", None)
+            if last is not None:
+                surplus = self.dt - (now - last)
+                if surplus > 0:
+                    _time.sleep(surplus)
+            self._rt_last_frame = _time.perf_counter()
 
         super().render()
 
@@ -1428,8 +1518,3 @@ class NewtonSimulator(Simulator):
         viewport = self.viewer.get_frame().numpy()  # [H, W, 3] as uint8
         plt.imsave(file_name, viewport)
 
-    def _update_simulator_markers(
-        self, markers_state: Optional[Dict[str, MarkerState]] = None
-    ) -> None:
-        """Updates visualization markers."""
-        pass

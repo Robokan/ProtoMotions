@@ -839,10 +839,134 @@ class IsaacLabSimulator(Simulator):
                 self._sim.render()
             self._scene.update(dt=self._sim.get_physics_dt())
 
+    # -----------------------------------------------------------------
+    # Euler<->rotvec adapter for MJCF 3-hinge triplets (see
+    # ControlConfig.hinge_triplet_rotvec_adapter). The Lab importer collapses
+    # each <Body>_x/_y/_z hinge stack into ONE PhysX D6 joint whose 3
+    # rotational dofs are a ROTATION VECTOR -- measured: writing (0.4,0.5,0.6)
+    # to LeftArm matches R.from_rotvec exactly (0.000 deg) and no euler order,
+    # while MuJoCo/Newton compose Rx*Ry*Rz. Everything framework-side (corpora
+    # dps, action scaling arcs, Newton) speaks euler XYZ, so convert at the
+    # wire: writes euler->rotvec, reads rotvec->euler.
+    # -----------------------------------------------------------------
+    def _rotvec_triplets(self) -> Optional[torch.Tensor]:
+        """[G, 3] sim-order dof indices of each 3-hinge triplet, or None."""
+        if hasattr(self, "_rotvec_triplets_cache"):
+            return self._rotvec_triplets_cache
+        self._rotvec_triplets_cache = None
+        if getattr(self.robot_config.control, "hinge_triplet_rotvec_adapter", False):
+            common_names = list(self.robot_config.kinematic_info.dof_names)
+            common_idx = {n: i for i, n in enumerate(common_names)}
+            # sim slot of common dof j: inverse of dof_convert_to_sim
+            # (sim_vec = common_vec[dof_convert_to_sim]).
+            to_sim = self.data_conversion.dof_convert_to_sim
+            inv = torch.empty_like(to_sim)
+            inv[to_sim] = torch.arange(len(to_sim), device=to_sim.device)
+            groups = []
+            for body in self.robot_config.kinematic_info.body_names:
+                names = [f"{body}_{ax}" for ax in "xyz"]
+                if all(n in common_idx for n in names):
+                    groups.append([int(inv[common_idx[n]]) for n in names])
+            if groups:
+                self._rotvec_triplets_cache = torch.tensor(
+                    groups, dtype=torch.long, device=self.device
+                )
+        return self._rotvec_triplets_cache
+
+    @staticmethod
+    def _triplet_quats(e: torch.Tensor) -> torch.Tensor:
+        """Intrinsic-XYZ euler [..., 3] -> quaternion [..., 4] xyzw."""
+        ha, hb, hc = e[..., 0] / 2, e[..., 1] / 2, e[..., 2] / 2
+        ca, sa = torch.cos(ha), torch.sin(ha)
+        cb, sb = torch.cos(hb), torch.sin(hb)
+        cc, sc = torch.cos(hc), torch.sin(hc)
+        # q = qx(a) * qy(b) * qz(c)
+        w = ca * cb * cc - sa * sb * sc
+        x = sa * cb * cc + ca * sb * sc
+        y = ca * sb * cc - sa * cb * sc
+        z = ca * cb * sc + sa * sb * cc
+        return torch.stack([x, y, z, w], dim=-1)
+
+    def _dof_euler_to_rotvec(self, dof_sim: torch.Tensor) -> torch.Tensor:
+        trip = self._rotvec_triplets()
+        if trip is None:
+            return dof_sim
+        out = dof_sim.clone()
+        e = dof_sim[..., trip]  # [N, G, 3]
+        q = self._triplet_quats(e)
+        v, w = q[..., :3], q[..., 3]
+        norm = v.norm(dim=-1).clamp_min(1e-12)
+        angle = 2.0 * torch.atan2(norm, w)
+        # keep the short branch: angle in (-pi, pi]
+        angle = torch.where(angle > torch.pi, angle - 2.0 * torch.pi, angle)
+        out[..., trip] = v / norm.unsqueeze(-1) * angle.unsqueeze(-1)
+        return out
+
+    def _dof_rotvec_to_euler(self, dof_sim: torch.Tensor) -> torch.Tensor:
+        trip = self._rotvec_triplets()
+        if trip is None:
+            return dof_sim
+        out = dof_sim.clone()
+        r = dof_sim[..., trip]  # [N, G, 3]
+        angle = r.norm(dim=-1).clamp_min(1e-12)
+        axis = r / angle.unsqueeze(-1)
+        ca, sa = torch.cos(angle), torch.sin(angle)
+        omc = 1.0 - ca
+        x, y, z = axis[..., 0], axis[..., 1], axis[..., 2]
+        # rotation matrix entries needed for intrinsic-XYZ extraction
+        r00 = ca + x * x * omc
+        r01 = x * y * omc - z * sa
+        r02 = x * z * omc + y * sa
+        r12 = y * z * omc - x * sa
+        r22 = ca + z * z * omc
+        b = torch.asin(r02.clamp(-1.0, 1.0))
+        a = torch.atan2(-r12, r22)
+        c = torch.atan2(-r01, r00)
+        out[..., trip] = torch.stack([a, b, c], dim=-1)
+        return out
+
+    def _dof_vel_euler_to_omega(
+        self, vel_sim: torch.Tensor, pos_sim_euler: torch.Tensor
+    ) -> torch.Tensor:
+        """Euler XYZ rates -> angular velocity components per triplet.
+        omega = a_dot*ex + Rx(a)*ey*b_dot + Rx(a)Ry(b)*ez*c_dot."""
+        trip = self._rotvec_triplets()
+        if trip is None:
+            return vel_sim
+        out = vel_sim.clone()
+        e = pos_sim_euler[..., trip]
+        d = vel_sim[..., trip]
+        sa, ca = torch.sin(e[..., 0]), torch.cos(e[..., 0])
+        sb, cb = torch.sin(e[..., 1]), torch.cos(e[..., 1])
+        w1 = d[..., 0] + sb * d[..., 2]
+        w2 = ca * d[..., 1] - sa * cb * d[..., 2]
+        w3 = sa * d[..., 1] + ca * cb * d[..., 2]
+        out[..., trip] = torch.stack([w1, w2, w3], dim=-1)
+        return out
+
+    def _dof_vel_omega_to_euler(
+        self, vel_sim: torch.Tensor, pos_sim_euler: torch.Tensor
+    ) -> torch.Tensor:
+        trip = self._rotvec_triplets()
+        if trip is None:
+            return vel_sim
+        out = vel_sim.clone()
+        e = pos_sim_euler[..., trip]
+        w = vel_sim[..., trip]
+        sa, ca = torch.sin(e[..., 0]), torch.cos(e[..., 0])
+        sb, cb = torch.sin(e[..., 1]), torch.cos(e[..., 1])
+        cb = torch.where(cb.abs() < 1e-4, torch.full_like(cb, 1e-4), cb)
+        b_dot = ca * w[..., 1] + sa * w[..., 2]
+        c_dot = (-sa * w[..., 1] + ca * w[..., 2]) / cb
+        a_dot = w[..., 0] - sb * c_dot
+        out[..., trip] = torch.stack([a_dot, b_dot, c_dot], dim=-1)
+        return out
+
     def _apply_simulator_pd_targets(self, pd_targets: torch.Tensor) -> None:
         """Applies PD position targets using IsaacLab's internal PD controller."""
         # Lab 3 Warp kernels need __cuda_array_interface__, which torch
         # refuses on Variables that still require grad.
+        pd_targets = self._dof_euler_to_rotvec(pd_targets)
         self._robot.set_joint_position_target(pd_targets.detach(), joint_ids=None)
 
     def _apply_simulator_torques(self, torques: torch.Tensor) -> None:
@@ -873,11 +997,15 @@ class IsaacLabSimulator(Simulator):
             dim=-1,
         ).detach()
         self._robot.write_root_state_to_sim(init_root_state, env_ids)
+        dof_pos = self._dof_euler_to_rotvec(new_states.dof_pos)
+        dof_vel = self._dof_vel_euler_to_omega(
+            new_states.dof_vel, new_states.dof_pos
+        )
         self._robot.set_joint_position_target(
-            new_states.dof_pos.detach(), joint_ids=None, env_ids=env_ids
+            dof_pos.detach(), joint_ids=None, env_ids=env_ids
         )
         self._robot.write_joint_state_to_sim(
-            new_states.dof_pos.detach(), new_states.dof_vel.detach(), None, env_ids
+            dof_pos.detach(), dof_vel.detach(), None, env_ids
         )
         if new_object_states is not None and len(self._object) > 0:
             init_object_root_state = torch.cat(
@@ -1026,8 +1154,13 @@ class IsaacLabSimulator(Simulator):
         if env_ids is not None:
             isaacsim_dof_pos = isaacsim_dof_pos[env_ids]
             isaacsim_dof_vel = isaacsim_dof_vel[env_ids]
+        # rotvec-parametrized D6 triplets -> framework euler convention
+        euler_pos = self._dof_rotvec_to_euler(isaacsim_dof_pos)
+        isaacsim_dof_vel = self._dof_vel_omega_to_euler(
+            isaacsim_dof_vel, euler_pos
+        )
         return RobotState(
-            dof_pos=isaacsim_dof_pos,
+            dof_pos=euler_pos,
             dof_vel=isaacsim_dof_vel,
             state_conversion=StateConversion.SIMULATOR,
         )

@@ -725,6 +725,7 @@ class Simulator(RecordingMixin, ABC):
 
         self._steps_since_reset += 1
         self._physics_step()
+        self._invalidate_state_cache()
 
         # Update simulation time and apply push randomization
         if self._push_enabled:
@@ -740,6 +741,38 @@ class Simulator(RecordingMixin, ABC):
         self._update_markers(markers_state)
 
         self.render()
+
+    def _canonicalize_reset_dof_pos(self, new_states: ResetState) -> None:
+        """Wrap hinge dof reset targets into each joint's limit branch.
+
+        Euler-packed corpora can wind: a hinge at 765 deg is the SAME
+        rotation as 45 deg, but teleporting the wound value into a limited
+        joint clamps it to a WRONG pose. mod-2pi toward the limit midpoint
+        reaches the identical rotation inside the limits. No-op for
+        unlimited dofs (sentinel |limit| > 1e6) and for values already in
+        the branch, so robots with in-range corpora are byte-identical.
+        """
+        dof_pos = getattr(new_states, "dof_pos", None)
+        if dof_pos is None:
+            return
+        if not hasattr(self, "_reset_wrap_finite"):
+            ki = self.robot_config.kinematic_info
+            lo = ki.dof_limits_lower.to(device=self.device, dtype=torch.float)
+            hi = ki.dof_limits_upper.to(device=self.device, dtype=torch.float)
+            self._reset_wrap_finite = (hi - lo).abs() < 1e6
+            self._reset_wrap_mid = torch.where(
+                self._reset_wrap_finite, 0.5 * (lo + hi), torch.zeros_like(lo)
+            )
+        if not bool(self._reset_wrap_finite.any()):
+            return
+        mid = self._reset_wrap_mid
+        two_pi = 2.0 * torch.pi
+        wrapped = mid + torch.remainder(
+            dof_pos - mid + torch.pi, two_pi
+        ) - torch.pi
+        new_states.dof_pos = torch.where(
+            self._reset_wrap_finite, wrapped, dof_pos
+        )
 
     def reset_envs(
         self,
@@ -758,6 +791,7 @@ class Simulator(RecordingMixin, ABC):
         """
         if env_ids is None:
             env_ids = torch.arange(self.num_envs, device=self.device)
+        self._canonicalize_reset_dof_pos(new_states)
         new_states = new_states.convert_to_sim(self.data_conversion)
 
         self._previous_actions[env_ids] = 0.0
@@ -771,6 +805,7 @@ class Simulator(RecordingMixin, ABC):
             else:
                 new_object_states = None
         self._set_simulator_env_state(new_states, new_object_states, env_ids)
+        self._invalidate_state_cache()
 
         # Reset push randomization state for reset environments
         if self._push_enabled:
@@ -963,11 +998,11 @@ class Simulator(RecordingMixin, ABC):
         Returns:
             RootOnlyState: The environment state corresponding to the robot root.
         """
-        simulator_root_state: RootOnlyState = self._get_simulator_root_state(env_ids)
-        simulator_root_state = simulator_root_state.convert_to_common(
-            self.data_conversion
-        )
-        return simulator_root_state
+        def _build(e):
+            simulator_root_state: RootOnlyState = self._get_simulator_root_state(e)
+            return simulator_root_state.convert_to_common(self.data_conversion)
+
+        return self._cached_state("root_state", _build, env_ids)
 
     @abstractmethod
     def _get_simulator_root_state(
@@ -984,18 +1019,48 @@ class Simulator(RecordingMixin, ABC):
         """
         raise NotImplementedError
 
+    # -----------------------------------------------------------------
+    # Per-step state-query memoization. Profiling the 2-env battle viewer
+    # (2026-08-22) showed the same full-batch state assembled 3+ times per
+    # control step (env step + context build + per-robot battle queries),
+    # with each PhysX view property read syncing the GPU -- ~20% of the
+    # frame. State only changes when physics steps or a reset/park writes
+    # it, so full-batch queries are cached and invalidated at those points.
+    # Cached objects are shared between callers within one step: treat
+    # returned states as READ-ONLY.
+    # -----------------------------------------------------------------
+    def _cached_state(self, key, builder, env_ids):
+        if env_ids is not None:
+            return builder(env_ids)
+        version = getattr(self, "_state_cache_version", 0)
+        if not hasattr(self, "_state_cache"):
+            self._state_cache = {}
+        hit = self._state_cache.get(key)
+        if hit is not None and hit[0] == version:
+            return hit[1]
+        value = builder(None)
+        self._state_cache[key] = (version, value)
+        return value
+
+    def _invalidate_state_cache(self) -> None:
+        self._state_cache_version = getattr(self, "_state_cache_version", 0) + 1
+
     def get_robot_state(self, env_ids: Optional[torch.Tensor] = None) -> RobotState:
         """
         Retrieve the simulator's bodies and DOF state as an RobotState.
         """
-        bodies_state: RobotState = self.get_bodies_state(env_ids)
-        dof_state: RobotState = self.get_dof_state(env_ids)
-        contact_state: RobotState = self.get_binary_body_contacts(env_ids)
-        dof_forces: torch.Tensor = self.get_dof_forces(env_ids)
-        bodies_state.merge_fields_from(dof_state)
-        bodies_state.merge_fields_from(contact_state)
-        bodies_state.merge_fields_from(dof_forces)
-        return bodies_state
+
+        def _build(e):
+            bodies_state: RobotState = self.get_bodies_state(e)
+            dof_state: RobotState = self.get_dof_state(e)
+            contact_state: RobotState = self.get_binary_body_contacts(e)
+            dof_forces: torch.Tensor = self.get_dof_forces(e)
+            bodies_state.merge_fields_from(dof_state)
+            bodies_state.merge_fields_from(contact_state)
+            bodies_state.merge_fields_from(dof_forces)
+            return bodies_state
+
+        return self._cached_state("robot_state", _build, env_ids)
 
     def get_bodies_state(self, env_ids: Optional[torch.Tensor] = None) -> RobotState:
         """
@@ -1154,15 +1219,18 @@ class Simulator(RecordingMixin, ABC):
         Returns:
             Binary contact flags [num_envs, num_bodies] as float (0.0 or 1.0)
         """
-        contact_state = self.get_bodies_contact_buf(env_ids)
-        force_magnitudes = torch.norm(
-            contact_state.rigid_body_contact_forces, dim=-1
-        )  # [num_envs, num_bodies]
-        binary_contacts = (force_magnitudes > threshold).float()
-        contact_state.rigid_body_contacts = binary_contacts
+        def _build(e):
+            contact_state = self.get_bodies_contact_buf(e)
+            force_magnitudes = torch.norm(
+                contact_state.rigid_body_contact_forces, dim=-1
+            )  # [num_envs, num_bodies]
+            binary_contacts = (force_magnitudes > threshold).float()
+            contact_state.rigid_body_contacts = binary_contacts
+            return contact_state.convert_to_common(self.data_conversion)
 
-        contact_state = contact_state.convert_to_common(self.data_conversion)
-        return contact_state
+        return self._cached_state(
+            ("binary_contacts", threshold), _build, env_ids
+        )
 
     @abstractmethod
     def _get_simulator_bodies_contact_buf(

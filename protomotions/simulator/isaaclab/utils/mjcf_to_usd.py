@@ -338,6 +338,10 @@ def convert_mjcf_to_usd(
         if not force_usd_conversion:
             completed_path = _completed_conversion(marker_path)
             if completed_path is not None:
+                # Idempotent: repairs caches written before sanitize gained
+                # new steps (e.g. contact-report baking) without reconverting.
+                if Path(completed_path).is_file():
+                    sanitize_converted_mjcf_usd(completed_path)
                 cache_store[key] = completed_path
                 return completed_path
 
@@ -377,8 +381,16 @@ def sanitize_converted_mjcf_usd(usd_path: str) -> None:
     ``init_state.pos`` / written root state on top, so the robot hovers about
     a meter above the scene ground. Deactivate world floors and zero the
     articulation-root translation so Hip is the asset origin.
+
+    Also bakes ``PhysxContactReportAPI`` onto EVERY rigid body. The converter
+    nests bodies in the MJCF kinematic tree, and Isaac Lab's spawn-time
+    ``activate_contact_sensors`` stops descending at the first rigid body it
+    finds ("nested rigid bodies are not allowed by SDK") -- so only the root
+    body gets the API and any ContactSensor on a descendant body dies with
+    "could not find any bodies with contact reporter API". Flat pre-built
+    USDs get the API on all bodies; this restores that parity.
     """
-    from pxr import Gf, Usd, UsdGeom, UsdPhysics
+    from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics
 
     stage = Usd.Stage.Open(usd_path)
     if stage is None:
@@ -393,6 +405,37 @@ def sanitize_converted_mjcf_usd(usd_path: str) -> None:
             if spec:
                 spec[0].active = False
             continue
+        if prim.HasAPI(UsdPhysics.CollisionAPI):
+            # MJCF alpha-0 collision geoms arrive as displayOpacity=[0] but
+            # render opaque anyway (spawn-time preview material ignores
+            # opacity). Honor the MJCF by marking them purpose='guide':
+            # hidden by default, toggleable in the viewport via
+            # Show By Purpose -> Guides.
+            gprim = UsdGeom.Gprim(prim)
+            if gprim:
+                opacity = gprim.GetDisplayOpacityAttr().Get()
+                if opacity is not None and len(opacity) and not any(opacity):
+                    imageable = UsdGeom.Imageable(prim)
+                    imageable.GetPurposeAttr().Set(UsdGeom.Tokens.guide)
+                    # Undo any earlier visibility-based hiding so the guide
+                    # toggle can actually show them.
+                    vis = imageable.GetVisibilityAttr()
+                    if vis.Get() == UsdGeom.Tokens.invisible:
+                        vis.Set(UsdGeom.Tokens.inherited)
+        if prim.HasAPI(UsdPhysics.RigidBodyAPI):
+            # Same recipe as isaaclab.sim.schemas.activate_contact_sensors,
+            # minus its early-stop traversal.
+            applied = prim.GetAppliedSchemas()
+            if "PhysxRigidBodyAPI" not in applied:
+                prim.AddAppliedSchema("PhysxRigidBodyAPI")
+            prim.CreateAttribute(
+                "physxRigidBody:sleepThreshold", Sdf.ValueTypeNames.Float
+            ).Set(0.0)
+            if "PhysxContactReportAPI" not in applied:
+                prim.AddAppliedSchema("PhysxContactReportAPI")
+            prim.CreateAttribute(
+                "physxContactReport:threshold", Sdf.ValueTypeNames.Float
+            ).Set(0.0)
         if not prim.HasAPI(UsdPhysics.ArticulationRootAPI):
             continue
         xformable = UsdGeom.Xformable(prim)

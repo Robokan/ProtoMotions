@@ -201,6 +201,23 @@ class PPO(BaseAgent):
         if require_optimizers or "critic_optimizer" in state_dict:
             self.critic_optimizer.load_state_dict(state_dict["critic_optimizer"])
 
+        if not self.config.adaptive_lr.enabled:
+            # The optimizer state_dicts restore whatever LR the checkpoint
+            # last ran at -- including a floor a since-disabled adaptive
+            # schedule had pinned (battle v4 sat at 1e-5 overnight this way).
+            # With the schedule off, the CONFIGURED fixed LR is authoritative:
+            # rescale each optimizer's param groups back onto it.
+            for opt, opt_cfg in (
+                (self.actor_optimizer, self.config.model.actor_optimizer),
+                (self.critic_optimizer, self.config.model.critic_optimizer),
+            ):
+                configured = optimizer_learning_rate(opt_cfg, opt)
+                current = opt.param_groups[0]["lr"]
+                if current > 0 and current != configured:
+                    scale_optimizer_learning_rates(
+                        opt, old_lr=current, new_lr=configured
+                    )
+
         # Restore adaptive LR state
         if self.config.adaptive_lr.enabled and "adaptive_lr" in state_dict:
             old_actor_lr = getattr(
