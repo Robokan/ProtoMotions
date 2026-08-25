@@ -26,6 +26,7 @@ import math
 
 from typing import Dict, List, Optional, Any, Tuple, Callable
 
+import numpy as np
 import torch
 
 log = logging.getLogger(__name__)
@@ -672,6 +673,216 @@ class Simulator(RecordingMixin, ABC):
             description="Toggle visualization markers",
             on_press=self._toggle_markers,
         )
+        self._register_orbit_camera_keys()
+
+    # -----------------------------------------------------------------
+    # Orbit camera (ported from IsaacLabASE KeyBoardViewPortCameraTracker).
+    # Two INDEPENDENT behaviors, both ON by default, matching the template:
+    #   F  watching  -- the camera keeps LOOKING AT the subject (it may
+    #                   stand still and just rotate to watch)
+    #   T  moving    -- the camera POSITION travels with the subject
+    # Turning one off genuinely stops it: F off freezes the look-at where it
+    # was, T off freezes the eye in world space. With BOTH
+    # off the camera is released entirely (we stop writing it), so the mouse
+    # has full control -- it does NOT fall back to the old drag-along.
+    # Arrow/letter keys sweep the eye in spherical coordinates about the
+    # subject; values ease toward their targets each frame (template's 0.1
+    # lerp) so a held key glides instead of stepping.
+    # -----------------------------------------------------------------
+    ORBIT_LERP = 0.1
+
+    def _orbit_state(self) -> dict:
+        if not hasattr(self, "_orbit"):
+            self._orbit = {
+                "tracking": True,
+                "following": True,
+                "azimuth": math.pi / 2,   # matches the default +Y spawn side
+                "elevation": 0.2,
+                "distance": 5.0,
+                "height": 0.2,            # look-at offset above the subject
+                "d_azimuth": math.pi / 2,
+                "d_elevation": 0.2,
+                "d_distance": 5.0,
+                "d_height": 0.2,
+                "seeded": False,          # adopt real camera geometry once
+                "last_eye": None,         # frozen eye when following is off
+                "last_target": None,      # frozen look-at when tracking is off
+                "commanded_eye": None,    # to detect mouse moves
+            }
+        return self._orbit
+
+    def _register_orbit_camera_keys(self) -> None:
+        o = self._orbit_state()
+
+        # Bindings are edge-triggered (a held key fires on_press once), so each
+        # orbit key ALSO records itself here and is polled for level state
+        # every frame in _orbit_camera_pose -- holding sweeps continuously
+        # instead of needing repeated taps.
+        self._orbit_bindings = []
+
+        def _bump(field, amount, lo=None, hi=None):
+            def _fn():
+                if not o["following"]:
+                    return
+                v = o["d_" + field] + amount
+                if lo is not None:
+                    v = max(lo, v)
+                if hi is not None:
+                    v = min(hi, v)
+                o["d_" + field] = v
+            return _fn
+
+        def _toggle_tracking():
+            o["tracking"] = not o["tracking"]
+            if not o["tracking"]:
+                o["last_target"] = None   # freeze at wherever we are now
+            print(f"[camera] watching (F) {'ON' if o['tracking'] else 'OFF'}", flush=True)
+
+        def _toggle_following():
+            o["following"] = not o["following"]
+            if o["following"]:
+                self._orbit_adopt_current_view()
+            else:
+                o["last_eye"] = None      # freeze at wherever we are now
+            print(f"[camera] moving with robot (T) {'ON' if o['following'] else 'OFF'}", flush=True)
+
+        # Newton's viewer resolves only letters, digits and the arrow keys --
+        # PAGE_UP/HOME/END silently never fire there -- so every function
+        # also gets a letter binding that works on both backends.
+        for key, desc, fn, sweep in (
+            ("T", "Toggle camera moving with robot", _toggle_following, False),
+            ("F", "Toggle camera watching robot (look-at)", _toggle_tracking, False),
+            ("LEFT", "Orbit left", _bump("azimuth", -0.15), True),
+            ("RIGHT", "Orbit right", _bump("azimuth", 0.15), True),
+            ("UP", "Orbit up", _bump("elevation", 0.12, -1.4, 1.4), True),
+            ("DOWN", "Orbit down", _bump("elevation", -0.12, -1.4, 1.4), True),
+            ("PAGE_UP", "Orbit zoom in", _bump("distance", -0.5, 0.5, 50.0), True),
+            ("PAGE_DOWN", "Orbit zoom out", _bump("distance", 0.5, 0.5, 50.0), True),
+            ("HOME", "Raise orbit look-at", _bump("height", 0.15, -2.0, 20.0), True),
+            ("END", "Lower orbit look-at", _bump("height", -0.15, -2.0, 20.0), True),
+            ("X", "Orbit zoom in (alt)", _bump("distance", -0.5, 0.5, 50.0), True),
+            ("Z", "Orbit zoom out (alt)", _bump("distance", 0.5, 0.5, 50.0), True),
+            ("C", "Raise orbit look-at (alt)", _bump("height", 0.15, -2.0, 20.0), True),
+            ("B", "Lower orbit look-at (alt)", _bump("height", -0.15, -2.0, 20.0), True),
+        ):
+            try:
+                binding = self.user_interface.register_key(
+                    key, owner="simulator", description=desc, on_press=fn
+                )
+                if sweep:
+                    self._orbit_bindings.append((binding, fn))
+            except Exception as exc:  # noqa: BLE001 -- a taken key must not kill boot
+                log.warning("orbit camera: key %s unavailable (%s)", key, exc)
+
+    def _orbit_adopt_current_view(self, target=None) -> None:
+        """Seed the spherical params from where the camera actually is, so
+        enabling follow (or a mouse drag) is continuous, not a jump cut."""
+        o = self._orbit_state()
+        try:
+            eye = np.array(self._current_camera_eye(), dtype=float)
+        except Exception:  # noqa: BLE001 -- backend without introspection
+            return
+        if target is None:
+            try:
+                target = np.array(self._current_camera_target(), dtype=float)
+            except Exception:  # noqa: BLE001
+                return
+        d = eye - np.asarray(target, dtype=float)
+        dist = float(np.linalg.norm(d))
+        if dist < 1e-6:
+            return
+        o["distance"] = o["d_distance"] = min(max(dist, 0.5), 50.0)
+        o["azimuth"] = o["d_azimuth"] = float(math.atan2(d[1], d[0]))
+        o["elevation"] = o["d_elevation"] = float(
+            math.asin(max(-1.0, min(1.0, d[2] / dist)))
+        )
+
+    def _orbit_camera_pose(self, subject_pos):
+        """Eye/look-at for the camera given the subject's position.
+
+        Returns ``None`` only when BOTH tracking and following are off, which
+        means "hands off the camera entirely" -- the caller must then leave
+        the viewport alone so the mouse owns it.
+        """
+        o = self._orbit_state()
+        if not o["tracking"] and not o["following"]:
+            return None
+
+        subject = np.asarray(subject_pos, dtype=float)
+
+        # First frame: inherit the camera the viewer already framed, so
+        # enabling does not snap the view.
+        if not o["seeded"]:
+            o["seeded"] = True
+            self._orbit_adopt_current_view(target=subject)
+
+        # A mouse drag moves the camera away from what we last commanded;
+        # re-derive the orbit params from it so the two do not fight.
+        if o["commanded_eye"] is not None:
+            try:
+                actual = np.array(self._current_camera_eye(), dtype=float)
+                if np.linalg.norm(actual - o["commanded_eye"]) > 1e-3:
+                    self._orbit_adopt_current_view(target=subject)
+            except Exception:  # noqa: BLE001
+                pass
+
+        # Level-poll the sweep keys so holding one keeps moving. on_press
+        # already fired once on the rising edge; this adds the held frames.
+        for binding, fn in getattr(self, "_orbit_bindings", ()):
+            try:
+                if binding.down:
+                    fn()
+            except Exception:  # noqa: BLE001 -- backend without level state
+                pass
+        for f in ("azimuth", "elevation", "distance", "height"):
+            o[f] += (o["d_" + f] - o[f]) * self.ORBIT_LERP
+
+        # Look-at: follows the subject while tracking, else frozen.
+        if o["tracking"]:
+            target = subject.copy()
+            target[2] += o["height"]
+            o["last_target"] = target
+        else:
+            if o["last_target"] is None:
+                try:
+                    o["last_target"] = np.array(
+                        self._current_camera_target(), dtype=float
+                    )
+                except Exception:  # noqa: BLE001
+                    o["last_target"] = subject.copy()
+            target = o["last_target"]
+
+        # Eye: orbits the subject while following, else frozen in world space.
+        if o["following"]:
+            anchor = subject.copy()
+            anchor[2] += o["height"]
+            r = o["distance"] * math.cos(o["elevation"])
+            eye = np.array(
+                [
+                    anchor[0] + r * math.cos(o["azimuth"]),
+                    anchor[1] + r * math.sin(o["azimuth"]),
+                    anchor[2] + o["distance"] * math.sin(o["elevation"]),
+                ]
+            )
+            o["last_eye"] = eye
+        else:
+            if o["last_eye"] is None:
+                try:
+                    o["last_eye"] = np.array(self._current_camera_eye(), dtype=float)
+                except Exception:  # noqa: BLE001
+                    return None
+            eye = o["last_eye"]
+
+        o["commanded_eye"] = np.asarray(eye, dtype=float).copy()
+        return eye, target
+
+    def _current_camera_eye(self):
+        """Backend hook: current camera position, for orbit adoption."""
+        raise NotImplementedError
+
+    def _current_camera_target(self):
+        """Backend hook: current camera look-at, for orbit adoption."""
+        raise NotImplementedError
 
     def _request_close(self) -> None:
         self._simulation_running = False

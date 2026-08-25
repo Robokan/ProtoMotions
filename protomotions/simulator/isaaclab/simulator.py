@@ -500,24 +500,32 @@ class IsaacLabSimulator(Simulator):
 
         self._ensure_omni_appwindow()
 
+        # Se2Keyboard.__init__ dies at get_default_app_window() when no app
+        # window exists yet (env_kinematic_playback sets up the keyboard
+        # earlier in boot than the inference viewer does). Each failed
+        # construction leaks a half-built object whose __del__ spams
+        # AttributeError('_input') at teardown -- so check the window FIRST
+        # and fail with the real reason instead of construct-and-swallow.
+        import omni.appwindow
+
+        if omni.appwindow.get_default_app_window() is None:
+            raise RuntimeError(
+                "no default omni app window yet -- keyboard unavailable at "
+                "this point in boot (windowed viewers get it after the first "
+                "render; headless never does)"
+            )
+
         try:
             from isaaclab.devices.keyboard.se2_keyboard_cfg import Se2KeyboardCfg
 
-            return Se2Keyboard(cfg=Se2KeyboardCfg(sim_device=str(self.device)))
+            return Se2Keyboard(cfg=Se2KeyboardCfg())
         except Exception:
             pass
 
         try:
-            from dataclasses import dataclass
+            from isaaclab.devices.keyboard.se2_keyboard_cfg import Se2KeyboardCfg
 
-            @dataclass
-            class Se2KeyboardCfg:
-                v_x_sensitivity: float = 0.8
-                v_y_sensitivity: float = 0.4
-                omega_z_sensitivity: float = 1.0
-                sim_device: str = "cuda:0"
-
-            return Se2Keyboard(cfg=Se2KeyboardCfg())
+            return Se2Keyboard(cfg=Se2KeyboardCfg(sim_device=str(self.device)))
         except Exception:
             pass
 
@@ -533,9 +541,16 @@ class IsaacLabSimulator(Simulator):
         try:
             self.keyboard_interface = self._create_keyboard_interface()
         except Exception as exc:
+            # Windowed viewers that construct the sim before the first render
+            # (env_kinematic_playback) have no app window yet -- retry once
+            # per render until it appears instead of giving up for the run.
+            self._keyboard_retry_pending = not self.headless
             log.warning(
-                "IsaacLab keyboard setup failed (%s). Viewer will run without hotkeys.",
+                "IsaacLab keyboard setup failed (%s).%s",
                 exc,
+                " Will retry once the app window exists."
+                if getattr(self, "_keyboard_retry_pending", False)
+                else " Viewer will run without hotkeys.",
             )
             self.keyboard_interface = None
             return
@@ -1423,6 +1438,15 @@ class IsaacLabSimulator(Simulator):
         """
         Render the simulation view. Initializes or updates the camera if the simulator is not in headless mode.
         """
+        if getattr(self, "_keyboard_retry_pending", False):
+            import omni.appwindow
+
+            if omni.appwindow.get_default_app_window() is not None:
+                self._keyboard_retry_pending = False
+                self._setup_keyboard()
+                if self.keyboard_interface is not None:
+                    log.info("IsaacLab keyboard attached on retry; hotkeys live.")
+
         if not self.headless and not getattr(self, "_perspective_view_failed", False):
             try:
                 if not hasattr(self, "_perspective_view"):
@@ -1455,6 +1479,19 @@ class IsaacLabSimulator(Simulator):
             pos, self._cam_prev_char_pos + np.array([0, 0, 0.2])
         )
 
+    def _current_camera_eye(self):
+        return self._perspective_view.get_camera_state()
+
+    def _current_camera_target(self):
+        pos = (
+            self._get_simulator_root_state(self._camera_target["env"])
+            .root_pos.cpu()
+            .numpy()
+            .copy()
+        )
+        pos[2] = self.robot_config.default_root_height + 0.2
+        return pos
+
     def _update_camera(self) -> None:
         """
         Update the camera view based on the target's position and current camera movement.
@@ -1480,20 +1517,18 @@ class IsaacLabSimulator(Simulator):
             )
             height_offset = 0
 
-        cam_pos = np.array(self._perspective_view.get_camera_state())
-        cam_delta = cam_pos - self._cam_prev_char_pos
-
-        new_cam_target = np.array(
+        orbit = self._orbit_camera_pose(
             [char_root_pos[0], char_root_pos[1], char_root_pos[2] + height_offset]
         )
-        new_cam_pos = np.array(
-            [
-                char_root_pos[0] + cam_delta[0],
-                char_root_pos[1] + cam_delta[1],
-                char_root_pos[2] + cam_delta[2],
-            ]
-        )
+        if orbit is None:
+            # Tracking AND following both off: release the camera so the mouse
+            # owns it completely. Writing anything here (including the old
+            # drag-along) would defeat turning them off.
+            self._cam_prev_char_pos = char_root_pos
+            return
+        new_cam_pos, new_cam_target = orbit
         self._perspective_view.set_camera_view(new_cam_pos, new_cam_target)
+        self._cam_prev_char_pos = char_root_pos
         self._cam_prev_char_pos[:] = char_root_pos
 
     def _write_viewport_to_file(self, file_name: str) -> None:

@@ -1421,6 +1421,20 @@ class NewtonSimulator(Simulator):
         """Initializes keyboard controls."""
         pass
 
+    def _current_camera_eye(self):
+        return np.array(self.viewer.camera.pos)
+
+    def _current_camera_target(self):
+        pos = (
+            self._get_simulator_root_state([self._camera_target["env"]])
+            .root_pos.flatten()
+            .cpu()
+            .numpy()
+            .copy()
+        )
+        pos[2] = self.robot_config.default_root_height + 0.2
+        return pos
+
     def _update_camera(self) -> None:
         """Updates camera position."""
         if self._camera_target["element"] == 0:
@@ -1442,11 +1456,15 @@ class NewtonSimulator(Simulator):
             )
             height_offset = 0
 
-        cam_pos = np.array(self.viewer.camera.pos)
-        cam_delta = cam_pos - self._cam_prev_char_pos
-
-        new_cam_target = char_root_pos + np.array([0, 0, height_offset])
-        new_cam_pos = char_root_pos + cam_delta
+        orbit = self._orbit_camera_pose(
+            char_root_pos + np.array([0, 0, height_offset])
+        )
+        if orbit is None:
+            # Tracking AND following both off: release the camera entirely so
+            # the mouse owns it (no fallback to the old drag-along).
+            self._cam_prev_char_pos = char_root_pos
+            return
+        new_cam_pos, new_cam_target = orbit
 
         vector_to_target = new_cam_target - new_cam_pos
         normalized_vector_to_target = vector_to_target / np.linalg.norm(
