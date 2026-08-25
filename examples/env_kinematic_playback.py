@@ -196,6 +196,12 @@ def main():
     extra_simulator_params = {}
     if args.simulator == "isaaclab":
         app_launcher_flags = {"headless": args.headless, "device": str(device)}
+        # Isaac Lab 3: Kit viewport is opt-in. Without this the sim runs
+        # but no window opens (same fix as inference_agent).
+        if not args.headless and hasattr(
+            AppLauncher, "sync_visualizer_cli_settings_to_carb"
+        ):
+            app_launcher_flags["visualizer"] = ["kit"]
         app_launcher = AppLauncher(app_launcher_flags)
         simulation_app = app_launcher.app
         extra_simulator_params["simulation_app"] = simulation_app

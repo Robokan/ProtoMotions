@@ -172,9 +172,19 @@ parser.add_argument(
 parser.add_argument(
     "--loops_per_motion",
     type=int,
-    default=2,
+    default=1,
     help="Play each motion this many times, then auto-advance to the next "
     "motion in the library (cycles through the whole lib).",
+)
+parser.add_argument(
+    "--support-manifest",
+    type=str,
+    default=None,
+    help="Support-geometry manifest YAML (from scan_clip_support_geometry). "
+    "Builds real terrain with each flagged clip's platforms/steps stamped "
+    "into dedicated cells and plays those clips ON their geometry. Motions "
+    "keep their raw capture coordinates in this mode (the boxes are stamped "
+    "in the same frame), so --origin_xy is ignored.",
 )
 args = parser.parse_args()
 
@@ -441,11 +451,16 @@ def create_checkerboard_ground(
         pointcloud_samples_per_object=None,
     )
 
-    # Return a SceneLib without terrain (avoids collision geometry in simulators)
+    # Return a SceneLib without terrain (avoids collision geometry in simulators).
+    # num_envs=0 (support-manifest mode, ground comes from the terrain mesh
+    # instead) means `scenes` is still an empty LIST here, not None -- but
+    # SceneLib's empty-library path checks `scenes is None` specifically, so
+    # an empty list falls through to num_envs>0 validation and raises. Pass
+    # None explicitly so it takes the designed empty-library path.
     return SceneLib(
         config=scene_lib_config,
         num_envs=num_envs,
-        scenes=scenes,
+        scenes=scenes if scenes else None,
         device=device,
         terrain=None,  # No terrain to avoid unwanted collisions
     )
@@ -491,12 +506,30 @@ class MotionVisualizerSmoothness:
             for motion_file in self.motion_files
         ]
 
-        # Move all motions to the specified origin
-        for i, motion_lib in enumerate(self.motion_libs):
-            target_xy = torch.tensor(args.origin_xy, device=self.device)
-            target_xy = target_xy + torch.tensor([1.0 * i, 0.0], device=self.device)
-            print(f"Translating motion library {i} to origin {target_xy}")
-            motion_lib.translate_all_motions_to_origin(target_xy)
+        # Move all motions to the specified origin -- UNLESS playing on
+        # support geometry: the manifest's boxes are stamped in each clip's
+        # raw capture coordinates (offset by its cell anchor), so translating
+        # the motions would slide them off their platforms.
+        if not args.support_manifest:
+            # A real Terrain always backs this visualizer now (see below),
+            # and its default grid is huge (10x10 20m tiles + 40m border =
+            # ~240m square) with world (0,0) at a CORNER, not the center --
+            # a checkerboard-only ground used to be centered at (0,0), so
+            # translating there was correct; against the real terrain it
+            # dumps every clip in the far corner. Translate to the grid's
+            # actual center instead (same TerrainConfig defaults used below).
+            from protomotions.components.terrains.config import TerrainConfig as _TCfg
+            _tc = _TCfg()
+            center_x = _tc.border_size + _tc.num_terrains * _tc.map_width / 2.0
+            center_y = _tc.border_size + _tc.num_levels * _tc.map_length / 2.0
+            for i, motion_lib in enumerate(self.motion_libs):
+                target_xy = torch.tensor(
+                    [center_x + args.origin_xy[0], center_y + args.origin_xy[1]],
+                    device=self.device,
+                )
+                target_xy = target_xy + torch.tensor([1.0 * i, 0.0], device=self.device)
+                print(f"Translating motion library {i} to terrain center {target_xy}")
+                motion_lib.translate_all_motions_to_origin(target_xy)
 
         # Motion playback state
         self.current_motion_idx = 0
@@ -572,13 +605,58 @@ class MotionVisualizerSmoothness:
             "6": self._toggle_overlay_visibility,  # Key 6: show/hide overlay
         }
 
-        # Create checkerboard ground for visualization
+        # A real Terrain (solid, walkable, actually spawned into the physics
+        # scene) exists ALWAYS -- flat when no manifest is given, with
+        # platforms stamped in when one is. The checkerboard ground mesh
+        # used to be the ONLY ground in the default (no-manifest) case, with
+        # this Terrain built only for support mode -- so the two modes had
+        # different ground mechanisms entirely, and stacking the checkerboard
+        # on top of a stamped terrain was also its own z-fighting bug. One
+        # ground mechanism for both modes now; checkerboard is never used.
         print("Creating checkerboard ground plane...")
-        scene_lib = create_checkerboard_ground(
-            self.num_envs, self.device, self.simulator_type
+        scene_lib = create_checkerboard_ground(0, self.device, self.simulator_type)
+        print("(checkerboard skipped -- ground now comes from Terrain)")
+
+        self._support_origins = {}
+        from protomotions.components.terrains.terrain import Terrain
+        from protomotions.components.terrains.config import TerrainConfig
+
+        if args.support_manifest:
+            print(f"Building support terrain from {args.support_manifest}")
+            terrain_cfg = TerrainConfig(
+                motion_support_manifest=args.support_manifest,
+                motion_support_motion_lib=str(self.motion_files[0]),
+            )
+        else:
+            terrain_cfg = TerrainConfig()
+        terrain = Terrain(
+            config=terrain_cfg, num_envs=self.num_envs, device=self.device
         )
-        print("Checkerboard ground loaded successfully")
-        terrain = None
+        if args.support_manifest:
+            self._support_origins = dict(
+                getattr(terrain, "motion_support_origins", {})
+            )
+            print(
+                f"Support terrain ready: {len(self._support_origins)} clip(s) "
+                f"have stamped geometry"
+            )
+        else:
+            print("Flat terrain ready")
+            if self._support_origins:
+                # Start on a supported clip -- clip 0 is almost always flat,
+                # which defeats the point of asking for this mode.
+                self.current_motion_idx = sorted(self._support_origins.keys())[0]
+                self.current_motion_length = (
+                    self.motion_libs[0]
+                    .get_motion_num_frames(None)[self.current_motion_idx]
+                    .item()
+                )
+            else:
+                print(
+                    "WARNING: manifest produced no stamped clips -- "
+                    "check the manifest keys match this motion file's "
+                    "internal clip names"
+                )
 
         # Get simulator class and instantiate
         SimulatorClass = get_class(self.simulator_cfg._target_)
@@ -735,8 +813,21 @@ class MotionVisualizerSmoothness:
     def _switch_to_next_motion(self):
         """Switch to the next motion: sequential, or a weighted random draw
         from the library's sampling weights (mirrors training's
-        torch.multinomial sampling) when --weighted-random is set."""
-        if getattr(args, "weighted_random", False):
+        torch.multinomial sampling) when --weighted-random is set.
+
+        In support-manifest mode, cycling is restricted to clips that
+        actually received stamped elevation -- otherwise most of the
+        library is flat ground, which is not what --support-manifest was
+        asked to show."""
+        if self._support_origins:
+            ids = sorted(self._support_origins.keys())
+            if self.current_motion_idx in ids:
+                self.current_motion_idx = ids[
+                    (ids.index(self.current_motion_idx) + 1) % len(ids)
+                ]
+            else:
+                self.current_motion_idx = ids[0]
+        elif getattr(args, "weighted_random", False):
             weights = self.motion_libs[0].motion_weights
             self.current_motion_idx = int(torch.multinomial(weights, 1).item())
         else:
@@ -996,8 +1087,20 @@ class MotionVisualizerSmoothness:
 
         # MotionLib always exposes COMMON xyzw after load.
         root_rot = rigid_body_rot.detach()[:, 0, :]
+        root_pos = rigid_body_pos.detach()[:, 0, :]
+        anchor = self._support_origins.get(self.current_motion_idx)
+        if anchor is not None:
+            # Play this clip ON its stamped support cell: boxes were written
+            # in the clip's raw coordinates offset by the cell anchor.
+            root_pos = root_pos.clone()
+            root_pos[:, 0] += anchor[0]
+            root_pos[:, 1] += anchor[1]
+            if os.environ.get("PM_DEBUG_SUPPORT_TERRAIN"):
+                print(f"[support-debug] clip={self.current_motion_idx} "
+                      f"anchor={anchor} post-offset root_xy="
+                      f"{root_pos[0, :2].tolist()}", flush=True)
         reset_state = ResetState(
-            root_pos=rigid_body_pos.detach()[:, 0, :],
+            root_pos=root_pos,
             root_rot=root_rot,
             root_vel=torch.zeros(self.num_envs, 3, device=self.device),
             root_ang_vel=torch.zeros(self.num_envs, 3, device=self.device),
