@@ -85,8 +85,21 @@ class Go2RobotConfig(RobotConfig):
         ]
     )
 
-    default_root_height: float = 0.34
+    # Measured, not guessed: default pose (thigh 0.9, calf -1.8) puts the foot
+    # origins 0.2648 m below the root, and the foot collision sphere has radius
+    # 0.022 -- so standing root height is 0.2868. The old 0.34 was 5.3 cm high,
+    # and repack_motion_lib_via_sim anchors its foot-grounding reference to
+    # this value, so every repacked corpus inherited that float (Eric spotted
+    # the robot hovering in go2_flat, 2026-08-25).
+    default_root_height: float = 0.2868
     default_dof_pos: Dict[str, float] = field(default_factory=lambda: DEFAULT_JOINT_POS)
+
+    # NOTE: deliberately NO action_scaling_limits. Adding a standing-centered
+    # table (2026-08-25) to tidy the zero-action pose also switched
+    # make_pd_action_config to action_scale=0.5 -- exactly the spec instead of
+    # the default 2x joint span -- which halved the policy's control authority
+    # and broke a Go2 that had been walking fine. The sprawled zero-action
+    # pose is cosmetic: the policy learns around it (Atlas does the same).
     anchor_body_name: str = "base_link"
 
     # Only feet need contact sensing for termination/reward
@@ -113,6 +126,14 @@ class Go2RobotConfig(RobotConfig):
             max_linear_velocity=1000.0,
             angular_damping=0.0,
             linear_damping=0.0,
+            # Corpus retarget artifact, not a live-training tuning choice:
+            # opposite-side hips/calves come within 0.2-1.0cm of each other
+            # in go2_full (rest-pose separation is 9.3cm/28.4cm), so
+            # self-collision fires a large separation impulse on the first
+            # physics step of any reset landing near one of those frames --
+            # violent and reset-universal, independent of training progress
+            # (Eric, 2026-08-24). Same fix already proven safe for dog_v2.
+            self_collisions=False,
         )
     )
 
