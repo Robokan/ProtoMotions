@@ -807,6 +807,44 @@ def pow_efficiency_bonus_factory(
     )
 
 
+def backward_velocity_rew_factory(
+    weight: float = 1.0,
+    target_speed: float = 0.25,
+    vel_err_scale: float = 4.0,
+    lateral_penalty_w: float = 0.1,
+) -> MdpComponent:
+    """Factory for a "keep walking backwards" task reward.
+
+    Pairs with a discriminator trained on genuine backing-up mocap. That data
+    exists only as sub-second fragments (single steps), so style alone shapes
+    the pose but never asks the policy to sustain the gait; this term does.
+
+    Args:
+        weight: Reward weight.
+        target_speed: Desired backward speed (m/s, positive).
+        vel_err_scale: Sharpness of the Gaussian around target_speed.
+        lateral_penalty_w: Penalty on sideways drift (stops crabbing).
+
+    Returns:
+        MdpComponent configured for backward locomotion.
+    """
+    from protomotions.envs.rewards.task import compute_backward_velocity_rew
+
+    return MdpComponent(
+        compute_func=compute_backward_velocity_rew,
+        dynamic_vars={
+            "root_rot": EnvContext.current.root_rot,
+            "rigid_body_vel": EnvContext.current.rigid_body_vel,
+        },
+        static_params={
+            "weight": weight,
+            "target_speed": target_speed,
+            "vel_err_scale": vel_err_scale,
+            "lateral_penalty_w": lateral_penalty_w,
+        },
+    )
+
+
 def pow_rew_factory(
     weight: float = -1e-5,
     min_value: Optional[float] = -0.5,
@@ -1581,6 +1619,7 @@ __all__ = [
     "mimic_tracking_rewards_factory",
     # Odometer observation factory
     "corrupted_xy_offset_factory",
+    "backward_velocity_rew_factory",
     "pow_rew_factory",
     "contact_match_rew_factory",
     "contact_force_change_rew_factory",

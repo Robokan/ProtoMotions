@@ -34,7 +34,7 @@ Provides reward functions for specific tasks:
 import torch
 from torch import Tensor
 
-from protomotions.utils.rotations import calc_heading_quat, quat_rotate
+from protomotions.utils.rotations import calc_heading, calc_heading_quat, quat_rotate
 
 
 # =============================================================================
@@ -170,7 +170,60 @@ def compute_target_rew(
     return torch.where(dist < tar_proximity_threshold, torch.ones_like(reward), reward)
 
 
+def compute_backward_velocity_rew(
+    root_rot: Tensor,
+    rigid_body_vel: Tensor,
+    target_speed: float = 0.25,
+    vel_err_scale: float = 4.0,
+    lateral_penalty_w: float = 0.1,
+) -> Tensor:
+    """Reward travelling BACKWARD along the robot's own heading.
+
+    Written for the go2 backwards AMP run. The only genuine backing-up motion
+    in the corpus is 42 fragments of 0.35-0.93s -- single steps, never a
+    sustained cycle -- so a discriminator trained on them can shape what a
+    backward step LOOKS like but has no example of continuing one. This term
+    supplies the "keep going" signal the reference data cannot.
+
+    Velocity is projected onto the robot's own facing direction, not a world
+    axis, so the reward means "moving rearward relative to where you point"
+    rather than "moving in -x". Turning around and walking forwards therefore
+    earns nothing.
+
+    Args:
+        root_rot: Root orientation quaternion [num_envs, 4], xyzw.
+        rigid_body_vel: Body linear velocities [num_envs, num_bodies, 3];
+            index 0 is the root.
+        target_speed: Desired backward speed (m/s, positive). The corpus
+            fragments run -0.13..-0.43 m/s with a median of -0.21.
+        vel_err_scale: Sharpness of the Gaussian around target_speed.
+        lateral_penalty_w: Penalty on sideways drift, to stop the policy
+            satisfying the term by crabbing.
+
+    Returns:
+        Reward [num_envs] in [0, 1].
+    """
+    vel_xy = rigid_body_vel[:, 0, :2]
+    heading = calc_heading(root_rot, True)
+    forward = torch.stack([torch.cos(heading), torch.sin(heading)], dim=-1)
+
+    along = (vel_xy * forward).sum(dim=-1)  # >0 forward, <0 backward
+    lateral = vel_xy - along.unsqueeze(-1) * forward
+
+    # Saturating ramp, NOT a Gaussian around target_speed. A Gaussian wide
+    # enough to accept the corpus spread (-0.13..-0.43 m/s) also pays ~0.78
+    # for standing perfectly still, so freezing would satisfy the term nearly
+    # as well as walking -- measured before this was changed. The ramp pays
+    # nothing at zero or forward velocity and full credit once the robot is
+    # backing up at target_speed, with no penalty for exceeding it (the style
+    # discriminator is what keeps the gait plausible, not this term).
+    reward = (-along / max(target_speed, 1e-6)).clamp(0.0, 1.0)
+    reward = reward - lateral_penalty_w * torch.linalg.norm(lateral, dim=-1)
+    return reward.clamp(0.0, 1.0)
+
+
 __all__ = [
+    "compute_backward_velocity_rew",
     "compute_heading_velocity_rew",
     "compute_path_following_rew",
     "compute_target_rew",

@@ -55,6 +55,7 @@ from protomotions.envs.rewards.tracking import (
 
 # Task reward kernels
 from protomotions.envs.rewards.task import (
+    compute_backward_velocity_rew,
     compute_heading_velocity_rew,
     compute_path_following_rew,
     compute_target_rew,
