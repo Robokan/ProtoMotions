@@ -35,16 +35,33 @@ from typing import List, Dict
 from dataclasses import dataclass, field
 
 # Go2 PD gains used in RL (kp=20, kd=0.5 is standard for position-controlled Go2)
-# Effort limits from MJCF: abduction class = 23.7 Nm, hip/knee class = 45.43 Nm
 KP_ABDUCTION = 20.0
 KD_ABDUCTION = 0.5
-EFFORT_ABDUCTION = 23.7
-
 KP_HIP_KNEE = 20.0
 KD_HIP_KNEE = 0.5
-EFFORT_HIP_KNEE = 45.43
 
-VELOCITY_LIMIT = 30.0
+# Effort/velocity limits taken from the official Unitree URDF
+# (urdf/go2/go2.urdf, verified limit-for-limit against upstream
+# unitreerobotics/unitree_ros). All twelve joints use the SAME motor -- the
+# knee just carries an extra 1.917:1 reduction, which is why it trades speed
+# for torque: 23.7 x 30.1 = 713.4 W and 45.43 x 15.7 = 713.3 W are the same
+# motor at the same mechanical power.
+#
+# Corrected 2026-09-06. The thigh had been given the knee's 45.43 Nm (1.92x the
+# torque the real motor can deliver) and the calf the hip's 30.0 rad/s (1.91x
+# its real speed). Both came from mjcf/go2_nomesh.xml: flattening the
+# <default> class tree in mjcf/go2.xml applied the "knee" class's motor
+# override to the "hip" (thigh) class as well. Unitree's own go2.xml overrides
+# the base 23.7 Nm only inside class "knee". The MJCF was fixed in the same
+# change.
+EFFORT_ABDUCTION = 23.7
+VELOCITY_ABDUCTION = 30.1
+
+EFFORT_THIGH = 23.7
+VELOCITY_THIGH = 30.1
+
+EFFORT_CALF = 45.43
+VELOCITY_CALF = 15.7
 
 # Default standing pose (radians) matching MJCF keyframe: thigh=0.9, calf=-1.8
 DEFAULT_JOINT_POS = {
@@ -145,19 +162,19 @@ class Go2RobotConfig(RobotConfig):
                     stiffness=KP_ABDUCTION,
                     damping=KD_ABDUCTION,
                     effort_limit=EFFORT_ABDUCTION,
-                    velocity_limit=VELOCITY_LIMIT,
+                    velocity_limit=VELOCITY_ABDUCTION,
                 ),
                 ".*_thigh_joint": ControlInfo(
                     stiffness=KP_HIP_KNEE,
                     damping=KD_HIP_KNEE,
-                    effort_limit=EFFORT_HIP_KNEE,
-                    velocity_limit=VELOCITY_LIMIT,
+                    effort_limit=EFFORT_THIGH,
+                    velocity_limit=VELOCITY_THIGH,
                 ),
                 ".*_calf_joint": ControlInfo(
                     stiffness=KP_HIP_KNEE,
                     damping=KD_HIP_KNEE,
-                    effort_limit=EFFORT_HIP_KNEE,
-                    velocity_limit=VELOCITY_LIMIT,
+                    effort_limit=EFFORT_CALF,
+                    velocity_limit=VELOCITY_CALF,
                 ),
             },
         )
