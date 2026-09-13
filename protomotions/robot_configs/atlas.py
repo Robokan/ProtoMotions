@@ -72,6 +72,13 @@ class AtlasRobotConfig(RobotConfig):
             max_angular_velocity=1000.0,
             angular_damping=0.0,
             linear_damping=0.0,
+            # Disabled 2026-09-03 (Eric). Retargeted reference frames put
+            # limbs fractionally inside one another, and with self-collision
+            # on, PhysX fires a large separation impulse on the FIRST physics
+            # step of any reset landing near such a frame -- violent, and
+            # universal across resets rather than a training-progress issue.
+            # Same fix already proven on go2 (2026-08-24) and dog_v2.
+            self_collisions=False,
         )
     )
 

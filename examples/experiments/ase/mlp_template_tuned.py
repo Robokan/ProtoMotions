@@ -1,27 +1,40 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025-2026 The ProtoMotions Developers
 # SPDX-License-Identifier: Apache-2.0
 
-"""ASE LLC pretrain with IsaacLabASE-matched hyperparameters.
+"""ASE LLC pretrain: atlas-specific fixes on top of ase/mlp.py.
 
-The atlas v6 pretrain froze at its discriminator equilibrium by epoch ~11k
-(style reward flat at ~0.19 for 65k further epochs). Eric's IsaacLabASE
-Template learned "most of the Reallusion moves" on the same data family —
-with a more forgiving setup (rl_games_ase_cfg.yaml) plus hand-pruned data.
-This experiment ports the trainer-side differences onto ase/mlp.py:
+HYPERPARAMETER PORTS FROM THE TEMPLATE ARE REVERTED (2026-09-03, Eric:
+"we really should be using the protomotion defaults not the port"). This
+file originally copied three trainer values out of the IsaacLabASE
+Template's rl_games_ase_cfg.yaml to break the v6 discriminator plateau
+(style reward flat at ~0.19). Audited 2026-09-03, all three were unsound:
 
-- gamma 0.99 -> 0.95            (Template LLC value)
-- entropy_coef 0 -> 0.01        ("added to increase exploration")
-- style:diversity reward mix 1:1 -> 2:1 (Template pre-scales disc rewards
-  x2: disc_reward_w 0.5 * scale 2 vs enc 0.5)
+- entropy_coef 0.005 -> 0.01: taken from the ONE Template config that
+  sets it (sword_and_shield); all three HUMANOID ASE configs use 0.0, and
+  the Template's other nonzero values are on hrl/HLC configs where the
+  policy emits latents, not joint targets. Inert here regardless
+  (learnable_std=False gates it). Now 0.0 -- see the assignment below.
+- gamma 0.99 -> 0.95: the NUMBER was ported, the UNITS were not. The
+  Template humanoid runs sim.dt 1/200 with decimation 4 = 50 Hz control,
+  so 0.95 buys it a 0.40 s horizon. Atlas runs fps 120 / decimation 4 =
+  30 Hz, where the same 0.95 is 0.67 s. (Their episode_length_s 6.0 is
+  300 steps at 50 Hz; our 300 steps are 10 s.) Same class of error as the
+  Froude retiming incident. Reverted to the repo default 0.99.
+- discriminator_reward_w 0.5 -> 1.0: this was the whole of the claimed
+  "style:diversity 1:1 -> 2:1" change; the accompanying mi_reward_w = 0.5
+  line was a no-op, since ase/mlp.py already sets 0.5. Doubling it
+  amplifies a discriminator signal that is measurably saturated (agent_acc
+  0.988, style reward flat across 45k epochs) while relatively halving the
+  encoder reward, which is the one term still moving. Reverted to 0.5.
 
-Already matching (no change needed): disc grad penalty 5, weight decay
-1e-4, logit reg 0.01, replay buffer 200k @ keep 0.01, latent dim 64,
-latent steps 1-150, MLP sizes.
+NOT a port, deliberately kept (see the functions below): the power-penalty
+removal, the atlas root-height obs zeroing, and the warm-start obs-norm
+freeze. Those are ProtoMotions-side fixes with their own rationale.
 
-NOT ported (stage 2 if the plateau persists): the Template's REDUCED
-discriminator features (~140/step vs our 493/step full max-coords — our
-discriminator is ~3x better informed than the policy can defeat) and
-rl_games' epsilon-greedy exploration.
+For the record, the disc-vs-actor learning rates (actor 2e-5, disc/critic
+1e-4) are NOT from the Template -- ase/mlp.py:423 and amp/mlp.py:244 both
+set them, so the 5:1 ratio is ProtoMotions' own design. Likewise
+num_mini_epochs=1 is the base_agent default, not a missed port.
 
 Usage: same as ase/mlp.py (train_agent.py --experiment-path this file).
 """
@@ -70,11 +83,9 @@ def agent_config(robot_config, env_config, args: argparse.Namespace):
     # which collapsed four raptor warm starts before it was found (see
     # warm-start-obs-norm-freeze). Applied whenever warm-starting.
     cfg.freeze_actor_obs_norm = bool(getattr(args, "checkpoint", None))
-    cfg.gamma = 0.95
-    cfg.entropy_coef = 0.01
-    # Template effective mix: disc(x2 scale, w .5) : enc(w .5) = 2 : 1
-    cfg.amp_parameters.discriminator_reward_w = 1.0
-    cfg.ase_parameters.mi_reward_w = 0.5
+    # gamma, entropy_coef and discriminator_reward_w are left at the
+    # ProtoMotions defaults (0.99 / 0.005-gated-off / 0.5). See the module
+    # docstring for why each Template port was reverted on 2026-09-03.
     if getattr(args, "robot_name", None) == "atlas":
         refs = getattr(cfg, "reference_obs_components", None) or {}
         _zero_root_height_obs(refs.get("historical_max_coords_obs"))
