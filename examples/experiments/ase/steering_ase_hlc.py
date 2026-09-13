@@ -303,16 +303,24 @@ def apply_inference_overrides(
         # drives the commands; otherwise the random generator keeps them and
         # the markers still show what is commanded. Explicit override wins:
         # --command-source steering_cmd=gamepad (wait for a pad) or =random.
-        import glob as _glob
         import logging as _logging
+
+        from protomotions.envs.steering.gamepad import find_gamepad
 
         _log = _logging.getLogger(__name__)
         cmd = env_cfg.control_components.get("steering_cmd")
         if cmd is not None and not getattr(args, "command_source", None):
-            pads = _glob.glob("/dev/input/js*")
-            if pads:
+            # Probe the device, do not just trust that a js* node exists: any
+            # HID gadget can claim one (this machine's js0 is an "ASRock LED
+            # Controller" whose axes rest pinned at full scale, which used to
+            # pin the viewed robot at max forward + max left yaw).
+            pad_dev, pad_name = find_gamepad()
+            if pad_dev:
                 cmd.command_source = "gamepad"
-                _log.info("steering: gamepad detected (%s) -- teleop ON", pads[0])
+                _log.info(
+                    "steering: gamepad detected (%s: %s) -- teleop ON",
+                    pad_dev, pad_name,
+                )
             else:
                 cmd.command_source = None
                 _log.info(

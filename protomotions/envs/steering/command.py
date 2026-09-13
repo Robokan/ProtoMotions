@@ -73,8 +73,8 @@ class SteeringCommandControlConfig(ControlComponentConfig):
     side_vel_max: float = 1.0
     heading_change_steps_min: int = 125
     heading_change_steps_max: int = 175
-    rate_frac_min: float = 0.02
-    rate_frac_max: float = 0.08
+    rate_frac_min: float = 0.1
+    rate_frac_max: float = 1.0
     # Skill buttons ("press B to sit"). The state is published for the agent's
     # latent-bank override and appended to the task obs so a learned HLC can
     # also see which button is held. 0 = no buttons, obs width unchanged.
@@ -86,6 +86,10 @@ class SteeringCommandControlConfig(ControlComponentConfig):
     # launch by the steering experiment's inference hook; force with
     # --command-source steering_cmd=gamepad|random. Never set in training.
     command_source: str = None
+
+
+# Original _adjust_by_rate hard-codes dt = 0.1 (not the sim step).
+_RATE_DT = 0.1
 
 
 class SteeringCommandControl(ControlComponent):
@@ -149,24 +153,49 @@ class SteeringCommandControl(ControlComponent):
         device = self.env.device
         span = self._hi - self._lo
 
-        # Deltas: forward uniform [-1, 1] x range; turn Beta(4,4)-shaped
-        # (center-heavy) x range; side uniform [-1, 1] x range.
-        fwd_delta = (2.0 * torch.rand(n, device=device) - 1.0) * span[0]
+        # ONLY forward random-walks; turn and side are drawn ABSOLUTELY and
+        # afresh every interval. The original assigns them outright --
+        #     desired_forward_vel = add_with_bounce_min_max(desired_forward_vel,
+        #                                                   delta, min, max)
+        #     desired_side_vel    = desired_side_vel      # plain '='
+        #     desired_turn_vel    = desired_turn_vel      # plain '='
+        # (amp_game_controller_task._reset_task) -- and scales turn by
+        # turn_vel_range (= turn_vel_max), NOT by the full span.
+        #
+        # Walking the turn channel with a span-scaled delta (the old port)
+        # gave it lag-1 autocorrelation ~0.55 and an almost uniform marginal:
+        # near-max yaw was commanded ~25% of the time instead of ~1%, and a
+        # given env could sit pinned at one turn direction across several
+        # resample windows (Eric, 2026-09-13: the command "is only doing it a
+        # little, not for the whole range"). Beta(4,4)'s whole purpose -- the
+        # original's comment calls it "how much it is centered around 0" --
+        # only survives on an ABSOLUTE draw.
+        d = self._difficulty
         beta = torch.distributions.Beta(
             torch.tensor(4.0, device=device), torch.tensor(4.0, device=device)
         )
-        turn_delta = (2.0 * beta.sample((n,)) - 1.0) * span[1]
-        side_delta = (2.0 * torch.rand(n, device=device) - 1.0) * span[2]
-        delta = torch.stack([fwd_delta, turn_delta, side_delta], dim=-1)
-
-        self._desired[env_ids] = self._reflect(
-            self._desired[env_ids] + delta, self._lo, self._hi
+        fwd_delta = (2.0 * torch.rand(n, device=device) - 1.0) * span[0] * d
+        turn_abs = (
+            (2.0 * beta.sample((n,)) - 1.0) * self.config.turn_vel_max * d
+        )
+        side_abs = (
+            (2.0 * torch.rand(n, device=device) - 1.0)
+            * self.config.side_vel_max
+            * d
         )
 
-        frac = self.config.rate_frac_min + (
+        fwd_walk = self._reflect(
+            self._desired[env_ids, 0] + fwd_delta, self._lo[0], self._hi[0]
+        )
+        self._desired[env_ids] = torch.stack(
+            [fwd_walk, turn_abs, side_abs], dim=-1
+        )
+
+        # Dimensionless per-step fraction of the REMAINING gap, matching the
+        # original's rate ~ U(0.1, 1.0) used as (target-current) * rate * 0.1.
+        self._rates[env_ids] = self.config.rate_frac_min + (
             self.config.rate_frac_max - self.config.rate_frac_min
         ) * torch.rand(n, 3, device=device)
-        self._rates[env_ids] = frac * span
 
         change_steps = torch.randint(
             low=self.config.heading_change_steps_min,
@@ -208,9 +237,11 @@ class SteeringCommandControl(ControlComponent):
             # Out-of-range mocap velocities: desired is clipped so the robot
             # ramps back into range (original clip-the-desired behavior, with
             # clip_initial_targets_also semantics for the live target too).
-            seeded = torch.clamp(seeded, self._lo, self._hi)
+            # The Go2 chain sets clip_initial_targets_also = False, so ONLY
+            # the desired command is clipped: the live target keeps the raw
+            # mocap spawn velocity and ramps back into range.
             self._target[fresh] = seeded
-            self._desired[fresh] = seeded
+            self._desired[fresh] = torch.clamp(seeded, self._lo, self._hi)
         if self.button_state.shape[1]:
             self.button_state[env_ids[is_env_reset]] = 0.0
 
@@ -220,9 +251,13 @@ class SteeringCommandControl(ControlComponent):
         if len(env_ids) > 0:
             self.reset(env_ids)
 
-        goal = self._desired * self._difficulty
-        step = torch.clamp(goal - self._target, -self._rates, self._rates)
-        self._target += step
+        # First-order lag toward the command, exactly as the original's
+        # _adjust_by_rate: current += (target - current) * rate * dt, dt=0.1
+        # hard-coded and unrelated to the sim step. The old port slewed at a
+        # constant speed instead, which arrived (and overshot the original's
+        # attenuation) 2-5x faster. Difficulty is already baked into
+        # _desired at draw time, as the original does.
+        self._target += (self._desired - self._target) * self._rates * _RATE_DT
 
         if getattr(self.config, "command_source", None) == "gamepad":
             if self._gamepad is None:
@@ -256,8 +291,16 @@ class SteeringCommandControl(ControlComponent):
                         dtype=torch.float,
                     )
 
-        # Advance the turn marker's spin phase at the commanded yaw rate.
+        # Advance the turn marker's spin phase at the commanded yaw rate,
+        # wrapped to +/-2pi exactly as the original does.
         self._turn_anim += self._target[:, 1] * self.env.dt
+        two_pi = 2.0 * torch.pi
+        self._turn_anim = torch.where(
+            self._turn_anim > two_pi, self._turn_anim - two_pi, self._turn_anim
+        )
+        self._turn_anim = torch.where(
+            self._turn_anim < -two_pi, self._turn_anim + two_pi, self._turn_anim
+        )
 
     def set_buttons(self, state: Tensor, env_ids: Tensor = None) -> None:
         """Teleop hook: set held buttons (1.0 = held) for some/all envs."""
@@ -316,20 +359,17 @@ class SteeringCommandControl(ControlComponent):
         dir_pos[..., 0:2] = root_pos[..., 0:2] + facing * fwd + side * lat
         dir_pos[..., 2] = ground + 0.02
 
-        # Turn dial: at the root, spinning by the accumulated phase; flip
-        # about x for negative yaw command (original convention).
-        flip_axis = torch.zeros_like(root_pos)
-        flip_axis[..., 0] = 1.0
-        flip_angle = torch.where(
-            self._target[:, 1] < 0,
-            torch.full_like(self._turn_anim, torch.pi),
-            torch.zeros_like(self._turn_anim),
-        )
-        turn_q = rotations.quat_mul(
-            rotations.quat_from_angle_axis(flip_angle, flip_axis, True),
-            rotations.quat_from_angle_axis(self._turn_anim, up, True),
-            True,
-        )
+        # Turn dial: at the root, spun by the SIGNED accumulated phase.
+        # The original (amp_game_controller_task._update_markers) computes a
+        # flip-about-x for negative yaw but leaves it COMMENTED OUT and
+        # assigns the plain signed rotation:
+        #     turn_marker_rot = quat_from_angle_axis(angular_rotation_position,
+        #                                            heading_axis)
+        # The phase already carries the command's sign, so applying the flip
+        # as well double-negates it -- R_x(pi) . R_z(t) == R_z(-t) . R_x(pi) --
+        # and every dial spins the SAME way regardless of turn direction
+        # (Eric, 2026-09-13: "the rings only turn to the left").
+        turn_q = rotations.quat_from_angle_axis(self._turn_anim, up, True)
         turn_pos = root_pos.clone()
         turn_pos[..., 2] = ground + 0.01
 
@@ -368,7 +408,7 @@ class SteeringCommandControl(ControlComponent):
 def compute_steering_command_obs(
     root_rot: Tensor,
     root_vel: Tensor,
-    root_local_ang_vel: Tensor,
+    root_ang_vel: Tensor,
     fwd_cmd: Tensor,
     turn_cmd: Tensor,
     side_cmd: Tensor,
@@ -376,8 +416,8 @@ def compute_steering_command_obs(
     w_last: bool = True,
 ) -> Tensor:
     """Command + gait proprioception observation, 12 dims (+1 per button):
-    [fwd_cmd, turn_cmd, side_cmd, projected_gravity(3), root_ang_vel(3, body
-    frame), heading-frame local linear velocity(3)].
+    [fwd_cmd, turn_cmd, side_cmd, projected_gravity(3), root_ang_vel(3, WORLD
+    frame, as the original), heading-frame local linear velocity(3)].
     """
     from protomotions.envs.obs.humanoid import root_projected_gravity
 
@@ -391,7 +431,7 @@ def compute_steering_command_obs(
             turn_cmd.unsqueeze(-1),
             side_cmd.unsqueeze(-1),
             proj_gravity,
-            root_local_ang_vel,
+            root_ang_vel,
             local_vel,
             buttons,
         ],
@@ -423,8 +463,9 @@ def compute_steering_command_reward(
     Targets are reshaped (not the robot penalized) before scoring:
     - safe velocity: forward target capped by the centripetal friction limit
       mu*g/|yaw_rate| during sharp turns;
-    - appropriate side velocity: lateral target scaled linearly down to 10%
-      as the forward target approaches forward_vel_max.
+    - appropriate side velocity: lateral target CLIPPED to a ceiling that
+      falls linearly to ~9% of side_vel_max as the forward target approaches
+      forward_vel_max (commands below the ceiling are left alone).
     """
     heading_inv = rotations.calc_heading_quat_inv(root_rot, w_last)
     local_vel = rotations.quat_rotate(heading_inv, root_vel, w_last)
@@ -432,10 +473,26 @@ def compute_steering_command_reward(
     cur_side = local_vel[:, 1]
     cur_turn = root_ang_vel[:, 2]
 
-    safe_cap = friction_mu * _GRAVITY_MPS2 / turn_cmd.abs().clamp_min(1e-3)
-    fwd_tgt = torch.minimum(fwd_cmd, safe_cap)
-    side_scale = 1.0 - 0.9 * (fwd_tgt.abs() / forward_vel_max).clamp(0.0, 1.0)
-    side_tgt = side_cmd * side_scale
+    # calculate_safe_velocity: cap |forward| at sqrt(mu*g*R) with R=|v|/|w|,
+    # keeping the sign and leaving an already-safe command untouched. The old
+    # port used mu*g/|w| with torch.minimum, which is a strictly lower cap
+    # (2.94 vs 3.43 m/s at fwd=4, turn=2) and never capped backward commands.
+    radius = fwd_cmd.abs() / turn_cmd.abs().clamp_min(1e-6)
+    safe_vel = torch.sqrt(friction_mu * _GRAVITY_MPS2 * radius) * torch.sign(
+        fwd_cmd
+    )
+    fwd_tgt = torch.where(safe_vel.abs() >= fwd_cmd.abs(), fwd_cmd, safe_vel)
+
+    # calculate_appropriate_side_velocity: a magnitude CEILING, not a scale.
+    # A lateral command under the ceiling passes through UNCHANGED; only
+    # over-ceiling ones are clipped to it. The old port multiplied every
+    # lateral command by the factor, shrinking sub-ceiling targets up to 3x
+    # and handing a non-strafing robot 7-18% more r_side than it had earned.
+    mx = forward_vel_max * 1.1
+    max_side = (1.0 - (fwd_tgt / mx).abs()) * side_vel_max
+    side_tgt = torch.where(
+        side_cmd.abs() > max_side, torch.sign(side_cmd) * max_side, side_cmd
+    )
 
     backward = fwd_tgt < 0
     fwd_scale = torch.where(
@@ -470,7 +527,13 @@ def steering_command_obs_factory():
         dynamic_vars={
             "root_rot": EnvContext.current.root_rot,
             "root_vel": EnvContext.current.root_vel,
-            "root_local_ang_vel": EnvContext.current.root_local_ang_vel,
+            # WORLD frame, the same field the reward scores against. The
+            # original feeds self.directional_root_ang_vel (= body_ang_vel_w)
+            # to BOTH obs (:793) and reward (:829); the old port fed the
+            # body-frame variant to the obs only. Both are angular velocity --
+            # only the frame differed -- and on this corpus the z components
+            # correlate 0.995, so this was a faithfulness fix, not a big one.
+            "root_ang_vel": EnvContext.current.root_ang_vel,
             "fwd_cmd": EnvContext.steering_cmd.fwd_cmd,
             "turn_cmd": EnvContext.steering_cmd.turn_cmd,
             "side_cmd": EnvContext.steering_cmd.side_cmd,
