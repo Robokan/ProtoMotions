@@ -555,10 +555,28 @@ def main():
 
     if args.amp_disc_term:
         amp = getattr(agent_config, "amp_parameters", None)
-        if amp is None:
+        if amp is None and args.do_terminations:
+            # --do-terminations promoted amp_disc_term above so the experiment
+            # hook would keep the training horizon. But an ASE HLC league
+            # agent has no discriminator of its own -- the style critic lives
+            # on the frozen LLC -- so there is no threshold to restore. The
+            # horizon and termination_components are already preserved by the
+            # hook, which is the substance of the flag; only the style-kill
+            # restore is inapplicable, so skip it instead of aborting.
+            log.warning(
+                "--do-terminations: agent has no amp_parameters (ASE HLC "
+                "league agents keep the discriminator on the frozen LLC). "
+                "Keeping training terminations and horizon; skipping the "
+                "style-kill restore."
+            )
+            args.amp_disc_term = False
+        elif amp is None:
             raise ValueError(
                 "--amp-disc-term requires an AMP/ASE agent with amp_parameters"
             )
+
+    if args.amp_disc_term:
+        amp = getattr(agent_config, "amp_parameters", None)
         train_configs_path = checkpoint.parent / "resolved_configs.pt"
         train_configs = None
         if train_configs_path.exists():

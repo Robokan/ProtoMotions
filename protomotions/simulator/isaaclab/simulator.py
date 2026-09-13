@@ -62,6 +62,32 @@ from protomotions.simulator.base_simulator.simulator_state import (
 )
 
 
+def _guard_se2keyboard_del(cls) -> None:
+    """Make Se2Keyboard.__del__ survive a failed __init__.
+
+    IsaacLab's destructor calls ``self._input.unsubscribe_to_keyboard_events``
+    with no guard (se2_keyboard.py:79). If __init__ raised before assigning
+    ``_input`` -- which happens whenever no omni app window exists yet -- the
+    destructor throws AttributeError at GC time, once per abandoned object.
+    Python prints those as "Exception ignored in __del__", so they are noise
+    rather than failures, but they look exactly like a crash in the log.
+
+    Applied once per class; idempotent.
+    """
+    if getattr(cls, "_protomotions_del_guarded", False):
+        return
+    original = cls.__del__
+
+    def _safe_del(self):
+        try:
+            original(self)
+        except Exception:
+            pass  # half-built object; nothing to unsubscribe
+
+    cls.__del__ = _safe_del
+    cls._protomotions_del_guarded = True
+
+
 class IsaacLabSimulator(Simulator):
     config: IsaacLabSimulatorConfig
 
@@ -515,26 +541,33 @@ class IsaacLabSimulator(Simulator):
                 "render; headless never does)"
             )
 
-        try:
+        # Se2Keyboard.__del__ unconditionally touches self._input, which does
+        # not exist if __init__ raised -- so every failed construction spams
+        # AttributeError('_input') at GC time. Guard the destructor once, so a
+        # failure here can never produce that noise again.
+        _guard_se2keyboard_del(Se2Keyboard)
+
+        # Pick the constructor form by INSPECTION rather than trying each and
+        # swallowing the failures. The old construct-and-swallow ladder tried
+        # three signatures in sequence; on Lab 2.x the first two always failed,
+        # leaking two half-built objects and printing the traceback twice
+        # before the working call was reached.
+        import inspect
+
+        params = inspect.signature(Se2Keyboard.__init__).parameters
+        if "cfg" in params:
             from isaaclab.devices.keyboard.se2_keyboard_cfg import Se2KeyboardCfg
 
+            cfg_fields = inspect.signature(Se2KeyboardCfg).parameters
+            if "sim_device" in cfg_fields:
+                return Se2Keyboard(cfg=Se2KeyboardCfg(sim_device=str(self.device)))
             return Se2Keyboard(cfg=Se2KeyboardCfg())
-        except Exception:
-            pass
 
-        try:
-            from isaaclab.devices.keyboard.se2_keyboard_cfg import Se2KeyboardCfg
-
-            return Se2Keyboard(cfg=Se2KeyboardCfg(sim_device=str(self.device)))
-        except Exception:
-            pass
-
-        try:
-            return Se2Keyboard()
-        except TypeError:
+        if "v_x_sensitivity" in params:
             return Se2Keyboard(
                 v_x_sensitivity=0.8, v_y_sensitivity=0.4, omega_z_sensitivity=1.0
             )
+        return Se2Keyboard()
 
     def _setup_keyboard(self) -> None:
         """Set up keyboard callbacks for control using the Se2Keyboard interface."""
