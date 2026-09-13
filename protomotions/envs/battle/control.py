@@ -244,6 +244,82 @@ class BattleControlConfig(ControlComponentConfig):
     opponent_tables: Dict = None
 
 
+def resolve_match_outcome(
+    loses_now: Tensor,
+    loses_now_partner: Tensor,
+    oob_end: Tensor,
+    oob_self: Tensor,
+    ends: Tensor,
+    health: Tensor,
+    health_partner: Tensor,
+    time_left: Tensor,
+    points_decision_eps: float,
+    draw_signal: float,
+    early_finish_win_scale: float,
+) -> Tensor:
+    """Map end-of-match conditions to the per-fighter win signal.
+
+    Pure so the payout rules can be tested directly -- the ring-out exploit
+    (2026-09-02) survived seven days of training partly because nothing
+    exercised this arithmetic in isolation.
+
+    Payouts:
+      decisive KO win   +1, scaled up to (1 + early_finish_win_scale) early
+      decisive KO loss  -1, never scaled
+      points win/loss   +/-1 on health difference, NEVER scaled
+      draw              draw_signal to both
+      ring-out          -1 to the fighter who left, 0 to the other
+
+    The ring-out payout is asymmetric on purpose. Paying 0 to both is not
+    enough: a draw costs draw_signal and a KO loss costs 1, so a neutral
+    no-contest would be the BEST available outcome for anyone not clearly
+    winning, and stepping out would become an escape hatch. Charging the
+    leaver a full loss makes leaving never profitable, while paying the other
+    side nothing keeps shoving-them-out from becoming its own strategy --
+    which is the incentive shape IsaacLabExtensionTemplate gets by teleporting
+    both fighters back in instead of ending the match.
+    """
+    win = torch.zeros_like(health)
+    # Decisive: I win if my opponent loses and I don't (simultaneous = draw)
+    win = torch.where(loses_now_partner & ~loses_now, torch.ones_like(win), win)
+    win = torch.where(loses_now & ~loses_now_partner, -torch.ones_like(win), win)
+
+    health_diff = health - health_partner
+    points = torch.where(
+        health_diff > points_decision_eps,
+        torch.ones_like(win),
+        torch.where(
+            health_diff < -points_decision_eps,
+            -torch.ones_like(win),
+            torch.zeros_like(win),
+        ),
+    )
+    # OOB ends are excluded: they must not resolve on health points.
+    points_only = ends & ~loses_now & ~loses_now_partner & ~oob_end
+    win = torch.where(points_only, points, win)
+
+    # Drawn matches pay draw_signal to BOTH sides so running out the clock is
+    # never the safe play. An OOB no-contest is not a draw and pays nothing.
+    drawn = ends & ~oob_end & (win.abs() <= 0.5)
+    win = torch.where(drawn, torch.full_like(win, draw_signal), win)
+
+    # Ring-out: the fighter who left takes the loss, the other gets nothing.
+    # Applied after the draw branch so it overrides it, and it is excluded
+    # from the early-finish multiplier below via `decisive`.
+    win = torch.where(oob_end & oob_self, -torch.ones_like(win), win)
+    win = torch.where(oob_end & ~oob_self, torch.zeros_like(win), win)
+
+    if early_finish_win_scale > 0.0:
+        factor = 1.0 + early_finish_win_scale * time_left
+        # Only decisive WINS earn it. Amplifying losses made risk-taking
+        # strictly dominated (2026-07-24: chip-and-turtle meta). Amplifying
+        # points wins made stopping the clock while marginally ahead worth
+        # 2x, which is what powered the ring-out exploit.
+        decisive = (loses_now | loses_now_partner) & ~oob_end
+        win = torch.where(drawn | (win < 0) | ~decisive, win, win * factor)
+    return win
+
+
 class BattleControl(ControlComponent):
     """Stateful fight manager for paired-env battles."""
 
@@ -946,70 +1022,68 @@ class BattleControl(ControlComponent):
         loses_now = knocked_out | (oob if cfg.out_of_bounds_loses else torch.zeros_like(oob))
 
         timeout = env.progress_buf >= env.max_episode_length - 1
-        # Out of bounds (when not an instant loss) ends the match like a
-        # timeout: points decision on health, so ring-outs aren't a strategy.
         ends_on_points = timeout | timeout[partner]
+
+        # Leaving the ring ends the match as a NO CONTEST -- zero payout to
+        # either side.
+        #
+        # It used to resolve on health points, which looked safe ("ring-outs
+        # aren't a strategy") but was the single worst exploit in the task:
+        # combined with the early-finish multiplier below, "land one hit, get
+        # 2% ahead on health, then walk out" paid up to 2x the win reward at no
+        # risk. 2026-09-02 telemetry after 7 days at epoch 56.5k: 93% of
+        # matches ended out-of-bounds, KOs sat at 0.0003, opponent health
+        # finished at 98.9%, and strikes DECLINED over the run. Eric watched
+        # inference and saw fighters deliberately walking out of the ring.
+        #
+        # IsaacLabExtensionTemplate never ends a match on OOB at all: it
+        # applies a continuous border penalty, credits the opponent +5.0, and
+        # teleports both fighters back in (battle_task.py:887), so the fight
+        # cannot be escaped. Paying nothing is the cheap equivalent -- walking
+        # out now forfeits all remaining dense income and earns no outcome.
+        # A KO takes precedence, so stepping out cannot dodge a loss.
+        oob_end = torch.zeros_like(ends_on_points)
         if not cfg.out_of_bounds_loses:
-            ends_on_points = ends_on_points | oob | oob[partner]
+            oob_end = (oob | oob[partner]) & ~loses_now & ~loses_now[partner]
 
-        ends = loses_now | loses_now[partner] | ends_on_points
+        ends = loses_now | loses_now[partner] | ends_on_points | oob_end
 
-        win = torch.zeros_like(self.win_signal)
-        # Decisive: I win if my opponent loses and I don't (simultaneous = draw)
-        win = torch.where(loses_now[partner] & ~loses_now, torch.ones_like(win), win)
-        win = torch.where(loses_now & ~loses_now[partner], -torch.ones_like(win), win)
-        # Points decision on health difference for non-decisive ends
-        health_diff = self.health - self.health[partner]
-        points = torch.where(
-            health_diff > cfg.points_decision_eps,
-            torch.ones_like(win),
-            torch.where(
-                health_diff < -cfg.points_decision_eps,
-                -torch.ones_like(win),
-                torch.zeros_like(win),
-            ),
+        time_left = (
+            1.0 - env.progress_buf.float() / max(env.max_episode_length, 1)
+        ).clamp(0.0, 1.0)
+        win = resolve_match_outcome(
+            loses_now=loses_now,
+            loses_now_partner=loses_now[partner],
+            oob_end=oob_end,
+            oob_self=oob,
+            ends=ends,
+            health=self.health,
+            health_partner=self.health[partner],
+            time_left=time_left,
+            points_decision_eps=cfg.points_decision_eps,
+            draw_signal=cfg.draw_signal,
+            early_finish_win_scale=cfg.early_finish_win_scale,
         )
-        points_only = ends & ~loses_now & ~loses_now[partner]
-        win = torch.where(points_only, points, win)
-
-        # Drawn matches (no decisive result, healths within eps — including
-        # simultaneous losses) pay draw_signal to BOTH sides so running out
-        # the clock is never the safe play.
-        drawn = ends & (win.abs() <= 0.5)
-        win = torch.where(
-            drawn, torch.full_like(win, cfg.draw_signal), win
-        )
-
-        # Early-finish bonus: decisive wins/losses scale with time remaining
-        # (factor 1 + early_finish_win_scale * time_left_frac, so a first-
-        # second KO pays up to 2x a timeout points win at scale 1.0). Without
-        # it, ending the fight early is economically irrational — the dense
-        # streams pay every step the fight continues, so a knockout forfeits
-        # more income than the win reward returns. Draws are never scaled.
-        # League bookkeeping is unaffected (env classifies by |win| vs 0.5).
-        if cfg.early_finish_win_scale > 0.0:
-            time_left = (
-                1.0 - env.progress_buf.float() / max(env.max_episode_length, 1)
-            ).clamp(0.0, 1.0)
-            factor = 1.0 + cfg.early_finish_win_scale * time_left
-            # Asymmetric: only WINS earn the early-finish multiplier. When
-            # losses were amplified too (up to -2x), risk-taking became
-            # strictly dominated - the league converged to guard-crouch
-            # chip-and-turtle (2026-07-24 telemetry: KOs 0.0004 -> 0.0000,
-            # contact energy falling, points-decision meta).
-            win = torch.where(drawn | (win < 0), win, win * factor)
 
         self.match_ended = ends
         self.win_signal = torch.where(ends, win, torch.zeros_like(win))
-        # Decisive ends are true terminations (no value bootstrap); points
-        # ends (timeout / ring-out) are resets (bootstrap allowed).
-        self._terminate = ends & (loses_now | loses_now[partner])
+        # Decisive ends are true terminations (no value bootstrap); a timeout
+        # points decision is a reset (bootstrap allowed).
+        #
+        # A ring-out counts as a TERMINATION: it now pays the leaver a full
+        # -1, and bootstrapping the next state's value on top of a decisive
+        # penalty would dilute exactly the signal that is supposed to stop
+        # fighters walking out.
+        self._terminate = ends & (loses_now | loses_now[partner] | oob_end)
 
         # Outcome-cause telemetry: how matches end is the leading indicator
         # of degenerate metas (all-ring-out, all-timeout stalling, ...)
+        # points_only mirrors the branch inside resolve_match_outcome -- ends
+        # that nobody lost decisively and that were not ring-outs.
+        points_only = ends & ~loses_now & ~loses_now[partner] & ~oob_end
         self.end_cause_ko = ends & (knocked_out | knocked_out[partner])
         self.end_cause_oob = ends & (oob | oob[partner]) & ~self.end_cause_ko
-        self.end_cause_points = points_only & ~self.end_cause_oob
+        self.end_cause_points = points_only
 
     def check_resets_and_terminations(self) -> Tuple[Tensor, Tensor]:
         reset = self.match_ended.clone()
