@@ -113,6 +113,18 @@ class MimicControl(ControlComponent):
             ref_gt
         )
         ref_state.rigid_body_pos = ref_gt
+
+        # Remember the corrected reference for get_markers_state(). The marker
+        # callback runs inside the NEXT simulator.step(), before the motion
+        # manager advances motion_times, so it asks for exactly this
+        # (motion_ids, motion_times) again and used to re-query the motion lib
+        # (interpolation + terrain offset) for the identical result -- 5% of
+        # the go2 tracker viewer's step. Key on CLONED values: both tensors
+        # are mutated in place (motion_times += dt, resets index-assign ids),
+        # so identity alone would go stale. Any mismatch (a reset between the
+        # two calls) simply falls back to the fetch.
+        self._marker_ref_key = (motion_ids.clone(), motion_times.clone())
+        self._marker_ref_pos = ref_gt
         
         # Build multi-step reference for observations
         dt = self.env.dt
@@ -235,18 +247,29 @@ class MimicControl(ControlComponent):
             return {}
         
         markers_state = {}
-        
-        # Get reference state at current time (access motion_manager via env)
-        ref_state = self.env.motion_lib.get_motion_state(
-            self.env.motion_manager.motion_ids, self.env.motion_manager.motion_times
-        )
-        
-        target_pos = ref_state.rigid_body_pos.clone()
-        target_pos += (
-            self.env.get_spawn_to_ref_pose_offset_with_terrain_height_correction(
-                target_pos
+
+        # Reuse the terrain-corrected reference populate_context() built for
+        # this same (motion_ids, motion_times) when it is still current; only
+        # re-query the motion lib when a reset moved the key.
+        mm = self.env.motion_manager
+        key = getattr(self, "_marker_ref_key", None)
+        if (
+            key is not None
+            and key[0].shape == mm.motion_ids.shape
+            and torch.equal(key[0], mm.motion_ids)
+            and torch.equal(key[1], mm.motion_times)
+        ):
+            target_pos = self._marker_ref_pos
+        else:
+            ref_state = self.env.motion_lib.get_motion_state(
+                mm.motion_ids, mm.motion_times
             )
-        )
+            target_pos = ref_state.rigid_body_pos.clone()
+            target_pos += (
+                self.env.get_spawn_to_ref_pose_offset_with_terrain_height_correction(
+                    target_pos
+                )
+            )
         
         # Standard mimic: show all body markers in red
         target_pos = target_pos.view(self.env.num_envs, -1, 3)

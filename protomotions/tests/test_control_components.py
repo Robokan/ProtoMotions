@@ -16,6 +16,10 @@ from protomotions.envs.control.kinematic_replay_control import (
     KinematicReplayControl,
     KinematicReplayControlConfig,
 )
+from protomotions.envs.control.mimic_control import (
+    MimicControl,
+    MimicControlConfig,
+)
 from protomotions.envs.control.masked_mimic_control import (
     FixedBodyCondition,
     MaskedMimicControl,
@@ -1207,3 +1211,88 @@ def test_masked_mimic_shifts_masks_resamples_nonempty_and_inherits_clip_terminat
     assert torch.equal(terminate_buf, torch.tensor([False, True]))
     assert control.create_visualization_markers(headless=True) == {}
     assert control.get_markers_state() == {}
+
+
+def test_mimic_markers_reuse_populate_context_reference_until_key_changes():
+    """get_markers_state() must reuse the terrain-corrected reference that
+    populate_context() built for the same (motion_ids, motion_times), and
+    re-query only when a reset moves that key. Guards the inference-viewer
+    speedup (the marker re-fetch was ~5% of the go2 tracker step)."""
+    calls = []
+
+    class _MotionLib:
+        def get_motion_length(self, motion_ids):
+            return torch.full((len(motion_ids),), 2.0)
+
+        def get_motion_state(self, motion_ids, motion_times):
+            calls.append((motion_ids.clone(), motion_times.clone()))
+            num = len(motion_ids)
+            pos = torch.zeros(num, 3, 3)
+            pos[:, :, 0] = motion_ids.float().unsqueeze(-1)
+            pos[:, :, 1] = motion_times.unsqueeze(-1)
+            return RobotState(
+                state_conversion=StateConversion.COMMON,
+                rigid_body_pos=pos,
+                rigid_body_rot=_identity_quat(num, 3),
+                rigid_body_vel=torch.zeros(num, 3, 3),
+                rigid_body_ang_vel=torch.zeros(num, 3, 3),
+                dof_pos=motion_times.unsqueeze(-1),
+                dof_vel=torch.zeros(num, 1),
+            )
+
+    manager = SimpleNamespace(
+        motion_ids=torch.tensor([0, 1]),
+        motion_times=torch.tensor([0.2, 0.2]),
+        get_done_tracks=lambda: torch.tensor([False, False]),
+    )
+    env = SimpleNamespace(
+        num_envs=2,
+        device=torch.device("cpu"),
+        dt=0.1,
+        simulator=SimpleNamespace(headless=False),
+        motion_manager=manager,
+        motion_lib=_MotionLib(),
+        get_spawn_to_ref_pose_offset_with_terrain_height_correction=lambda ref: torch.ones(ref.shape[0], 1, 3),
+        robot_config=SimpleNamespace(
+            anchor_body_index=0,
+            trackable_bodies_subset=["hand", "foot"],
+            mimic_small_marker_bodies=set(),
+            kinematic_info=SimpleNamespace(
+                body_names=["root", "hand", "foot"],
+                hinge_axes_map={1: torch.tensor([[0.0, 0.0, 1.0]])},
+            ),
+        ),
+    )
+    control = MimicControl(MimicControlConfig(future_steps=1), env)
+
+    # Cold: no context yet -> the marker path must fetch for itself.
+    cold = control.get_markers_state()["body_markers_red"].translation
+    cold_calls = len(calls)
+    assert cold_calls >= 1
+
+    # populate_context for the SAME key, then markers: must be a cache hit
+    # (no new motion-lib call) and identical, already-offset positions.
+    ctx = SimpleNamespace()
+    control.populate_context(ctx)
+    after_ctx = len(calls)
+    hit = control.get_markers_state()["body_markers_red"].translation
+    assert len(calls) == after_ctx, "marker path re-queried the motion lib on a cache hit"
+    assert torch.allclose(hit, cold)
+    assert torch.allclose(hit.view(2, -1, 3)[:, :, 0], torch.tensor([[1.0, 1.0, 1.0], [2.0, 2.0, 2.0]]))
+
+    # Motion time advances in place (as motion_manager.post_physics_step does):
+    # the key no longer matches, so the marker path must fall back to a fetch
+    # and reflect the NEW time, not the stale cached one.
+    manager.motion_times += 0.1
+    before = len(calls)
+    moved = control.get_markers_state()["body_markers_red"].translation
+    assert len(calls) == before + 1, "stale cache served after motion_times changed"
+    assert torch.allclose(moved.view(2, -1, 3)[:, :, 1], torch.full((2, 3), 0.3 + 1.0))
+
+    # A reset that swaps motion ids in place must likewise miss.
+    control.populate_context(SimpleNamespace())
+    manager.motion_ids[:] = torch.tensor([1, 0])
+    before = len(calls)
+    swapped = control.get_markers_state()["body_markers_red"].translation
+    assert len(calls) == before + 1
+    assert torch.allclose(swapped.view(2, -1, 3)[:, :, 0], torch.tensor([[2.0, 2.0, 2.0], [1.0, 1.0, 1.0]]))
