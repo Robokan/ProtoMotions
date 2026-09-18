@@ -490,10 +490,20 @@ class BaseEnv:
 
     _action_config_device_ready: bool = False
 
-    def _process_action(self, action: Tensor, context: EnvContext) -> Dict[str, Tensor]:
+    def _process_action(
+        self, action: Tensor, context: Optional[EnvContext] = None
+    ) -> Dict[str, Tensor]:
         """Process action using single action config dict.
 
         action_config is a single dict with "fn" key and parameters.
+
+        ``context`` is accepted for signature compatibility but never read:
+        action functions take their parameters from ``action_config`` alone
+        (see action_functions.py: actions do not bind to context paths).
+        Callers must NOT pass ``self.context`` here -- doing so forced a full
+        pre-physics ``_build_global_context()`` (per-body FK + a motion-lib
+        lookup) whose result was discarded. Profiled on the go2 tracker
+        viewer it was 17% of every step, equal to the real post-physics build.
         """
         if self.config.action_config is None:
             return {"processed_action": action}
@@ -824,8 +834,9 @@ class BaseEnv:
         # Store current actions
         self._current_raw_action[:] = action
 
-        # Process action
-        action_dict = self._process_action(action, self.context)
+        # Process action. Do not touch self.context here: the property would
+        # eagerly build the full pre-physics context only to have it ignored.
+        action_dict = self._process_action(action)
         processed_action = action_dict["processed_action"]
         self._current_processed_action[:] = processed_action
 
@@ -1543,7 +1554,7 @@ class BaseEnv:
             - 0.5
         )
         self._current_context = None
-        processed = self._process_action(rand_action, self.context)["processed_action"]
+        processed = self._process_action(rand_action)["processed_action"]
         for _ in range(cfg.fall_state_settle_steps):
             self.simulator.step(processed)
 
