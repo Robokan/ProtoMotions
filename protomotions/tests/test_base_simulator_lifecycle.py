@@ -560,3 +560,30 @@ def test_simulator_base_abstract_methods_raise_when_called_directly():
     for call in abstract_calls:
         with pytest.raises(NotImplementedError):
             call()
+
+
+# ---------------------------------------------------------------------------
+# PhysX view reads across Lab 2 / Lab 3
+# ---------------------------------------------------------------------------
+
+
+def test_read_physx_view_passes_torch_through_and_converts_arrays():
+    """Lab 3's WARP physics-tensors frontend returns a wp.array from
+    get_coms(), so the old `.clone()` died with "'array' object has no
+    attribute 'clone'" and took every center_of_mass domain-randomization run
+    with it. _write_physx_view already handled the mirror-image problem on the
+    write side; this is the read side."""
+    import numpy as np
+    import torch
+
+    from protomotions.simulator.isaaclab.simulator import IsaacLabSimulator
+
+    read = IsaacLabSimulator._read_physx_view
+
+    tensor = torch.ones(2, 3)
+    assert read(tensor) is tensor  # torch passes through untouched, no copy
+
+    converted = read(np.zeros((2, 3), dtype=np.float32))
+    assert isinstance(converted, torch.Tensor)
+    assert converted.shape == (2, 3)
+    converted.clone()  # the operation that used to raise

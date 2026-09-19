@@ -799,12 +799,36 @@ class IsaacLabSimulator(Simulator):
                 indices=wp.from_torch(indices.contiguous().to(torch.int32)),
             )
 
+    @staticmethod
+    def _read_physx_view(data) -> torch.Tensor:
+        """Read from a physics-tensors view as torch, across Lab 2 and Lab 3.
+
+        The mirror image of _write_physx_view: Lab 3's WARP-based frontend
+        hands back a wp.array, so .clone() and tensor indexing die with
+        "\'array\' object has no attribute \'clone\'". Lab 2 returns torch
+        directly.
+        """
+        if isinstance(data, torch.Tensor):
+            return data
+        try:
+            import warp as wp
+
+            if isinstance(data, wp.array):
+                return wp.to_torch(data)
+        except ImportError:
+            pass
+        return torch.as_tensor(data)
+
     def _apply_physx_com_randomization(self, all_env_ids: torch.Tensor) -> None:
-        coms = self._robot.root_physx_view.get_coms().clone()
+        coms = self._read_physx_view(
+            self._robot.root_physx_view.get_coms()
+        ).clone()
         coms[
             :, self._domain_randomization["center_of_mass"]["body_indices"], :3
         ] += self._domain_randomization["center_of_mass"]["com"].to(coms.device)
-        self._robot.root_physx_view.set_coms(coms, all_env_ids)
+        self._write_physx_view(
+            self._robot.root_physx_view.set_coms, coms, all_env_ids
+        )
 
     def _apply_scene_object_properties_after_spawn(
         self, all_env_ids: torch.Tensor
@@ -828,7 +852,9 @@ class IsaacLabSimulator(Simulator):
         for obj_idx, object_view in enumerate(self._object):
             materials = None
             coms = (
-                object_view.root_physx_view.get_coms().clone()
+                self._read_physx_view(
+                    object_view.root_physx_view.get_coms()
+                ).clone()
                 if apply_center_of_mass
                 else None
             )
