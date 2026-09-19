@@ -49,7 +49,13 @@ from protomotions.envs.base_env.config import EnvConfig
 # Also the defaults used at inference, where argparse never runs.
 _DEFAULTS = {
     "forward_vel_min": -1.0,
-    "forward_vel_max": 2.0,
+    # 2.5 m/s is the fastest thing the go2 corpus actually contains: the
+    # quickest clip averages 2.60 m/s and only 4.6% of the sampling weight
+    # sits above 2.0. The ASE steering default of 4.0 would spend most of its
+    # range commanding a gait that was never demonstrated -- and for
+    # MaskedMimic it also puts the 1 s target 4 m ahead, far outside any
+    # lead distance it was distilled on.
+    "forward_vel_max": 2.5,
     "turn_vel_max": 2.0,
     "side_vel_max": 1.0,
     "command_hold_steps_min": 125,
@@ -83,7 +89,8 @@ def additional_experiment_arguments(parser: argparse.ArgumentParser):
         help="Backward command bound (m/s, negative).")
     parser.add_argument(
         "--forward-vel-max", type=float, default=_DEFAULTS["forward_vel_max"],
-        help="Forward command bound (m/s).")
+        help="Forward command bound (m/s). The go2 corpus tops out at a "
+             "2.60 m/s clip mean, so much above 2.5 is undemonstrated.")
     parser.add_argument(
         "--turn-vel-max", type=float, default=_DEFAULTS["turn_vel_max"],
         help="Yaw-rate command bound (rad/s, symmetric).")
@@ -194,6 +201,18 @@ def _install_steering(cfg: EnvConfig, args: argparse.Namespace) -> None:
             side_vel_max=side_vel_max,
         ),
     }
+
+    # Spawn mid-gait, not at the clip start. The checkpoint's INFERENCE
+    # pickle -- which is what inference_agent.py loads -- carries
+    # init_start_prob = 1.0 from the mimic eval overrides, so every robot was
+    # being dropped at t=0 of its clip, which for nearly every clip is a
+    # standstill. The command is then seeded from that standstill and the run
+    # opens with everything at zero no matter what the seeding does
+    # (Eric, 2026-09-19). 0.0 = always a random time in the clip, so the robot
+    # starts already trotting and the command starts at the speed it is
+    # actually moving, which is the whole point of the spawn seeding.
+    if getattr(cfg, "motion_manager", None) is not None:
+        cfg.motion_manager.init_start_prob = 0.0
 
     # Drive around until the viewer is closed.
     cfg.max_episode_length = 100000

@@ -205,7 +205,23 @@ class SteeringCommandControl(ControlComponent):
             dtype=torch.int64,
         )
         progress = self.env.progress_buf[env_ids]
-        is_env_reset = self.env.reset_buf[env_ids] | self.env.terminate_buf[env_ids]
+        # A fresh episode, i.e. NOT the mid-episode resample path that reuses
+        # this method. reset_buf/terminate_buf mark the envs whose episode was
+        # just ended -- but the very first reset of a run has neither set
+        # (they are freshly allocated zeros, and env.reset() only clears them
+        # AFTER control_manager.reset), so progress_buf == 0 is what catches
+        # it. Without that clause the opening episode skips the spawn-velocity
+        # seeding below and every robot starts from a zero command no matter
+        # what pose RSI dropped it in; in a viewer with terminations off that
+        # first episode is the ONLY episode, so nothing is ever seeded
+        # (Eric, 2026-09-19: "why is it always starting with everything at
+        # 0"). A resample cannot collide with this: _change_steps is set to
+        # progress + at least heading_change_steps_min.
+        is_env_reset = (
+            self.env.reset_buf[env_ids]
+            | self.env.terminate_buf[env_ids]
+            | (progress == 0)
+        )
         progress = torch.where(is_env_reset, torch.zeros_like(progress), progress)
         self._change_steps[env_ids] = progress + change_steps
         # Fresh episodes: seed BOTH the target and the desired command from
