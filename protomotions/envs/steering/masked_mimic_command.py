@@ -67,9 +67,11 @@ class MaskedMimicSteeringControlConfig(MaskedMimicControlConfig):
             num_masked_future_steps targets are spread evenly over
             (0, horizon_sec], so the default 1.0 s with 5 steps gives
             0.2/0.4/0.6/0.8/1.0 s.
-        target_root_height: Height (m, above terrain) of the commanded base
-            link. None uses the robot's default_root_height, which is the
-            measured standing height.
+        target_root_height: Fixed height (m, above terrain) of the commanded
+            base link. None (the default) measures it from the motion library
+            instead, as a linear fit against speed -- see _measure_height_fit.
+        height_fit_samples: How many random corpus poses that fit is built
+            from.
         condition_rotation: Condition the base link's yaw as well as its
             position. Off = position only, which lets the policy pick its own
             facing (it will still turn, because the arc curves away).
@@ -84,6 +86,7 @@ class MaskedMimicSteeringControlConfig(MaskedMimicControlConfig):
     command_component: str = "steering_cmd"
     horizon_sec: float = 1.0
     target_root_height: Optional[float] = None
+    height_fit_samples: int = 8192
     condition_rotation: bool = True
     report_every_steps: int = 0
 
@@ -131,10 +134,19 @@ class MaskedMimicSteeringControl(MaskedMimicControl):
         self._root_cond_idx = cond_ids.index(self._root_body_id)
         self._num_bodies = len(body_names)
 
-        height = self.config.target_root_height
-        if height is None:
-            height = self.env.robot_config.default_root_height
-        self._target_height = float(height)
+        # Height fit, measured lazily from the corpus on the first reset.
+        # robot_config.default_root_height is NOT usable here: it is the
+        # KINEMATIC standing height of the default joint pose (0.2868 m on the
+        # go2), while the repacked corpus carries the body 6-9 cm higher and
+        # rises with speed (0.345 m at rest, 0.376 m above 2 m/s). Commanding
+        # the kinematic height asks the policy to crouch below anything it was
+        # ever shown, at every speed, which flattens the gait it will offer
+        # (Eric, 2026-09-19: "the commanded speed immediately slows it down to
+        # a walk").
+        self._height_a = None
+        self._height_b = 0.0
+        self._height_lo = 0.0
+        self._height_hi = 0.0
 
         # Every conditioned pose is visible, and only the base link is
         # conditioned within it. Both are constant, so build them once.
@@ -169,9 +181,67 @@ class MaskedMimicSteeringControl(MaskedMimicControl):
     # Lifecycle
     # ------------------------------------------------------------------
 
+    def _measure_height_fit(self):
+        """Fit commanded root height against speed, from the motion library.
+
+        Least squares on random corpus poses, clamped to the observed 5th-95th
+        percentile band so an extrapolated command can never ask for a height
+        the corpus does not contain.
+        """
+        fixed = self.config.target_root_height
+        if fixed is not None:
+            self._height_a = float(fixed)
+            self._height_b = 0.0
+            self._height_lo = self._height_hi = float(fixed)
+            return
+
+        num = self.config.height_fit_samples
+        motion_lib = self.env.motion_lib
+        motion_ids = torch.randint(
+            0, motion_lib.num_motions(), (num,), device=self.env.device
+        )
+        lengths = motion_lib.get_motion_length(motion_ids)
+        times = torch.rand(num, device=self.env.device) * lengths
+        state = motion_lib.get_motion_state(motion_ids, times)
+        z = state.rigid_body_pos[:, 0, 2]
+        speed = state.rigid_body_vel[:, 0, :2].norm(dim=-1)
+
+        var = speed.var()
+        slope = (
+            ((speed - speed.mean()) * (z - z.mean())).mean() / var
+            if float(var) > 1e-8
+            else torch.zeros((), device=z.device)
+        )
+        self._height_b = float(slope)
+        self._height_a = float(z.mean() - slope * speed.mean())
+        self._height_lo = float(z.quantile(0.05))
+        self._height_hi = float(z.quantile(0.95))
+        print(
+            f"[mm-steering] commanded root height from corpus: "
+            f"{self._height_a:.4f} + {self._height_b:.4f}*speed, clamped to "
+            f"[{self._height_lo:.4f}, {self._height_hi:.4f}] "
+            f"(robot default_root_height is "
+            f"{self.env.robot_config.default_root_height:.4f})",
+            flush=True,
+        )
+
+    def _target_heights(self, speed_cmd: Tensor) -> Tensor:
+        """Commanded height per env, following the corpus' speed trend.
+
+        Fits on first use: the env builds observations once during setup,
+        before any reset, so populate_context can land here first.
+        """
+        if self._height_a is None:
+            self._measure_height_fit()
+        return (self._height_a + self._height_b * speed_cmd).clamp(
+            self._height_lo, self._height_hi
+        )
+
     def reset(self, env_ids: Tensor):
         """Reset without resampling times or masks -- both are fixed here."""
         MimicControl.reset(self, env_ids)
+        if self._height_a is None:
+            self._measure_height_fit()
         if len(env_ids) == 0:
             return
         self.target_times[env_ids] = (
@@ -309,8 +379,11 @@ class MaskedMimicSteeringControl(MaskedMimicControl):
         ground = self.env.terrain.get_ground_heights(
             target_xy.reshape(-1, 2)
         ).view(num_envs, num_steps)
+        cmd = self._command()
+        speed_cmd = cmd[:, [0, 2]].norm(dim=-1, keepdim=True)
+        height = self._target_heights(speed_cmd)  # [envs, 1]
         target_pos = torch.cat(
-            [target_xy, (ground + self._target_height).unsqueeze(-1)], dim=-1
+            [target_xy, (ground + height).unsqueeze(-1)], dim=-1
         )  # [envs, steps, 3]
 
         up = torch.zeros(num_envs * num_steps, 3, device=device, dtype=torch.float)
