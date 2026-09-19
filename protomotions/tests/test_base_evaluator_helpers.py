@@ -40,6 +40,10 @@ class _Agent:
         self.root_dir = Path(root_dir)
         self.num_envs = env.num_envs
         self.model = _Model()
+        # simple_test_policy reads agent.config.amp_parameters to decide
+        # whether to apply the AMP discriminator kill switch; without it the
+        # loop raises AttributeError before the first step.
+        self.config = SimpleNamespace(amp_parameters=None)
         self.eval_calls = 0
         self.pre_steps = []
 
@@ -659,3 +663,41 @@ def test_simple_test_policy_requires_mean_action_or_action(tmp_path):
         evaluator.simple_test_policy()
 
     assert env.step_actions == []
+
+
+def test_simple_test_policy_runs_under_no_grad(tmp_path):
+    """The interactive viewer loop must disable autograd.
+
+    Without it every step builds a graph that persistent env state keeps
+    alive across iterations: the masked-mimic viewer grew ~120 MB/s and died
+    of CUDA OOM after ~365 s at only 4 envs. evaluate() has always carried
+    @torch.no_grad(); simple_test_policy did not.
+    """
+    seen = {}
+
+    class _GradProbeModel:
+        def __call__(self, obs_td):
+            seen["grad_enabled"] = torch.is_grad_enabled()
+            param = torch.ones(2, 1, requires_grad=True)
+            out = param * 2.0
+            seen["output_tracks_grad"] = out.requires_grad
+            return {"mean_action": out}
+
+    class _OneStepEnv(_Env):
+        def reset(self, env_ids=None, **kwargs):
+            if self.reset_calls:
+                raise KeyboardInterrupt
+            return super().reset(env_ids, **kwargs)
+
+    env = _OneStepEnv()
+    agent = _Agent(env, tmp_path)
+    agent.model = _GradProbeModel()
+
+    # Grad is on outside, as it is in a real process, so the assertions below
+    # prove the decorator turned it off rather than inheriting an off state.
+    assert torch.is_grad_enabled()
+    BaseEvaluator(agent, _Fabric(), _config({})).simple_test_policy()
+
+    assert seen["grad_enabled"] is False, "viewer loop ran with autograd enabled"
+    assert seen["output_tracks_grad"] is False, "model output still builds a graph"
+    assert torch.is_grad_enabled(), "grad state leaked out of simple_test_policy"
