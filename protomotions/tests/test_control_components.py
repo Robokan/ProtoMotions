@@ -25,6 +25,10 @@ from protomotions.envs.control.masked_mimic_control import (
     MaskedMimicControl,
     MaskedMimicControlConfig,
 )
+from protomotions.envs.steering.masked_mimic_command import (
+    MaskedMimicSteeringControl,
+    MaskedMimicSteeringControlConfig,
+)
 from protomotions.envs.control.path_follower_control import (
     PathFollowerControl,
     PathFollowerControlConfig,
@@ -1296,3 +1300,131 @@ def test_mimic_markers_reuse_populate_context_reference_until_key_changes():
     swapped = control.get_markers_state()["body_markers_red"].translation
     assert len(calls) == before + 1
     assert torch.allclose(swapped.view(2, -1, 3)[:, :, 0], torch.tensor([[2.0, 2.0, 2.0], [1.0, 1.0, 1.0]]))
+
+
+# ---------------------------------------------------------------------------
+# MaskedMimic steering (velocity-command conditioning)
+# ---------------------------------------------------------------------------
+
+
+def _yaw_quat(yaw):
+    """xyzw quaternion for a rotation about world +z."""
+    half = yaw * 0.5
+    quat = torch.zeros(yaw.shape[0], 4)
+    quat[:, 2] = torch.sin(half)
+    quat[:, 3] = torch.cos(half)
+    return quat
+
+
+def _masked_mimic_steering_control(num_envs=2, horizon=1.0, steps=5, **kwargs):
+    """Build the component on a stub env: only __init__ and _rollout are
+    exercised, so no motion library or simulator state is needed."""
+    body_names = ["base_link", "FL_thigh", "FL_foot"]
+    env = SimpleNamespace(
+        num_envs=num_envs,
+        device=torch.device("cpu"),
+        dt=0.02,
+        robot_config=SimpleNamespace(
+            kinematic_info=SimpleNamespace(body_names=body_names),
+            trackable_bodies_subset=body_names,
+            anchor_body_name="base_link",
+            default_root_height=0.2868,
+        ),
+    )
+    config = MaskedMimicSteeringControlConfig(
+        num_masked_future_steps=steps, horizon_sec=horizon, **kwargs
+    )
+    control = MaskedMimicSteeringControl(config, env)
+    env.control_manager = SimpleNamespace(
+        components={"steering_cmd": SimpleNamespace(_target=torch.zeros(num_envs, 3))}
+    )
+    return control, env
+
+
+def _integrate_command(x0, y0, h0, fwd, turn, side, horizon, sub_steps=20000):
+    """Forward Euler reference for the closed-form roll-out."""
+    import math
+
+    dt = horizon / sub_steps
+    x, y, h = x0, y0, h0
+    for _ in range(sub_steps):
+        x += (fwd * math.cos(h) - side * math.sin(h)) * dt
+        y += (fwd * math.sin(h) + side * math.cos(h)) * dt
+        h += turn * dt
+    return x, y, h
+
+
+@pytest.mark.parametrize(
+    "fwd,turn,side",
+    [
+        (1.5, 0.8, 0.0),   # forward arc
+        (1.0, 0.0, 0.0),   # straight (the omega -> 0 branch)
+        (-0.7, -1.2, 0.4), # backward, right turn, strafing
+        (0.0, 2.0, 0.9),   # spin in place while strafing
+    ],
+)
+def test_masked_mimic_steering_rollout_matches_integrated_command(fwd, turn, side):
+    control, env = _masked_mimic_steering_control(num_envs=1, horizon=1.0)
+    env.control_manager.components["steering_cmd"]._target = torch.tensor(
+        [[fwd, turn, side]]
+    )
+
+    root_pos = torch.tensor([[3.0, -2.0, 0.3]])
+    root_rot = _yaw_quat(torch.tensor([0.7]))
+
+    target_xy, target_heading = control._rollout(root_pos, root_rot)
+
+    assert target_xy.shape == (1, 5, 2)
+    x, y, h = _integrate_command(3.0, -2.0, 0.7, fwd, turn, side, 1.0)
+    assert target_xy[0, -1, 0].item() == pytest.approx(x, abs=1e-3)
+    assert target_xy[0, -1, 1].item() == pytest.approx(y, abs=1e-3)
+    assert target_heading[0, -1].item() == pytest.approx(h, abs=1e-4)
+
+
+def test_masked_mimic_steering_rollout_is_anchored_on_the_live_root():
+    """The targets encode a velocity, so translating the robot translates them
+    one-for-one and never leaves a stale path behind."""
+    control, env = _masked_mimic_steering_control(num_envs=1)
+    env.control_manager.components["steering_cmd"]._target = torch.tensor(
+        [[1.0, 0.5, 0.0]]
+    )
+    root_rot = _yaw_quat(torch.tensor([0.3]))
+
+    here, _ = control._rollout(torch.tensor([[0.0, 0.0, 0.3]]), root_rot)
+    there, _ = control._rollout(torch.tensor([[10.0, -4.0, 0.3]]), root_rot)
+
+    shift = torch.tensor([10.0, -4.0])
+    assert torch.allclose(there, here + shift, atol=1e-5)
+
+
+def test_masked_mimic_steering_conditions_only_the_base_link():
+    control, _ = _masked_mimic_steering_control(num_envs=2, steps=5)
+
+    assert bool(control.masked_mimic_target_poses_masks.all())
+    masks = control.masked_mimic_target_bodies_masks.view(2, 5, 3, 2)
+    assert bool(masks[:, :, 0, :].all())        # base link: translation + rotation
+    assert not bool(masks[:, :, 1:, :].any())   # every other body stays hidden
+
+
+def test_masked_mimic_steering_can_leave_yaw_unconditioned():
+    control, _ = _masked_mimic_steering_control(
+        num_envs=2, steps=5, condition_rotation=False
+    )
+    masks = control.masked_mimic_target_bodies_masks.view(2, 5, 3, 2)
+    assert bool(masks[:, :, 0, 0].all())        # position still conditioned
+    assert not bool(masks[:, :, 0, 1].any())    # yaw left to the policy
+
+
+def test_masked_mimic_steering_never_resets_the_episode():
+    """The command is open-ended; ending the clip must not end the run."""
+    control, env = _masked_mimic_steering_control(num_envs=2)
+    reset_buf, terminate_buf = control.check_resets_and_terminations()
+    assert not bool(reset_buf.any())
+    assert not bool(terminate_buf.any())
+
+
+def test_masked_mimic_steering_lead_times_span_the_horizon():
+    control, _ = _masked_mimic_steering_control(num_envs=1, horizon=1.0, steps=5)
+    assert torch.allclose(
+        control._offsets, torch.tensor([0.2, 0.4, 0.6, 0.8, 1.0]), atol=1e-6
+    )

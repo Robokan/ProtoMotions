@@ -1,0 +1,383 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026 The ProtoMotions Developers
+# SPDX-License-Identifier: Apache-2.0
+
+"""Velocity-command conditioning for a trained MaskedMimic policy.
+
+MaskedMimic is conditioned on sparse future body poses. This component swaps
+the motion-library lookup for a kinematic roll-out of the steering command:
+the base link is the ONLY conditioned body, and its target at t+dt_k is where
+the robot would be if it held the commanded (forward, yaw-rate, lateral)
+velocity for dt_k seconds starting from where it is RIGHT NOW.
+
+The roll-out is re-anchored on the live root pose every step, so the targets
+carry no accumulated tracking error -- they encode a velocity, not a path.
+Put the target 0.2 s in front at 1 m/s and the policy walks at 1 m/s.
+
+The command itself (random walk, ramping, gamepad teleop, the green direction
+arrow and the spinning turn dial) comes from the ordinary steering component
+in this package, which must be registered ALONGSIDE this one:
+
+    control_components = {
+        "steering_cmd": SteeringCommandControlConfig(...),
+        "masked_mimic": MaskedMimicSteeringControlConfig(...),
+    }
+
+Nothing here is trained: it is an evaluation harness for an existing
+MaskedMimic checkpoint, so the observation and model configs must stay
+byte-identical to the ones it was distilled with.
+"""
+
+from dataclasses import dataclass
+from typing import Dict, Optional, Tuple, TYPE_CHECKING
+
+import torch
+from torch import Tensor
+
+from protomotions.envs.context_views import EnvContext, MaskedMimicContext
+from protomotions.envs.control.masked_mimic_control import (
+    MaskedMimicControl,
+    MaskedMimicControlConfig,
+)
+from protomotions.envs.control.mimic_control import MimicControl
+from protomotions.utils import rotations
+from protomotions.simulator.base_simulator.config import (
+    MarkerConfig,
+    MarkerState,
+    VisualizationMarkerConfig,
+)
+
+if TYPE_CHECKING:
+    from protomotions.envs.base_env.env import BaseEnv
+
+
+# Below this yaw rate the arc roll-out is replaced by its straight-line limit
+# (the closed form divides by omega).
+_STRAIGHT_EPS = 1e-4
+
+
+@dataclass
+class MaskedMimicSteeringControlConfig(MaskedMimicControlConfig):
+    """Configuration for velocity-command MaskedMimic conditioning.
+
+    Attributes:
+        command_component: Key of the sibling SteeringCommandControl in the
+            env's control_components dict. Its ramped command drives the
+            roll-out.
+        horizon_sec: Time of the FARTHEST conditioned target. The
+            num_masked_future_steps targets are spread evenly over
+            (0, horizon_sec], so the default 1.0 s with 5 steps gives
+            0.2/0.4/0.6/0.8/1.0 s.
+        target_root_height: Height (m, above terrain) of the commanded base
+            link. None uses the robot's default_root_height, which is the
+            measured standing height.
+        condition_rotation: Condition the base link's yaw as well as its
+            position. Off = position only, which lets the policy pick its own
+            facing (it will still turn, because the arc curves away).
+        report_every_steps: Print a commanded-vs-achieved velocity summary
+            every N env steps. 0 disables it.
+    """
+
+    _target_: str = (
+        "protomotions.envs.steering.masked_mimic_command.MaskedMimicSteeringControl"
+    )
+
+    command_component: str = "steering_cmd"
+    horizon_sec: float = 1.0
+    target_root_height: Optional[float] = None
+    condition_rotation: bool = True
+    report_every_steps: int = 0
+
+
+class MaskedMimicSteeringControl(MaskedMimicControl):
+    """MaskedMimic conditioning driven by a velocity command, not a clip.
+
+    Overrides the three motion-library behaviours of the parent:
+      * target times are a fixed ladder instead of beta-sampled clip times,
+      * body masks are fixed to "base link only" instead of resampled,
+      * target poses are integrated from the command instead of looked up.
+
+    ctx.mimic is still populated by MimicControl (the motion library is the
+    reset/RSI source), but nothing the MaskedMimic prior reads comes from it.
+    """
+
+    config: MaskedMimicSteeringControlConfig
+
+    def __init__(self, config: MaskedMimicSteeringControlConfig, env: "BaseEnv"):
+        super().__init__(config, env)
+
+        num_envs, device = self.env.num_envs, self.env.device
+        num_steps = self.config.num_masked_future_steps
+
+        # Evenly spaced lead times over (0, horizon].
+        self._offsets = torch.linspace(
+            self.config.horizon_sec / num_steps,
+            self.config.horizon_sec,
+            num_steps,
+            device=device,
+            dtype=torch.float,
+        )
+
+        # The conditioned body. build_sparse_target_poses() always treats body
+        # 0 as the root frame, so anchor_body_name is expected to be body 0
+        # (true for every quadruped config here); the mask index is its slot
+        # inside trackable_bodies_subset.
+        body_names = self.env.robot_config.kinematic_info.body_names
+        self._root_body_id = body_names.index(self.env.robot_config.anchor_body_name)
+        cond_ids = self.conditionable_body_ids.tolist()
+        assert self._root_body_id in cond_ids, (
+            f"anchor body {self.env.robot_config.anchor_body_name!r} is not in "
+            "trackable_bodies_subset -- MaskedMimic cannot be conditioned on it"
+        )
+        self._root_cond_idx = cond_ids.index(self._root_body_id)
+        self._num_bodies = len(body_names)
+
+        height = self.config.target_root_height
+        if height is None:
+            height = self.env.robot_config.default_root_height
+        self._target_height = float(height)
+
+        # Every conditioned pose is visible, and only the base link is
+        # conditioned within it. Both are constant, so build them once.
+        self.masked_mimic_target_poses_masks[:] = True
+        fixed = torch.zeros(
+            num_envs,
+            num_steps,
+            self.num_conditionable_bodies,
+            2,
+            dtype=torch.bool,
+            device=device,
+        )
+        fixed[:, :, self._root_cond_idx, 0] = True  # translation
+        if self.config.condition_rotation:
+            fixed[:, :, self._root_cond_idx, 1] = True  # rotation
+        self.masked_mimic_target_bodies_masks[:] = fixed.view(num_envs, -1)
+
+        # Identity quaternion (xyzw) used to fill the masked-out bodies. Zeros
+        # would be multiplied out by the mask, but only after passing through
+        # quat_rotate, which turns a zero quaternion into NaN.
+        self._identity_quat = torch.zeros(4, device=device, dtype=torch.float)
+        self._identity_quat[3] = 1.0
+
+        self._initialized = False
+
+        # Commanded-vs-achieved accumulators for the periodic readout.
+        self._report_steps = 0
+        self._report_abs_err = torch.zeros(3, device=device, dtype=torch.float)
+        self._report_abs_cmd = torch.zeros(3, device=device, dtype=torch.float)
+
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    def reset(self, env_ids: Tensor):
+        """Reset without resampling times or masks -- both are fixed here."""
+        MimicControl.reset(self, env_ids)
+        if len(env_ids) == 0:
+            return
+        self.target_times[env_ids] = (
+            self.env.motion_manager.motion_times[env_ids].unsqueeze(-1)
+            + self._offsets
+        )
+        self._initialized = True
+
+    def step(self):
+        """Advance the fixed ladder and keep the motion clock in range.
+
+        The clip is never the objective here, but MimicControl.populate_context
+        still queries the motion library at motion_times, and the motion
+        manager keeps advancing them past the end of the clip once
+        check_resets_and_terminations() stops asking for resets. Wrapping keeps
+        every lookup in bounds without teleporting the robot.
+        """
+        MimicControl.step(self)
+        if not self._initialized:
+            return
+
+        motion_manager = self.env.motion_manager
+        lengths = self.env.motion_lib.motion_lengths[motion_manager.motion_ids]
+        motion_manager.motion_times.remainder_(lengths.clamp_min(self.env.dt))
+        self.target_times[:] = motion_manager.motion_times.unsqueeze(-1) + self._offsets
+
+        if self.config.report_every_steps > 0:
+            self._accumulate_tracking()
+
+    def check_resets_and_terminations(self) -> Tuple[Tensor, Tensor]:
+        """Never reset: the command is open-ended, the clip is not the task."""
+        zeros = torch.zeros(
+            self.env.num_envs, dtype=torch.bool, device=self.env.device
+        )
+        return zeros, zeros.clone()
+
+    # ------------------------------------------------------------------
+    # Tracking readout
+    # ------------------------------------------------------------------
+
+    def _accumulate_tracking(self):
+        """Average |command - achieved| per channel, in the heading frame.
+
+        The command is a velocity, so this is the only thing that says whether
+        the target roll-out is being followed: the marker spheres show where
+        the robot was TOLD to be, not whether it got there.
+        """
+        root_state = self.env.simulator.get_root_state()
+        heading_inv = rotations.calc_heading_quat_inv(root_state.root_rot, True)
+        local_vel = rotations.quat_rotate(heading_inv, root_state.root_vel, True)
+        achieved = torch.stack(
+            [local_vel[:, 0], root_state.root_ang_vel[:, 2], local_vel[:, 1]],
+            dim=-1,
+        )
+        cmd = self._command()
+        self._report_abs_err += (achieved - cmd).abs().mean(dim=0)
+        self._report_abs_cmd += cmd.abs().mean(dim=0)
+        self._report_steps += 1
+
+        if self._report_steps < self.config.report_every_steps:
+            return
+        err = (self._report_abs_err / self._report_steps).tolist()
+        mag = (self._report_abs_cmd / self._report_steps).tolist()
+        print(
+            "[mm-steering] mean |cmd-achieved| over "
+            f"{self._report_steps} steps x {self.env.num_envs} envs -- "
+            f"forward {err[0]:.3f} m/s (|cmd| {mag[0]:.3f}), "
+            f"yaw {err[1]:.3f} rad/s (|cmd| {mag[1]:.3f}), "
+            f"lateral {err[2]:.3f} m/s (|cmd| {mag[2]:.3f})",
+            flush=True,
+        )
+        self._report_steps = 0
+        self._report_abs_err.zero_()
+        self._report_abs_cmd.zero_()
+
+    # ------------------------------------------------------------------
+    # Command roll-out
+    # ------------------------------------------------------------------
+
+    def _command(self) -> Tensor:
+        """The sibling steering component's ramped [forward, yaw, lateral]."""
+        component = self.env.control_manager.components[self.config.command_component]
+        return component._target
+
+    def _rollout(self, root_pos: Tensor, root_rot: Tensor) -> Tuple[Tensor, Tensor]:
+        """Integrate the command from the live root pose.
+
+        With a constant body-frame velocity (v_f, v_s) and yaw rate w, heading
+        is h(t) = h0 + w*t and the world velocity is
+            xdot = v_f*cos(h) - v_s*sin(h)
+            ydot = v_f*sin(h) + v_s*cos(h)
+        which integrates in closed form; the w -> 0 limit is the straight line.
+
+        Returns:
+            Tuple of (target_xy [envs, steps, 2], target_heading [envs, steps]).
+        """
+        cmd = self._command()
+        fwd = cmd[:, 0:1]
+        turn = cmd[:, 1:2]
+        side = cmd[:, 2:3]
+
+        h0 = rotations.calc_heading(root_rot, True).unsqueeze(-1)  # [envs, 1]
+        t = self._offsets.unsqueeze(0)  # [1, steps]
+        h = h0 + turn * t  # [envs, steps]
+
+        straight = turn.abs() < _STRAIGHT_EPS
+        turn_safe = torch.where(straight, torch.ones_like(turn), turn)
+        arc_a = (torch.sin(h) - torch.sin(h0)) / turn_safe
+        arc_b = (torch.cos(h) - torch.cos(h0)) / turn_safe
+        # w -> 0 limits of the two integrals.
+        lin_a = torch.cos(h0) * t
+        lin_b = -torch.sin(h0) * t
+        a = torch.where(straight, lin_a, arc_a)
+        b = torch.where(straight, lin_b, arc_b)
+
+        x = root_pos[:, 0:1] + fwd * a + side * b
+        y = root_pos[:, 1:2] - fwd * b + side * a
+        return torch.stack([x, y], dim=-1), h
+
+    def populate_context(self, ctx: EnvContext) -> None:
+        """Publish the commanded base-link targets as the sparse conditioning."""
+        # ctx.mimic still comes from the motion library: the tracking rewards
+        # and evaluators read it, and nothing in the MaskedMimic prior does.
+        MimicControl.populate_context(self, ctx)
+
+        num_envs = self.env.num_envs
+        num_steps = self.config.num_masked_future_steps
+        device = self.env.device
+
+        root_state = self.env.simulator.get_root_state()
+        target_xy, target_heading = self._rollout(
+            root_state.root_pos, root_state.root_rot
+        )
+
+        ground = self.env.terrain.get_ground_heights(
+            target_xy.reshape(-1, 2)
+        ).view(num_envs, num_steps)
+        target_pos = torch.cat(
+            [target_xy, (ground + self._target_height).unsqueeze(-1)], dim=-1
+        )  # [envs, steps, 3]
+
+        up = torch.zeros(num_envs * num_steps, 3, device=device, dtype=torch.float)
+        up[:, 2] = 1.0
+        target_rot = rotations.quat_from_angle_axis(
+            target_heading.reshape(-1), up, True
+        ).view(num_envs, num_steps, 4)
+
+        # Masked-out bodies are zeroed downstream; they only need to be finite.
+        ref_pos = target_pos.unsqueeze(2).repeat(1, 1, self._num_bodies, 1)
+        ref_rot = self._identity_quat.view(1, 1, 1, 4).repeat(
+            num_envs, num_steps, self._num_bodies, 1
+        )
+        ref_pos[:, :, self._root_body_id, :] = target_pos
+        ref_rot[:, :, self._root_body_id, :] = target_rot
+
+        self._marker_target_pos = target_pos
+
+        ctx.masked_mimic = MaskedMimicContext(
+            mimic=ctx.mimic,
+            ref_pos=ref_pos,
+            ref_rot=ref_rot,
+            target_times=self.target_times,
+            time_offsets=self._offsets.unsqueeze(0).expand(num_envs, num_steps),
+            target_poses_masks=self.masked_mimic_target_poses_masks,
+            target_bodies_masks=self.masked_mimic_target_bodies_masks,
+        )
+
+    # ------------------------------------------------------------------
+    # Visualization
+    # ------------------------------------------------------------------
+
+    def create_visualization_markers(
+        self, headless: bool
+    ) -> Dict[str, VisualizationMarkerConfig]:
+        """One sphere per conditioned lead time, tracing the commanded arc.
+
+        Replaces the parent's per-body blue/yellow/red spheres: only the base
+        link is conditioned, so there is one target per future step and they
+        all sit in the same 0.2-1.0 s window. The velocity readouts the user
+        steers by (green direction arrow, spinning turn dial) come from the
+        sibling steering component.
+        """
+        if headless:
+            return {}
+        return {
+            "mm_steering_targets": VisualizationMarkerConfig(
+                type="sphere",
+                color=(1.0, 0.25, 0.25),
+                markers=[
+                    MarkerConfig(size="small")
+                    for _ in range(self.config.num_masked_future_steps)
+                ],
+            ),
+        }
+
+    def get_markers_state(self) -> Dict[str, MarkerState]:
+        if self.env.simulator.headless or not self._initialized:
+            return {}
+        target_pos = getattr(self, "_marker_target_pos", None)
+        if target_pos is None:
+            return {}
+        return {
+            "mm_steering_targets": MarkerState(
+                translation=target_pos.view(self.env.num_envs, -1, 3),
+                orientation=self._identity_quat.view(1, 1, 4).repeat(
+                    self.env.num_envs, self.config.num_masked_future_steps, 1
+                ),
+            ),
+        }
