@@ -1316,6 +1316,18 @@ def _yaw_quat(yaw):
     return quat
 
 
+class _StubCommand:
+    """Stands in for SteeringCommandControl: holds the ramped command and
+    publishes it through command(), the accessor consumers must use so that
+    shaping is applied exactly once."""
+
+    def __init__(self, num_envs):
+        self._target = torch.zeros(num_envs, 3)
+
+    def command(self):
+        return self._target
+
+
 def _masked_mimic_steering_control(num_envs=2, horizon=1.0, steps=5, **kwargs):
     """Build the component on a stub env: only __init__ and _rollout are
     exercised, so no motion library or simulator state is needed."""
@@ -1336,7 +1348,7 @@ def _masked_mimic_steering_control(num_envs=2, horizon=1.0, steps=5, **kwargs):
     )
     control = MaskedMimicSteeringControl(config, env)
     env.control_manager = SimpleNamespace(
-        components={"steering_cmd": SimpleNamespace(_target=torch.zeros(num_envs, 3))}
+        components={"steering_cmd": _StubCommand(num_envs)}
     )
     return control, env
 
@@ -1472,3 +1484,80 @@ def test_masked_mimic_steering_corpus_height_rises_with_commanded_speed():
 
     assert out[0].item() == pytest.approx(0.34, abs=1e-6)
     assert out[1].item() == pytest.approx(0.37, abs=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# Velocity-command shaping (achievable region)
+# ---------------------------------------------------------------------------
+
+
+def _shape(fwd, turn, side, fwd_max=2.5, side_max=0.3, mu=0.6):
+    from protomotions.envs.steering.command import shape_command_to_achievable
+
+    return shape_command_to_achievable(
+        torch.tensor([fwd]),
+        torch.tensor([turn]),
+        torch.tensor([side]),
+        forward_vel_max=fwd_max,
+        side_vel_max=side_max,
+        friction_mu=mu,
+    )
+
+
+def test_command_shaping_collapses_strafe_as_forward_speed_rises():
+    """Sprint-and-strafe is 19 s of the whole go2 corpus. Full lateral stick
+    at full forward stick has to mean "as much as is possible here"."""
+    _, standing = _shape(0.0, 0.0, 0.3)
+    _, half = _shape(1.25, 0.0, 0.3)
+    _, sprint = _shape(2.5, 0.0, 0.3)
+
+    assert standing.item() == pytest.approx(0.3)  # strafe in place is demonstrated
+    assert sprint.item() < 0.05  # sprint-and-strafe is not
+    assert standing.item() > half.item() > sprint.item()
+
+
+def test_command_shaping_leaves_an_achievable_command_untouched():
+    """A ceiling, not a scale: under-ceiling commands pass through."""
+    fwd, side = _shape(0.2, 0.0, 0.1)
+    assert fwd.item() == pytest.approx(0.2)
+    assert side.item() == pytest.approx(0.1)
+
+
+def test_command_shaping_caps_forward_speed_in_a_hard_turn():
+    """Centripetal friction limit: sqrt(mu*g*R), R = |v|/|w|."""
+    fwd, _ = _shape(4.0, 2.0, 0.0, fwd_max=4.0)
+    assert fwd.item() == pytest.approx((0.6 * 9.81 * 4.0 / 2.0) ** 0.5, rel=1e-3)
+
+
+def test_command_shaping_is_not_idempotent_when_the_friction_cap_bites():
+    """Why compute_steering_command_reward takes pre_shaped: the cap depends
+    on the forward command through R = |v|/|w|, so re-applying it shrinks the
+    value again and iterating converges on mu*g/|w| -- the older, stricter
+    formula this port deliberately replaced."""
+    once, _ = _shape(4.0, 2.0, 0.0, fwd_max=4.0)
+    twice, _ = _shape(once.item(), 2.0, 0.0, fwd_max=4.0)
+
+    assert twice.item() < once.item() - 1e-3
+
+
+def test_steering_reward_pre_shaped_scores_the_command_it_was_given():
+    """With pre_shaped, the reward must not reshape: a robot exactly matching
+    an already-projected command scores a perfect 1.0."""
+    from protomotions.envs.steering.command import compute_steering_command_reward
+
+    fwd_cmd = torch.tensor([2.0])
+    turn_cmd = torch.tensor([1.0])
+    side_cmd = torch.tensor([0.05])
+    # Robot is doing precisely what was commanded, in world frame with zero
+    # heading so the heading frame is the world frame.
+    root_rot = _yaw_quat(torch.tensor([0.0]))
+    root_vel = torch.tensor([[2.0, 0.05, 0.0]])
+    root_ang_vel = torch.tensor([[0.0, 0.0, 1.0]])
+
+    rew = compute_steering_command_reward(
+        root_rot, root_vel, root_ang_vel, fwd_cmd, turn_cmd, side_cmd,
+        forward_vel_min=-1.0, forward_vel_max=2.5,
+        turn_vel_max=1.5, side_vel_max=0.3, pre_shaped=True,
+    )
+
+    assert rew.item() == pytest.approx(1.0, abs=1e-5)

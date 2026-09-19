@@ -346,9 +346,14 @@ class MaskedMimicSteeringControl(MaskedMimicControl):
     # ------------------------------------------------------------------
 
     def _command(self) -> Tensor:
-        """The sibling steering component's ramped [forward, yaw, lateral]."""
+        """The sibling steering component's published [forward, yaw, lateral].
+
+        command(), not the raw _target: when that component shapes commands
+        into the achievable region, the targets must be built from the shaped
+        value or the robot is handed one command and scored on another.
+        """
         component = self.env.control_manager.components[self.config.command_component]
-        return component._target
+        return component.command()
 
     def _rollout(self, root_pos: Tensor, root_rot: Tensor) -> Tuple[Tensor, Tensor]:
         """Integrate the command from the live root pose.

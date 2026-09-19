@@ -18,7 +18,7 @@ Wiring (see examples/experiments/ase/steering_ase_hlc.py):
 """
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Tuple
 
 import torch
 from torch import Tensor
@@ -73,6 +73,7 @@ class SteeringCommandControlConfig(ControlComponentConfig):
     side_vel_max: float = 1.0
     heading_change_steps_min: int = 125
     heading_change_steps_max: int = 175
+    friction_mu: float = 0.6
     rate_frac_min: float = 0.1
     rate_frac_max: float = 1.0
     # Skill buttons ("press B to sit"). The state is published for the agent's
@@ -86,6 +87,15 @@ class SteeringCommandControlConfig(ControlComponentConfig):
     # launch by the steering experiment's inference hook; force with
     # --command-source steering_cmd=gamepad|random. Never set in training.
     command_source: str = None
+    # Project every command into the region the robot can actually attempt
+    # before the policy (or the reward) sees it -- see
+    # shape_command_to_achievable. Matters most for teleop: a gamepad stick
+    # can be pushed into corners of the box the corpus never demonstrates
+    # (sprint-and-strafe is 19 s of the whole go2 corpus), and full deflection
+    # should mean "as much as is possible here", not a number with nothing
+    # behind it. OFF by default so the ASE HLC keeps the exact reward-side-only
+    # behaviour it was trained with.
+    shape_commands: bool = False
 
 
 # Original _adjust_by_rate hard-codes dt = 0.1 (not the sim step).
@@ -318,6 +328,25 @@ class SteeringCommandControl(ControlComponent):
             self._turn_anim < -two_pi, self._turn_anim + two_pi, self._turn_anim
         )
 
+    def command(self) -> Tensor:
+        """The command as published: [forward, yaw, lateral], per env.
+
+        This -- not the raw _target -- is what observations, rewards, markers
+        and any downstream consumer should read, so that shaping is applied
+        exactly once and everyone sees the same thing.
+        """
+        if not self.config.shape_commands:
+            return self._target
+        fwd, side = shape_command_to_achievable(
+            self._target[:, 0],
+            self._target[:, 1],
+            self._target[:, 2],
+            forward_vel_max=self.config.forward_vel_max,
+            side_vel_max=self.config.side_vel_max,
+            friction_mu=self.config.friction_mu,
+        )
+        return torch.stack([fwd, self._target[:, 1], side], dim=-1)
+
     def set_buttons(self, state: Tensor, env_ids: Tensor = None) -> None:
         """Teleop hook: set held buttons (1.0 = held) for some/all envs."""
         if env_ids is None:
@@ -369,8 +398,11 @@ class SteeringCommandControl(ControlComponent):
         ground = self.env.terrain.get_ground_heights(root_pos[..., :2]).view(-1)
 
         # Direction marker: offset by half the commanded velocity vector.
-        fwd = self._target[:, 0].unsqueeze(-1) * 0.5
-        lat = self._target[:, 2].unsqueeze(-1) * 0.5
+        # The SHAPED command, so the arrow shows what is actually being asked
+        # rather than the raw stick.
+        cmd = self.command()
+        fwd = cmd[:, 0].unsqueeze(-1) * 0.5
+        lat = cmd[:, 2].unsqueeze(-1) * 0.5
         dir_pos = root_pos.clone()
         dir_pos[..., 0:2] = root_pos[..., 0:2] + facing * fwd + side * lat
         dir_pos[..., 2] = ground + 0.02
@@ -408,10 +440,11 @@ class SteeringCommandControl(ControlComponent):
         }
 
     def populate_context(self, ctx) -> None:
+        cmd = self.command()
         ctx.steering_cmd = SteeringCommandContext(
-            fwd_cmd=self._target[:, 0],
-            turn_cmd=self._target[:, 1],
-            side_cmd=self._target[:, 2],
+            fwd_cmd=cmd[:, 0],
+            turn_cmd=cmd[:, 1],
+            side_cmd=cmd[:, 2],
             buttons=self.button_state,
         )
 
@@ -460,6 +493,53 @@ def compute_steering_command_obs(
 # =============================================================================
 
 
+def shape_command_to_achievable(
+    fwd_cmd: Tensor,
+    turn_cmd: Tensor,
+    side_cmd: Tensor,
+    forward_vel_max: float,
+    side_vel_max: float,
+    friction_mu: float = 0.6,
+) -> Tuple[Tensor, Tensor]:
+    """Project a raw velocity command into the region the robot can attempt.
+
+    Two couplings a static per-channel box cannot express:
+
+    * calculate_safe_velocity: cap |forward| at sqrt(mu*g*R) with R=|v|/|w|,
+      keeping the sign and leaving an already-safe command untouched. The old
+      port used mu*g/|w| with torch.minimum, which is a strictly lower cap
+      (2.94 vs 3.43 m/s at fwd=4, turn=2) and never capped backward commands.
+    * calculate_appropriate_side_velocity: a magnitude CEILING, not a scale.
+      A lateral command under the ceiling passes through UNCHANGED; only
+      over-ceiling ones are clipped to it. The old port multiplied every
+      lateral command by the factor, shrinking sub-ceiling targets up to 3x
+      and handing a non-strafing robot 7-18% more r_side than it had earned.
+
+    Used in two places and it matters that it is the same code: scoring the
+    command (compute_steering_command_reward) and, when the control component
+    sets shape_commands, the command actually handed to the policy -- so a
+    gamepad pushed into a corner of the box asks for something demonstrated
+    instead of a combination the corpus never shows (sprint-and-strafe is 19 s
+    of the whole go2 corpus).
+
+    Returns:
+        Tuple of (forward, lateral) commands, both projected. The yaw command
+        is returned unchanged by construction and is not part of the tuple.
+    """
+    radius = fwd_cmd.abs() / turn_cmd.abs().clamp_min(1e-6)
+    safe_vel = torch.sqrt(friction_mu * _GRAVITY_MPS2 * radius) * torch.sign(
+        fwd_cmd
+    )
+    fwd_tgt = torch.where(safe_vel.abs() >= fwd_cmd.abs(), fwd_cmd, safe_vel)
+
+    mx = forward_vel_max * 1.1
+    max_side = (1.0 - (fwd_tgt / mx).abs()) * side_vel_max
+    side_tgt = torch.where(
+        side_cmd.abs() > max_side, torch.sign(side_cmd) * max_side, side_cmd
+    )
+    return fwd_tgt, side_tgt
+
+
 def compute_steering_command_reward(
     root_rot: Tensor,
     root_vel: Tensor,
@@ -473,6 +553,7 @@ def compute_steering_command_reward(
     side_vel_max: float,
     friction_mu: float = 0.6,
     w_last: bool = True,
+    pre_shaped: bool = False,
 ) -> Tensor:
     """Mean of three exponential velocity-tracking terms in the heading frame.
 
@@ -489,26 +570,22 @@ def compute_steering_command_reward(
     cur_side = local_vel[:, 1]
     cur_turn = root_ang_vel[:, 2]
 
-    # calculate_safe_velocity: cap |forward| at sqrt(mu*g*R) with R=|v|/|w|,
-    # keeping the sign and leaving an already-safe command untouched. The old
-    # port used mu*g/|w| with torch.minimum, which is a strictly lower cap
-    # (2.94 vs 3.43 m/s at fwd=4, turn=2) and never capped backward commands.
-    radius = fwd_cmd.abs() / turn_cmd.abs().clamp_min(1e-6)
-    safe_vel = torch.sqrt(friction_mu * _GRAVITY_MPS2 * radius) * torch.sign(
-        fwd_cmd
-    )
-    fwd_tgt = torch.where(safe_vel.abs() >= fwd_cmd.abs(), fwd_cmd, safe_vel)
-
-    # calculate_appropriate_side_velocity: a magnitude CEILING, not a scale.
-    # A lateral command under the ceiling passes through UNCHANGED; only
-    # over-ceiling ones are clipped to it. The old port multiplied every
-    # lateral command by the factor, shrinking sub-ceiling targets up to 3x
-    # and handing a non-strafing robot 7-18% more r_side than it had earned.
-    mx = forward_vel_max * 1.1
-    max_side = (1.0 - (fwd_tgt / mx).abs()) * side_vel_max
-    side_tgt = torch.where(
-        side_cmd.abs() > max_side, torch.sign(side_cmd) * max_side, side_cmd
-    )
+    if pre_shaped:
+        # Already projected at the command source: projecting twice is NOT a
+        # no-op. The safe-velocity cap depends on the forward command through
+        # R = |v|/|w|, so re-applying it to an already-capped value shrinks it
+        # again, and iterating converges on mu*g/|w| -- precisely the old,
+        # too-conservative formula this port replaced.
+        fwd_tgt, side_tgt = fwd_cmd, side_cmd
+    else:
+        fwd_tgt, side_tgt = shape_command_to_achievable(
+            fwd_cmd,
+            turn_cmd,
+            side_cmd,
+            forward_vel_max=forward_vel_max,
+            side_vel_max=side_vel_max,
+            friction_mu=friction_mu,
+        )
 
     backward = fwd_tgt < 0
     fwd_scale = torch.where(
@@ -566,6 +643,7 @@ def steering_command_reward_factory(
     side_vel_max: float,
     friction_mu: float = 0.6,
     weight: float = 1.0,
+    pre_shaped: bool = False,
 ):
     from protomotions.envs.context_views import EnvContext
     from protomotions.envs.mdp_component import MdpComponent
@@ -588,6 +666,7 @@ def steering_command_reward_factory(
             "friction_mu": friction_mu,
             "w_last": True,
             "weight": weight,
+            "pre_shaped": pre_shaped,
         },
     )
 

@@ -56,8 +56,13 @@ _DEFAULTS = {
     # MaskedMimic it also puts the 1 s target 4 m ahead, far outside any
     # lead distance it was distilled on.
     "forward_vel_max": 2.5,
-    "turn_vel_max": 2.0,
-    "side_vel_max": 1.0,
+    # |yaw| above 2.0 rad/s is 2.2% of corpus time; 1.5 keeps the stick inside
+    # what is actually shown while still covering brisk turns.
+    "turn_vel_max": 1.5,
+    # 0.3 m/s, not 1.0: |lateral| above 0.3 is 12% of go2 corpus time and
+    # above 0.5 is 3.1% (44 s). A stick that commands 1.0 is asking for a gait
+    # that was never demonstrated, and distillation cannot invent one.
+    "side_vel_max": 0.3,
     "command_hold_steps_min": 125,
     "command_hold_steps_max": 175,
     "target_horizon_sec": 1.0,
@@ -178,6 +183,10 @@ def _install_steering(cfg: EnvConfig, args: argparse.Namespace) -> None:
 
     cfg.control_components = {
         "steering_cmd": SteeringCommandControlConfig(
+            # Project commands into the achievable region before the policy
+            # sees them, so gamepad corners map onto something demonstrated
+            # rather than onto sprint-and-strafe (19 s of the whole corpus).
+            shape_commands=True,
             forward_vel_min=forward_vel_min,
             forward_vel_max=forward_vel_max,
             turn_vel_max=turn_vel_max,
@@ -210,6 +219,10 @@ def _install_steering(cfg: EnvConfig, args: argparse.Namespace) -> None:
             forward_vel_max=forward_vel_max,
             turn_vel_max=turn_vel_max,
             side_vel_max=side_vel_max,
+            # The command is already projected at the source; projecting again
+            # in the reward would compound (the safe-velocity cap is not
+            # idempotent) and score a different command than was issued.
+            pre_shaped=True,
         ),
     }
 
