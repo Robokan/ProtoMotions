@@ -61,6 +61,7 @@ _DEFAULTS = {
     "command_hold_steps_min": 125,
     "command_hold_steps_max": 175,
     "target_horizon_sec": 1.0,
+    "height_mode": "current",
     "target_root_height": None,
     "no_target_rotation": False,
     "report_every": 250,
@@ -110,6 +111,15 @@ def additional_experiment_arguments(parser: argparse.ArgumentParser):
         default=_DEFAULTS["target_horizon_sec"],
         help="Lead time of the farthest conditioned base-link target. The "
              "targets are spread evenly over (0, horizon].")
+    parser.add_argument(
+        "--height-mode", choices=["current", "corpus", "fixed"],
+        default=_DEFAULTS["height_mode"],
+        help="Where the commanded base-link height comes from. 'current' "
+             "targets the height the robot is already at, so the z channel "
+             "carries no instruction and the command is purely planar "
+             "(the mask cannot drop z on its own -- one bit covers the whole "
+             "translation vector). 'corpus' commands the height the corpus "
+             "carries at that speed. 'fixed' uses --target-root-height.")
     parser.add_argument(
         "--target-root-height", type=float,
         default=_DEFAULTS["target_root_height"],
@@ -182,6 +192,7 @@ def _install_steering(cfg: EnvConfig, args: argparse.Namespace) -> None:
             future_steps=trained.future_steps,
             bootstrap_on_episode_end=trained.bootstrap_on_episode_end,
             horizon_sec=_arg(args, "target_horizon_sec"),
+            height_mode=_arg(args, "height_mode"),
             target_root_height=_arg(args, "target_root_height"),
             condition_rotation=not _arg(args, "no_target_rotation"),
             report_every_steps=_arg(args, "report_every"),

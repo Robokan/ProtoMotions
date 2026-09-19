@@ -1428,3 +1428,47 @@ def test_masked_mimic_steering_lead_times_span_the_horizon():
     assert torch.allclose(
         control._offsets, torch.tensor([0.2, 0.4, 0.6, 0.8, 1.0]), atol=1e-6
     )
+
+
+def _fitted(control, a=0.34, b=0.015, lo=0.27, hi=0.372):
+    """Skip the motion-library fit; stub the band it would have produced."""
+    control._height_a, control._height_b = a, b
+    control._height_lo, control._height_hi = lo, hi
+    return control
+
+
+def test_masked_mimic_steering_current_height_carries_no_instruction():
+    """height_mode='current' targets exactly where the robot already is, so
+    rel_pos.z is zero and the command is purely planar. The mask cannot
+    express this on its own: one bit covers the whole translation vector, so
+    dropping z would drop x and y with it."""
+    control, _ = _masked_mimic_steering_control(num_envs=2)
+    _fitted(control)
+    current = torch.tensor([[0.31], [0.355]])
+
+    out = control._target_heights(torch.tensor([[2.0], [0.0]]), current)
+
+    assert torch.allclose(out, current)  # and independent of commanded speed
+
+
+def test_masked_mimic_steering_current_height_still_lifts_a_sunken_robot():
+    control, _ = _masked_mimic_steering_control(num_envs=2)
+    _fitted(control, lo=0.27, hi=0.372)
+
+    out = control._target_heights(
+        torch.zeros(2, 1), torch.tensor([[0.05], [0.9]])
+    )
+
+    assert torch.allclose(out, torch.tensor([[0.27], [0.372]]))
+
+
+def test_masked_mimic_steering_corpus_height_rises_with_commanded_speed():
+    control, _ = _masked_mimic_steering_control(num_envs=2, height_mode="corpus")
+    _fitted(control, a=0.34, b=0.015)
+
+    out = control._target_heights(
+        torch.tensor([[0.0], [2.0]]), torch.tensor([[0.31], [0.31]])
+    )
+
+    assert out[0].item() == pytest.approx(0.34, abs=1e-6)
+    assert out[1].item() == pytest.approx(0.37, abs=1e-6)

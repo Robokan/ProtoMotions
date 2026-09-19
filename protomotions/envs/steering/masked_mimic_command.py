@@ -67,11 +67,21 @@ class MaskedMimicSteeringControlConfig(MaskedMimicControlConfig):
             num_masked_future_steps targets are spread evenly over
             (0, horizon_sec], so the default 1.0 s with 5 steps gives
             0.2/0.4/0.6/0.8/1.0 s.
-        target_root_height: Fixed height (m, above terrain) of the commanded
-            base link. None (the default) measures it from the motion library
-            instead, as a linear fit against speed -- see _measure_height_fit.
-        height_fit_samples: How many random corpus poses that fit is built
-            from.
+        height_mode: Where the commanded base-link height comes from.
+            "current" keeps the target at the height the robot is ALREADY at,
+            so the z channel carries no instruction and the command is purely
+            planar -- the closest thing to masking height out, which the mask
+            itself cannot express (one bit covers the whole translation
+            vector, so dropping z would drop x and y with it). Height
+            regulation is then left to the policy's own prior. Still clamped
+            to the corpus band, so a robot that sinks is pulled back up
+            instead of dragging its own target into the floor.
+            "corpus" commands the height the corpus carries at the commanded
+            speed (a linear fit, see _measure_height_fit).
+            "fixed" commands target_root_height.
+        target_root_height: The height used by height_mode="fixed".
+        height_fit_samples: How many random corpus poses the fit and the
+            clamp band are built from.
         condition_rotation: Condition the base link's yaw as well as its
             position. Off = position only, which lets the policy pick its own
             facing (it will still turn, because the arc curves away).
@@ -85,6 +95,7 @@ class MaskedMimicSteeringControlConfig(MaskedMimicControlConfig):
 
     command_component: str = "steering_cmd"
     horizon_sec: float = 1.0
+    height_mode: str = "current"
     target_root_height: Optional[float] = None
     height_fit_samples: int = 8192
     condition_rotation: bool = True
@@ -188,8 +199,9 @@ class MaskedMimicSteeringControl(MaskedMimicControl):
         percentile band so an extrapolated command can never ask for a height
         the corpus does not contain.
         """
-        fixed = self.config.target_root_height
-        if fixed is not None:
+        if self.config.height_mode == "fixed":
+            fixed = self.config.target_root_height
+            assert fixed is not None, 'height_mode="fixed" needs target_root_height'
             self._height_a = float(fixed)
             self._height_b = 0.0
             self._height_lo = self._height_hi = float(fixed)
@@ -225,17 +237,29 @@ class MaskedMimicSteeringControl(MaskedMimicControl):
             flush=True,
         )
 
-    def _target_heights(self, speed_cmd: Tensor) -> Tensor:
-        """Commanded height per env, following the corpus' speed trend.
+    def _target_heights(self, speed_cmd: Tensor, current: Tensor) -> Tensor:
+        """Commanded base-link height above terrain, per env.
 
         Fits on first use: the env builds observations once during setup,
         before any reset, so populate_context can land here first.
+
+        Args:
+            speed_cmd: Commanded planar speed [envs, 1].
+            current: The robot's CURRENT height above terrain [envs, 1].
         """
         if self._height_a is None:
             self._measure_height_fit()
-        return (self._height_a + self._height_b * speed_cmd).clamp(
-            self._height_lo, self._height_hi
-        )
+        if self.config.height_mode == "current":
+            # z carries no instruction: the target sits exactly where the
+            # robot already is, so rel_pos.z is 0 and the command is purely
+            # planar. The mask itself cannot express this -- one bit covers
+            # the whole translation vector, so dropping z drops x and y too.
+            height = current
+        else:
+            height = self._height_a + self._height_b * speed_cmd
+        # Clamped even in "current" mode, so a robot that sinks is pulled back
+        # up rather than dragging its own target into the floor.
+        return height.clamp(self._height_lo, self._height_hi)
 
     def reset(self, env_ids: Tensor):
         """Reset without resampling times or masks -- both are fixed here."""
@@ -381,7 +405,13 @@ class MaskedMimicSteeringControl(MaskedMimicControl):
         ).view(num_envs, num_steps)
         cmd = self._command()
         speed_cmd = cmd[:, [0, 2]].norm(dim=-1, keepdim=True)
-        height = self._target_heights(speed_cmd)  # [envs, 1]
+        current_height = (
+            root_state.root_pos[:, 2:3]
+            - self.env.terrain.get_ground_heights(
+                root_state.root_pos[:, :2]
+            ).view(num_envs, 1)
+        )
+        height = self._target_heights(speed_cmd, current_height)  # [envs, 1]
         target_pos = torch.cat(
             [target_xy, (ground + height).unsqueeze(-1)], dim=-1
         )  # [envs, steps, 3]
