@@ -108,6 +108,16 @@ class TargetControlConfig(ControlComponentConfig):
     _target_: str = "protomotions.envs.control.target_control.TargetControl"
 
     tar_proximity_threshold: float = 0.25
+    # Marker appearance. Broken out so a task can say what the target IS --
+    # a red ball to chase reads differently from a blue waypoint -- without
+    # subclassing just to recolour a sphere.
+    marker_color: Tuple[float, float, float] = (0.0, 0.0, 1.0)
+    marker_size: str = "huge"
+    marker_z_offset: float = 0.1
+    # Measure proximity in the ground plane only. The target sits ON the
+    # ground while the torso rides ~0.34 m above it, so a 3-D distance spends
+    # half a small threshold on height the robot cannot remove.
+    proximity_planar: bool = True
     command_source: TargetCommandSourceConfig = field(
         default_factory=RandomTargetCommandSourceConfig
     )
@@ -394,6 +404,14 @@ class TargetControl(ControlComponent):
         # callers can safely mutate reset_buf without aliasing terminate_buf.
         return terminated.clone(), terminated
 
+    def distance_to_target(self) -> Tensor:
+        """Torso-to-target distance, planar unless configured otherwise."""
+        root_pos = self.env.simulator.get_root_state().root_pos
+        delta = self._tar_pos - root_pos
+        if self.config.proximity_planar:
+            delta = delta[:, :2]
+        return torch.linalg.norm(delta, dim=-1)
+
     def populate_context(self, ctx: EnvContext) -> None:
         ctx.target = TargetContext(
             tar_pos=self._tar_pos,
@@ -423,8 +441,8 @@ class TargetControl(ControlComponent):
         return {
             "target_markers": VisualizationMarkerConfig(
                 type="sphere",
-                color=(0.0, 0.0, 1.0),
-                markers=[MarkerConfig(size="huge")],
+                color=tuple(self.config.marker_color),
+                markers=[MarkerConfig(size=self.config.marker_size)],
             )
         }
 
@@ -432,7 +450,7 @@ class TargetControl(ControlComponent):
         if self.env.simulator.headless:
             return {}
         tar_pos = self._tar_pos.view(self.env.num_envs, 1, 3).clone()
-        tar_pos[..., 2] += 0.1
+        tar_pos[..., 2] += self.config.marker_z_offset
         tar_rot = torch.zeros(self.env.num_envs, 1, 4, device=self.env.device)
         tar_rot[..., -1] = 1.0
         return {"target_markers": MarkerState(translation=tar_pos, orientation=tar_rot)}

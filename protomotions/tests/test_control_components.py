@@ -1561,3 +1561,99 @@ def test_steering_reward_pre_shaped_scores_the_command_it_was_given():
     )
 
     assert rew.item() == pytest.approx(1.0, abs=1e-5)
+
+
+# ---------------------------------------------------------------------------
+# Ball chase: goal-directed MaskedMimic targets
+# ---------------------------------------------------------------------------
+
+
+def _goal_control(num_envs=1, steps=5, horizon=1.0, **kwargs):
+    from protomotions.envs.control.ball_chase import (
+        MaskedMimicGoalControl,
+        MaskedMimicGoalControlConfig,
+    )
+
+    body_names = ["base_link", "FL_thigh", "FL_foot"]
+    env = SimpleNamespace(
+        num_envs=num_envs,
+        device=torch.device("cpu"),
+        dt=0.02,
+        robot_config=SimpleNamespace(
+            kinematic_info=SimpleNamespace(body_names=body_names),
+            trackable_bodies_subset=body_names,
+            anchor_body_name="base_link",
+            default_root_height=0.2868,
+        ),
+    )
+    cfg = MaskedMimicGoalControlConfig(
+        num_masked_future_steps=steps, horizon_sec=horizon, **kwargs
+    )
+    control = MaskedMimicGoalControl(cfg, env)
+    ball = SimpleNamespace(_tar_pos=torch.zeros(num_envs, 3))
+    env.control_manager = SimpleNamespace(components={"ball": ball})
+    return control, ball
+
+
+def test_ball_chase_waypoints_lead_toward_the_ball_and_saturate_on_it():
+    """The ladder is waypoints along the line to the ball, each as far as the
+    dog could travel in its lead time, all stopping AT the ball."""
+    control, ball = _goal_control(max_speed=1.0)
+    ball._tar_pos = torch.tensor([[3.0, 0.0, 0.0]])
+    root_pos = torch.zeros(1, 3)
+    root_rot = _yaw_quat(torch.tensor([0.0]))  # already facing the ball
+
+    xy, _ = control._rollout(root_pos, root_rot)
+
+    # offsets 0.2..1.0 s at 1 m/s -> 0.2..1.0 m along +x, none past the ball
+    assert torch.allclose(xy[0, :, 0], torch.tensor([0.2, 0.4, 0.6, 0.8, 1.0]), atol=1e-4)
+    assert torch.allclose(xy[0, :, 1], torch.zeros(5), atol=1e-6)
+    assert (xy[0, :, 0] <= 3.0).all()
+
+
+def test_ball_chase_ladder_collapses_once_the_ball_is_reached():
+    """Arrival slows by construction, not by a gain: with the ball underfoot
+    every waypoint sits on the robot, so nothing asks it to keep going."""
+    control, ball = _goal_control(max_speed=1.0)
+    ball._tar_pos = torch.tensor([[0.05, 0.0, 0.0]])
+    root_pos = torch.zeros(1, 3)
+
+    xy, _ = control._rollout(root_pos, _yaw_quat(torch.tensor([0.0])))
+
+    assert torch.linalg.norm(xy[0], dim=-1).max() <= 0.05 + 1e-5
+
+
+def test_ball_chase_turns_first_for_a_ball_behind():
+    """cos(bearing) clamped at 0 means a ball behind produces a pivot, not a
+    planned walk backwards."""
+    control, ball = _goal_control(max_speed=1.0)
+    ball._tar_pos = torch.tensor([[-3.0, 0.0, 0.0]])  # directly behind
+    root_pos = torch.zeros(1, 3)
+
+    xy, heading = control._rollout(root_pos, _yaw_quat(torch.tensor([0.0])))
+
+    assert torch.linalg.norm(xy[0], dim=-1).max() < 1e-5  # no translation
+    assert heading[0, -1].abs().item() > 0.5  # but the facing does swing round
+
+
+def test_ball_chase_yaw_target_ramps_at_the_rate_limit():
+    control, ball = _goal_control(max_speed=1.0, max_yaw_rate=1.0)
+    ball._tar_pos = torch.tensor([[0.0, 3.0, 0.0]])  # 90 deg to the left
+    root_pos = torch.zeros(1, 3)
+
+    _, heading = control._rollout(root_pos, _yaw_quat(torch.tensor([0.0])))
+
+    # 1.0 rad/s x [0.2..1.0] s, never overshooting the pi/2 goal
+    assert torch.allclose(heading[0], torch.tensor([0.2, 0.4, 0.6, 0.8, 1.0]), atol=1e-4)
+    assert (heading[0] <= torch.pi / 2 + 1e-6).all()
+
+
+def test_ball_chase_never_aims_past_the_ball_when_stop_distance_is_zero():
+    """stop_distance 0 aims AT the ball: two feet is the success TEST, not the
+    destination. Aiming at the boundary parked the dog outside it."""
+    control, ball = _goal_control(max_speed=10.0)  # speed cap cannot bind
+    ball._tar_pos = torch.tensor([[2.0, 0.0, 0.0]])
+
+    xy, _ = control._rollout(torch.zeros(1, 3), _yaw_quat(torch.tensor([0.0])))
+
+    assert xy[0, -1, 0].item() == pytest.approx(2.0, abs=1e-4)

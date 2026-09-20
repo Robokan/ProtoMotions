@@ -86,6 +86,10 @@ class SteeringCommandControlConfig(ControlComponentConfig):
     # all other envs keep the random-walk generator. Auto-detected at viewer
     # launch by the steering experiment's inference hook; force with
     # --command-source steering_cmd=gamepad|random. Never set in training.
+    # "external" hands the command to another component (e.g. a ball-chase
+    # pursuit controller) via set_command(): the random walk is suppressed,
+    # but the first-order ramp still runs, so a controller can set a step
+    # target and get natural acceleration out of it for free.
     command_source: str = None
     # Project every command into the region the robot can actually attempt
     # before the policy (or the reward) sees it -- see
@@ -271,11 +275,26 @@ class SteeringCommandControl(ControlComponent):
         if self.button_state.shape[1]:
             self.button_state[env_ids[is_env_reset]] = 0.0
 
+    def set_command(self, cmd: Tensor, env_ids: Tensor = None) -> None:
+        """Drive the command from outside (command_source="external").
+
+        Sets the DESIRED command; the existing first-order lag ramps the live
+        target toward it, so an external controller inherits the same
+        acceleration profile the random walk gets instead of stepping the
+        command discontinuously.
+        """
+        if env_ids is None:
+            self._desired[:] = torch.clamp(cmd, self._lo, self._hi)
+        else:
+            self._desired[env_ids] = torch.clamp(cmd, self._lo, self._hi)
+
     def step(self):
-        resample_mask = self.env.progress_buf >= self._change_steps
-        env_ids = resample_mask.nonzero(as_tuple=False).flatten()
-        if len(env_ids) > 0:
-            self.reset(env_ids)
+        external = getattr(self.config, "command_source", None) == "external"
+        if not external:
+            resample_mask = self.env.progress_buf >= self._change_steps
+            env_ids = resample_mask.nonzero(as_tuple=False).flatten()
+            if len(env_ids) > 0:
+                self.reset(env_ids)
 
         # First-order lag toward the command, exactly as the original's
         # _adjust_by_rate: current += (target - current) * rate * dt, dt=0.1
