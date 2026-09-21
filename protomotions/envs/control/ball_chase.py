@@ -12,8 +12,7 @@ Two pieces, deliberately separate:
   catches per env.
 
 * ``MaskedMimicGoalControl`` -- where the DOG is told to be. It emits
-  MaskedMimic base-link targets directly: "put my torso here, by t+dt_k",
-  walking a ladder of waypoints along the line to the ball. No learning.
+  MaskedMimic base-link targets directly: the ball, by t+dt_k. No learning.
 
 Going straight to positional targets is the point. MaskedMimic is natively
 conditioned on poses-at-times, so routing a goal through a velocity command
@@ -103,6 +102,8 @@ class BallChaseCommandSource(RandomTargetCommandSource):
         self._report_steps = 0
         self._report_catches = 0
         self._report_range_sum = 0.0
+        self._report_closing_sum = 0.0
+        self._report_prev_range = None
         self._report_catch_steps = []
 
     def reset(self, env_ids: Tensor) -> None:
@@ -133,6 +134,17 @@ class BallChaseCommandSource(RandomTargetCommandSource):
             return
         self._report_steps += 1
         self._report_range_sum += float(rng.mean())
+        # Closing speed: how fast the gap to the ball is actually shrinking.
+        # This is the number that separates "running" from "taking its
+        # time", and a dog merely moving cannot fake it. Re-throws are
+        # dropped: a respawn jumps the range and would read as a huge
+        # negative closing rate.
+        if self._report_prev_range is not None:
+            rate = (self._report_prev_range - rng) / self.control.env.dt
+            sane = rate.abs() < 10.0
+            if bool(sane.any()):
+                self._report_closing_sum += float(rate[sane].mean())
+        self._report_prev_range = rng.clone()
         if self._report_steps < every:
             return
         n_env = self.control.env.num_envs
@@ -144,12 +156,15 @@ class BallChaseCommandSource(RandomTargetCommandSource):
             f"[ball-chase] {self._report_catches} catches in {secs:.0f}s x "
             f"{n_env} dogs ({per_min:.1f}/min/dog), mean range "
             f"{self._report_range_sum / self._report_steps:.2f} m, mean "
+            f"closing speed "
+            f"{self._report_closing_sum / self._report_steps:.2f} m/s, mean "
             f"time-to-catch {ttc_s:.1f} s",
             flush=True,
         )
         self._report_steps = 0
         self._report_catches = 0
         self._report_range_sum = 0.0
+        self._report_closing_sum = 0.0
         self._report_catch_steps = []
 
     def _sample_heading_relative_target(
@@ -210,42 +225,36 @@ def ball_chase_target_config(
 
 @dataclass
 class MaskedMimicGoalControlConfig(MaskedMimicSteeringControlConfig):
-    """MaskedMimic conditioning that walks the dog to a goal position.
+    """MaskedMimic conditioning that points the dog at a goal position.
 
-    Replaces the velocity roll-out of the steering harness with a goal-seeking
-    one: the k-th conditioned target is placed along the line to the ball, as
-    far as the dog could plausibly travel in dt_k, and the whole ladder
-    saturates once it reaches the aim point. Nothing tells the robot to keep
-    going after it arrives, so approach slows on its own.
+    The target IS the ball, at each conditioned lead time, facing it. That is
+    the whole rule. No speed cap, no waypoint ladder, no bearing dead band, no
+    yaw-rate ramp: give the policy the position and the time and let it work
+    out how fast to run and how to turn (Eric, 2026-09-20 -- an earlier
+    version had all four and the dog crawled a wide arc, because each one was
+    another place for me to quietly throttle it).
+
+    Approach still slows on its own: the target is re-anchored every step, so
+    as the dog closes, the remaining distance -- and with it the speed the
+    target implies -- shrinks to nothing.
 
     Attributes:
         target_component: Key of the TargetControl holding the ball.
-        stop_distance: How far short of the ball the waypoint ladder aims.
-            Default 0: aim AT the ball and let the two-foot success radius be
-            tripped on the way in. Aiming at the success boundary instead asks
-            the dog to stop exactly on the threshold, and since the policy
-            realises only about two thirds of a commanded motion it then parks
-            just outside it -- measured: mean range stuck at 1.2-2.8 m and
-            23-72 s per catch. Non-zero only to hold station off the ball.
-        max_speed: Ceiling on how far ahead a waypoint may be placed, as
-            metres per second of lead time. This is what stops a ball 8 m away
-            from generating a "be there in 0.5 s" target the corpus has no
-            answer for.
-        max_yaw_rate: Ceiling on how far the commanded facing may swing per
-            second of lead time, so the yaw targets ramp toward the ball
-            rather than snapping 180 degrees in the nearest slot.
+        stop_distance: How far short of the ball to aim. Default 0: aim AT the
+            ball and let the two-foot success radius be tripped on the way in.
+            Aiming at the boundary asks the dog to stop exactly on the
+            threshold and parks it just outside -- measured, mean range stuck
+            at 1.2-2.8 m against 4.4-5.3 m when aiming at the ball.
     """
 
     _target_: str = "protomotions.envs.control.ball_chase.MaskedMimicGoalControl"
 
     target_component: str = "ball"
     stop_distance: float = 0.0
-    max_speed: float = 1.6
-    max_yaw_rate: float = 1.5
 
 
 class MaskedMimicGoalControl(MaskedMimicSteeringControl):
-    """Base-link targets that lead to the ball, emitted directly."""
+    """Base-link targets that say "be at the ball", and nothing else."""
 
     config: MaskedMimicGoalControlConfig
 
@@ -253,57 +262,40 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         target = self.env.control_manager.components[self.config.target_component]
         return target._tar_pos[:, :2]
 
-    def _bearing_and_range(self, root_pos: Tensor, root_rot: Tensor):
-        """Range to the aim point and the heading error toward the ball."""
+    def _rollout(self, root_pos: Tensor, root_rot: Tensor) -> Tuple[Tensor, Tensor]:
         delta = self._goal_xy() - root_pos[:, :2]
         rng = torch.linalg.norm(delta, dim=-1, keepdim=True)
         direction = delta / rng.clamp_min(1e-6)
-        goal_heading = torch.atan2(direction[:, 1], direction[:, 0]).unsqueeze(-1)
-        heading = rotations.calc_heading(root_rot, True).unsqueeze(-1)
-        # Wrapped to (-pi, pi] so a ball just behind the left shoulder is a
-        # small right turn, not an almost-full circle to the left.
+
+        aim = (rng - self.config.stop_distance).clamp_min(0.0)
+        goal = root_pos[:, :2] + direction * aim
+        heading = torch.atan2(direction[:, 1], direction[:, 0])
+
+        steps = self.config.num_masked_future_steps
+        # Same goal at every lead time. The near slots are the urgent ones and
+        # the far slots the relaxed ones; the policy decides what it can do
+        # about that.
+        return (
+            goal.unsqueeze(1).expand(-1, steps, -1),
+            heading.unsqueeze(-1).expand(-1, steps),
+        )
+
+    def _command(self) -> Tensor:
+        """The velocity the goal implies -- for the inherited readout only.
+
+        Never drives anything. Reported against the nearest lead time, so a
+        distant ball shows a large implied command; that is honest, it IS what
+        the target asks for.
+        """
+        root_state = self.env.simulator.get_root_state()
+        delta = self._goal_xy() - root_state.root_pos[:, :2]
+        rng = torch.linalg.norm(delta, dim=-1)
+        heading = rotations.calc_heading(root_state.root_rot, True)
+        goal_heading = torch.atan2(delta[:, 1], delta[:, 0])
         error = torch.atan2(
             torch.sin(goal_heading - heading), torch.cos(goal_heading - heading)
         )
-        aim = (rng - self.config.stop_distance).clamp_min(0.0)
-        return direction, aim, heading, error
-
-    def _rollout(self, root_pos: Tensor, root_rot: Tensor) -> Tuple[Tensor, Tensor]:
-        direction, aim, heading, error = self._bearing_and_range(root_pos, root_rot)
-        t = self._offsets.unsqueeze(0)  # [1, steps]
-
-        # Facing ramps toward the ball at a bounded rate.
-        swing = (self.config.max_yaw_rate * t).clamp(max=1e3)
-        target_heading = heading + error.sign() * torch.minimum(error.abs(), swing)
-
-        # Distance travelled by dt_k, saturating at the aim point. Scaled by
-        # how well the dog is already facing the ball: planning to translate
-        # toward a goal you have your back to just asks for a walk backwards,
-        # so it turns first and the ladder collapses to a pivot.
-        align = torch.cos(error).clamp_min(0.0)
-        travel = torch.minimum(aim, self.config.max_speed * t * align)
-        target_xy = root_pos[:, :2].unsqueeze(1) + direction.unsqueeze(1) * (
-            travel.unsqueeze(-1)
-        )
-        return target_xy, target_heading
-
-    def _command(self) -> Tensor:
-        """The velocity this goal implies -- for the tracking readout only.
-
-        Nothing consumes it to drive the robot; it exists so the inherited
-        commanded-vs-achieved report still means something when no steering
-        component is in the loop.
-        """
-        root_state = self.env.simulator.get_root_state()
-        _, aim, _, error = self._bearing_and_range(
-            root_state.root_pos, root_state.root_rot
-        )
         lead = float(self._offsets[0])
-        speed = torch.minimum(
-            aim.squeeze(-1) / lead,
-            torch.full_like(aim.squeeze(-1), self.config.max_speed),
-        ) * torch.cos(error.squeeze(-1)).clamp_min(0.0)
-        turn = (error.squeeze(-1) / lead).clamp(
-            -self.config.max_yaw_rate, self.config.max_yaw_rate
+        return torch.stack(
+            [rng / lead, error / lead, torch.zeros_like(rng)], dim=-1
         )
-        return torch.stack([speed, turn, torch.zeros_like(speed)], dim=-1)

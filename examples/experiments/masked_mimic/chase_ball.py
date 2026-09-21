@@ -49,7 +49,6 @@ _DEFAULTS = {
     "success_radius": 0.6096,   # two feet
     "throw_min": 2.0,
     "throw_max": 8.0,
-    "cruise_speed": 1.6,
     "report_every": 250,
 }
 
@@ -81,8 +80,10 @@ def additional_experiment_arguments(parser: argparse.ArgumentParser):
         "--throw-max", type=float, default=_DEFAULTS["throw_max"],
         help="Furthest the ball is ever thrown (m).")
     parser.add_argument(
-        "--cruise-speed", type=float, default=_DEFAULTS["cruise_speed"],
-        help="Forward command when the ball is far and dead ahead (m/s).")
+        "--horizon-sec", type=float, default=None,
+        help="Lead time of the farthest conditioned target, i.e. how long the "
+             "dog is given to reach the ball. Shorter = more urgent. There is "
+             "no speed cap; this is the only thing that sets the pace.")
 
 
 def terrain_config(args):
@@ -131,7 +132,9 @@ def _install_chase(cfg: EnvConfig, args: argparse.Namespace) -> None:
             num_masked_future_steps=trained.num_masked_future_steps,
             future_steps=trained.future_steps,
             bootstrap_on_episode_end=trained.bootstrap_on_episode_end,
-            horizon_sec=trained.horizon_sec,
+            horizon_sec=(
+                getattr(args, "horizon_sec", None) or trained.horizon_sec
+            ),
             height_mode=trained.height_mode,
             condition_rotation=trained.condition_rotation,
             report_every_steps=trained.report_every_steps,
@@ -139,7 +142,6 @@ def _install_chase(cfg: EnvConfig, args: argparse.Namespace) -> None:
             # Aim AT the ball; two feet is the success TEST, not the
             # destination. Aiming at the boundary parks the dog outside it.
             stop_distance=0.0,
-            max_speed=_arg(args, "cruise_speed"),
         ),
     }
 
