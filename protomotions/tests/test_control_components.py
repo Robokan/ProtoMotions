@@ -1347,6 +1347,11 @@ def _masked_mimic_steering_control(num_envs=2, horizon=1.0, steps=5, **kwargs):
         num_masked_future_steps=steps, horizon_sec=horizon, **kwargs
     )
     control = MaskedMimicSteeringControl(config, env)
+    env.simulator = SimpleNamespace(
+        get_root_state=lambda: SimpleNamespace(
+            root_pos=torch.zeros(num_envs, 3), root_rot=_yaw_quat(torch.zeros(num_envs))
+        )
+    )
     env.control_manager = SimpleNamespace(
         components={"steering_cmd": _StubCommand(num_envs)}
     )
@@ -1384,7 +1389,7 @@ def test_masked_mimic_steering_rollout_matches_integrated_command(fwd, turn, sid
     root_pos = torch.tensor([[3.0, -2.0, 0.3]])
     root_rot = _yaw_quat(torch.tensor([0.7]))
 
-    target_xy, target_heading = control._rollout(root_pos, root_rot)
+    target_xy, target_heading = control._rollout(root_pos, root_rot, control._lead_times())
 
     assert target_xy.shape == (1, 5, 2)
     x, y, h = _integrate_command(3.0, -2.0, 0.7, fwd, turn, side, 1.0)
@@ -1402,8 +1407,8 @@ def test_masked_mimic_steering_rollout_is_anchored_on_the_live_root():
     )
     root_rot = _yaw_quat(torch.tensor([0.3]))
 
-    here, _ = control._rollout(torch.tensor([[0.0, 0.0, 0.3]]), root_rot)
-    there, _ = control._rollout(torch.tensor([[10.0, -4.0, 0.3]]), root_rot)
+    here, _ = control._rollout(torch.tensor([[0.0, 0.0, 0.3]]), root_rot, control._lead_times())
+    there, _ = control._rollout(torch.tensor([[10.0, -4.0, 0.3]]), root_rot, control._lead_times())
 
     shift = torch.tensor([10.0, -4.0])
     assert torch.allclose(there, here + shift, atol=1e-5)
@@ -1586,12 +1591,20 @@ def _goal_control(num_envs=1, steps=5, horizon=1.0, **kwargs):
             default_root_height=0.2868,
         ),
     )
+    # Explicit top speed: the real component measures it from the motion
+    # library, which a stub env has none of.
+    kwargs.setdefault("max_speed", 1.5)
     cfg = MaskedMimicGoalControlConfig(
         num_masked_future_steps=steps, horizon_sec=horizon, **kwargs
     )
     control = MaskedMimicGoalControl(cfg, env)
     ball = SimpleNamespace(_tar_pos=torch.zeros(num_envs, 3))
     env.control_manager = SimpleNamespace(components={"ball": ball})
+    env.simulator = SimpleNamespace(
+        get_root_state=lambda: SimpleNamespace(
+            root_pos=torch.zeros(num_envs, 3), root_rot=_yaw_quat(torch.zeros(num_envs))
+        )
+    )
     return control, ball
 
 
@@ -1602,7 +1615,7 @@ def test_ball_chase_target_is_the_ball_at_every_lead_time():
     control, ball = _goal_control(num_envs=1, steps=5)
     ball._tar_pos = torch.tensor([[6.0, 0.0, 0.0]])
 
-    xy, heading = control._rollout(torch.zeros(1, 3), _yaw_quat(torch.tensor([0.0])))
+    xy, heading = control._rollout(torch.zeros(1, 3), _yaw_quat(torch.tensor([0.0])), control._lead_times())
 
     assert xy.shape == (1, 5, 2)
     for k in range(5):
@@ -1617,7 +1630,7 @@ def test_ball_chase_faces_the_ball_whatever_way_it_is_pointing():
     control, ball = _goal_control(num_envs=1)
     ball._tar_pos = torch.tensor([[0.0, 4.0, 0.0]])  # 90 deg to the left
 
-    _, heading = control._rollout(torch.zeros(1, 3), _yaw_quat(torch.tensor([0.0])))
+    _, heading = control._rollout(torch.zeros(1, 3), _yaw_quat(torch.tensor([0.0])), control._lead_times())
 
     assert heading[0].allclose(torch.full((5,), torch.pi / 2), atol=1e-5)
 
@@ -1637,16 +1650,49 @@ def test_ball_chase_target_is_re_anchored_so_approach_slows_itself():
         )
         return control._command()[0, 0]
 
-    far = at(0.0)
-    near = at(4.8)
+    far = at(0.0)     # 5.0 m to run
+    near = at(4.8)    # 0.2 m to run
 
-    assert near < far / 10.0
+    # Far away the deadline scales with distance, so the implied speed sits at
+    # reference_speed. Close in the min-horizon floor binds and the implied
+    # speed falls away to nothing -- that is the whole braking mechanism.
+    assert far == pytest.approx(1.5, rel=0.05)
+    assert near < far / 3.0
 
 
 def test_ball_chase_stop_distance_zero_aims_at_the_ball_itself():
     control, ball = _goal_control(num_envs=1)
     ball._tar_pos = torch.tensor([[2.0, 0.0, 0.0]])
 
-    xy, _ = control._rollout(torch.zeros(1, 3), _yaw_quat(torch.tensor([0.0])))
+    xy, _ = control._rollout(torch.zeros(1, 3), _yaw_quat(torch.tensor([0.0])), control._lead_times())
 
     assert xy[0, -1, 0].item() == pytest.approx(2.0, abs=1e-4)
+
+
+def test_ball_chase_shows_exactly_one_target():
+    """There is ONE target: the torso, at the ball, by the deadline.
+
+    MaskedMimic's five slots belong to the trained checkpoint (they fix the
+    observation widths), so the task cannot delete them -- it can only refuse
+    to use them, which is what this asserts."""
+    control, _ = _goal_control(num_envs=2, steps=5)
+
+    poses = control.masked_mimic_target_poses_masks
+    assert not bool(poses[:, :-1].any())   # near slots hidden
+    assert bool(poses[:, -1].all())        # deadline slot visible
+
+    bodies = control.masked_mimic_target_bodies_masks.view(2, 5, 3, 2)
+    assert not bool(bodies[:, :-1].any())  # and they carry no pose features
+    assert bool(bodies[:, -1, 0, 0].all())  # base link still conditioned
+
+
+def test_ball_chase_has_a_single_deadline_not_a_ladder():
+    """One number in play: every slot carries the same lead time."""
+    control, ball = _goal_control(num_envs=1, steps=5, max_speed=2.0)
+    ball._tar_pos = torch.tensor([[6.0, 0.0, 0.0]])
+
+    lead = control._lead_times()
+
+    assert lead.shape == (1, 5)
+    assert lead[0].allclose(lead[0, 0].expand(5))
+    assert lead[0, 0].item() == pytest.approx(3.0, rel=1e-3)  # 6 m / 2 m/s

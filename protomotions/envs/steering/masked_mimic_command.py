@@ -158,6 +158,7 @@ class MaskedMimicSteeringControl(MaskedMimicControl):
         self._height_b = 0.0
         self._height_lo = 0.0
         self._height_hi = 0.0
+        self._corpus_max_speed = None
 
         # Every conditioned pose is visible, and only the base link is
         # conditioned within it. Both are constant, so build them once.
@@ -205,6 +206,7 @@ class MaskedMimicSteeringControl(MaskedMimicControl):
             self._height_a = float(fixed)
             self._height_b = 0.0
             self._height_lo = self._height_hi = float(fixed)
+            self._corpus_max_speed = None
             return
 
         num = self.config.height_fit_samples
@@ -228,6 +230,11 @@ class MaskedMimicSteeringControl(MaskedMimicControl):
         self._height_a = float(z.mean() - slope * speed.mean())
         self._height_lo = float(z.quantile(0.05))
         self._height_hi = float(z.quantile(0.95))
+        # Top sustained speed this corpus demonstrates, for tasks that need to
+        # turn a distance into a deadline. p99 rather than the outright max:
+        # the max is a single-frame spike (4.10 m/s on the go2) while p99
+        # (2.44) sits at the fastest sustained gait (fastest clip mean 2.60).
+        self._corpus_max_speed = float(speed.quantile(0.99))
         print(
             f"[mm-steering] commanded root height from corpus: "
             f"{self._height_a:.4f} + {self._height_b:.4f}*speed, clamped to "
@@ -270,7 +277,7 @@ class MaskedMimicSteeringControl(MaskedMimicControl):
             return
         self.target_times[env_ids] = (
             self.env.motion_manager.motion_times[env_ids].unsqueeze(-1)
-            + self._offsets
+            + self._lead_times()[env_ids]
         )
         self._initialized = True
 
@@ -290,7 +297,9 @@ class MaskedMimicSteeringControl(MaskedMimicControl):
         motion_manager = self.env.motion_manager
         lengths = self.env.motion_lib.motion_lengths[motion_manager.motion_ids]
         motion_manager.motion_times.remainder_(lengths.clamp_min(self.env.dt))
-        self.target_times[:] = motion_manager.motion_times.unsqueeze(-1) + self._offsets
+        self.target_times[:] = (
+            motion_manager.motion_times.unsqueeze(-1) + self._lead_times()
+        )
 
         if self.config.report_every_steps > 0:
             self._accumulate_tracking()
@@ -345,6 +354,16 @@ class MaskedMimicSteeringControl(MaskedMimicControl):
     # Command roll-out
     # ------------------------------------------------------------------
 
+    def _lead_times(self) -> Tensor:
+        """Lead times of the conditioned slots, [envs, steps].
+
+        Fixed ladder here. Per-env rather than a bare [steps] vector so a
+        subclass can set the deadline from the task -- e.g. scaling it with
+        the distance left to run, instead of demanding the same 1 s of a goal
+        1 m away and one 8 m away.
+        """
+        return self._offsets.unsqueeze(0).expand(self.env.num_envs, -1)
+
     def _command(self) -> Tensor:
         """The sibling steering component's published [forward, yaw, lateral].
 
@@ -355,7 +374,9 @@ class MaskedMimicSteeringControl(MaskedMimicControl):
         component = self.env.control_manager.components[self.config.command_component]
         return component.command()
 
-    def _rollout(self, root_pos: Tensor, root_rot: Tensor) -> Tuple[Tensor, Tensor]:
+    def _rollout(
+        self, root_pos: Tensor, root_rot: Tensor, lead: Tensor
+    ) -> Tuple[Tensor, Tensor]:
         """Integrate the command from the live root pose.
 
         With a constant body-frame velocity (v_f, v_s) and yaw rate w, heading
@@ -373,7 +394,7 @@ class MaskedMimicSteeringControl(MaskedMimicControl):
         side = cmd[:, 2:3]
 
         h0 = rotations.calc_heading(root_rot, True).unsqueeze(-1)  # [envs, 1]
-        t = self._offsets.unsqueeze(0)  # [1, steps]
+        t = lead  # [envs, steps]
         h = h0 + turn * t  # [envs, steps]
 
         straight = turn.abs() < _STRAIGHT_EPS
@@ -401,8 +422,9 @@ class MaskedMimicSteeringControl(MaskedMimicControl):
         device = self.env.device
 
         root_state = self.env.simulator.get_root_state()
+        lead = self._lead_times()
         target_xy, target_heading = self._rollout(
-            root_state.root_pos, root_state.root_rot
+            root_state.root_pos, root_state.root_rot, lead
         )
 
         ground = self.env.terrain.get_ground_heights(
@@ -442,7 +464,7 @@ class MaskedMimicSteeringControl(MaskedMimicControl):
             ref_pos=ref_pos,
             ref_rot=ref_rot,
             target_times=self.target_times,
-            time_offsets=self._offsets.unsqueeze(0).expand(num_envs, num_steps),
+            time_offsets=lead,
             target_poses_masks=self.masked_mimic_target_poses_masks,
             target_bodies_masks=self.masked_mimic_target_bodies_masks,
         )

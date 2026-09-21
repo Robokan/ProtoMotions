@@ -33,7 +33,7 @@ the task -- ball, success radius, markers, obs, reward -- is unchanged.
 """
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Tuple
+from typing import Optional, TYPE_CHECKING, Tuple
 
 import torch
 from torch import Tensor
@@ -245,12 +245,31 @@ class MaskedMimicGoalControlConfig(MaskedMimicSteeringControlConfig):
             Aiming at the boundary asks the dog to stop exactly on the
             threshold and parks it just outside -- measured, mean range stuck
             at 1.2-2.8 m against 4.4-5.3 m when aiming at the ball.
+        max_speed: The robot's top speed, used ONLY to turn a distance into
+            a deadline: horizon = range / max_speed. Not a cap -- nothing
+            clamps what the dog attempts, and it may beat the deadline or miss
+            it. Using the TOP speed rather than a comfortable one is the point
+            (Eric): it makes the deadline the most urgent one physics allows,
+            so the instruction is "get there as fast as you can" rather than
+            "amble over". None measures it from the corpus (p99 of root speed
+            -- 2.44 m/s on the go2, against a 2.60 m/s fastest clip mean and a
+            4.10 m/s single-frame spike), which keeps it robot-agnostic.
+        min_horizon_sec: Floor on the deadline, so an almost-reached ball
+            does not collapse the target onto the robot's current position.
+        max_horizon_sec: Ceiling on the deadline. Working mimic playback sits
+            far further out than a fixed ladder suggests -- measured in steady
+            state, the furthest slot has a median of 5.54 s and a p90 of
+            22.2 s, and only 21.9% of all lead times are under 1 s. 15 s is
+            comfortably inside that.
     """
 
     _target_: str = "protomotions.envs.control.ball_chase.MaskedMimicGoalControl"
 
     target_component: str = "ball"
     stop_distance: float = 0.0
+    max_speed: Optional[float] = None
+    min_horizon_sec: float = 0.5
+    max_horizon_sec: float = 15.0
 
 
 class MaskedMimicGoalControl(MaskedMimicSteeringControl):
@@ -258,11 +277,69 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
 
     config: MaskedMimicGoalControlConfig
 
+    def __init__(self, config: MaskedMimicGoalControlConfig, env):
+        super().__init__(config, env)
+        # There is ONE target: the torso, at the ball, by the deadline.
+        #
+        # MaskedMimic's five conditioning slots are a property of the trained
+        # checkpoint, not of this task -- NUM_FUTURE_STEPS=5 fixes the
+        # observation widths and the transformer's sequence length, so losing
+        # them means retraining. All this task can do is refuse to use them:
+        # every slot but one is masked out of the attention mask AND of the
+        # pose features, so nothing downstream sees more than a single target.
+        self.masked_mimic_target_poses_masks[:] = False
+        self.masked_mimic_target_poses_masks[:, -1] = True
+        bodies = self.masked_mimic_target_bodies_masks.view(
+            env.num_envs, config.num_masked_future_steps, -1
+        )
+        bodies[:, :-1, :] = False
+
+    def _top_speed(self) -> float:
+        """The robot's top speed, measured from the corpus unless configured."""
+        if self.config.max_speed is not None:
+            return max(float(self.config.max_speed), 1e-6)
+        if self._corpus_max_speed is None:
+            self._measure_height_fit()
+        return max(self._corpus_max_speed or 1.0, 1e-6)
+
     def _goal_xy(self) -> Tensor:
         target = self.env.control_manager.components[self.config.target_component]
         return target._tar_pos[:, :2]
 
-    def _rollout(self, root_pos: Tensor, root_rot: Tensor) -> Tuple[Tensor, Tensor]:
+    def _lead_times(self) -> Tensor:
+        """Give it the time to get there: the deadline scales with distance.
+
+        The inherited fixed ladder (0.2 .. 1.0 s) demanded the same second of
+        a ball 1 m away and one 8 m away -- the latter works out at 8 m/s,
+        which nothing in the corpus can do, so every slot held an unreachable
+        target and the bearing signal was swamped by targets that sat far
+        ahead however the dog was pointing.
+
+Measured over actual mimic playback -- where the policy works well --
+        lead times have a median of 3.42 s and a p90 of 16.5 s, with only
+        21.9% under 1 s, so that ladder lived entirely inside the shortest
+        fifth of what the policy knows.
+
+        The deadline is range / top speed: the most urgent one the robot could
+        actually meet. A ball 5 m out at the go2's measured 2.44 m/s is asked
+        for in 2.0 s, inside the 3.42 s playback median.
+        """
+        root_state = self.env.simulator.get_root_state()
+        delta = self._goal_xy() - root_state.root_pos[:, :2]
+        rng = torch.linalg.norm(delta, dim=-1)
+        aim = (rng - self.config.stop_distance).clamp_min(0.0)
+        horizon = (aim / self._top_speed()).clamp(
+            self.config.min_horizon_sec, self.config.max_horizon_sec
+        )
+        # One deadline, not a ladder. The masked-out slots carry the same
+        # value so there is a single number in play anywhere in this task.
+        return horizon.unsqueeze(-1).expand(
+            -1, self.config.num_masked_future_steps
+        )
+
+    def _rollout(
+        self, root_pos: Tensor, root_rot: Tensor, lead: Tensor
+    ) -> Tuple[Tensor, Tensor]:
         delta = self._goal_xy() - root_pos[:, :2]
         rng = torch.linalg.norm(delta, dim=-1, keepdim=True)
         direction = delta / rng.clamp_min(1e-6)
@@ -295,7 +372,7 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         error = torch.atan2(
             torch.sin(goal_heading - heading), torch.cos(goal_heading - heading)
         )
-        lead = float(self._offsets[0])
+        horizon = self._lead_times()[:, -1].clamp_min(1e-6)
         return torch.stack(
-            [rng / lead, error / lead, torch.zeros_like(rng)], dim=-1
+            [rng / horizon, error / horizon, torch.zeros_like(rng)], dim=-1
         )
