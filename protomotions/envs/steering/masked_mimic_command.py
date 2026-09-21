@@ -82,9 +82,18 @@ class MaskedMimicSteeringControlConfig(MaskedMimicControlConfig):
         target_root_height: The height used by height_mode="fixed".
         height_fit_samples: How many random corpus poses the fit and the
             clamp band are built from.
-        condition_rotation: Condition the base link's yaw as well as its
-            position. Off = position only, which lets the policy pick its own
-            facing (it will still turn, because the arc curves away).
+        condition_rotation: Condition the base link's orientation as well as
+            its position. Off = position only, letting the policy pick its own
+            facing. Measured worse on the chase (11.2-14.2 catches/min against
+            15.8-23.2), so the facing command earns its place.
+        preserve_tilt: Build the rotation target by turning the robot's
+            CURRENT orientation about world up to the desired heading, so the
+            target keeps the roll and pitch the body actually has. Off builds
+            a pure-yaw quaternion, which also commands perfectly level -- an
+            attitude no real dog holds while turning, and nothing like what
+            MaskedMimic is conditioned on in training, where the rotation
+            target is the CLIP's own rigid_body_rot with its real tilt
+            (corpus mean 7.8 deg; only 38.7% of frames within 5 deg of level).
         report_every_steps: Print a commanded-vs-achieved velocity summary
             every N env steps. 0 disables it.
     """
@@ -99,6 +108,7 @@ class MaskedMimicSteeringControlConfig(MaskedMimicControlConfig):
     target_root_height: Optional[float] = None
     height_fit_samples: int = 8192
     condition_rotation: bool = True
+    preserve_tilt: bool = True
     report_every_steps: int = 0
 
 
@@ -445,9 +455,23 @@ class MaskedMimicSteeringControl(MaskedMimicControl):
 
         up = torch.zeros(num_envs * num_steps, 3, device=device, dtype=torch.float)
         up[:, 2] = 1.0
-        target_rot = rotations.quat_from_angle_axis(
-            target_heading.reshape(-1), up, True
-        ).view(num_envs, num_steps, 4)
+        if self.config.preserve_tilt:
+            # Turn the body's CURRENT orientation about world up to the
+            # commanded heading. The target then carries the roll and pitch
+            # the dog actually has, the way a clip's rigid_body_rot does,
+            # instead of also demanding it be perfectly level.
+            root_rot = root_state.root_rot
+            heading_now = rotations.calc_heading(root_rot, True).unsqueeze(-1)
+            delta = (target_heading - heading_now).reshape(-1)
+            spin = rotations.quat_from_angle_axis(delta, up, True)
+            current = root_rot.unsqueeze(1).expand(-1, num_steps, -1).reshape(-1, 4)
+            target_rot = rotations.quat_mul(spin, current, True).view(
+                num_envs, num_steps, 4
+            )
+        else:
+            target_rot = rotations.quat_from_angle_axis(
+                target_heading.reshape(-1), up, True
+            ).view(num_envs, num_steps, 4)
 
         # Masked-out bodies are zeroed downstream; they only need to be finite.
         ref_pos = target_pos.unsqueeze(2).repeat(1, 1, self._num_bodies, 1)
