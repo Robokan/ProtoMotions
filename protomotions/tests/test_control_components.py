@@ -1594,6 +1594,7 @@ def _goal_control(num_envs=1, steps=5, horizon=1.0, **kwargs):
     # Explicit top speed: the real component measures it from the motion
     # library, which a stub env has none of.
     kwargs.setdefault("max_speed", 1.5)
+    kwargs.setdefault("max_yaw_rate", 3.5)
     cfg = MaskedMimicGoalControlConfig(
         num_masked_future_steps=steps, horizon_sec=horizon, **kwargs
     )
@@ -1729,3 +1730,26 @@ def test_ball_chase_a_new_throw_sets_a_new_deadline():
     fresh = control._lead_times()[0, 0].item()
 
     assert fresh == pytest.approx(1.0, rel=1e-3)     # 2 m / 2 m/s, from now
+
+
+def test_ball_chase_deadline_budgets_the_turn_not_just_the_run():
+    """range/top_speed alone assumes a straight sprint from a standing start
+    already facing the ball. A ball BEHIND needs the turn paid for first --
+    0.89 s for 180 deg at the go2's measured 3.51 rad/s -- and without it the
+    target is unreachable from the first frame, with the whole shortfall
+    landing exactly when the dog should be turning."""
+    control, ball = _goal_control(num_envs=1, max_speed=2.0, max_yaw_rate=3.5)
+    root = torch.zeros(1, 3)
+
+    ball._tar_pos = torch.tensor([[4.0, 0.0, 0.0]])       # dead ahead
+    control._deadline_ball[:] = float("nan")
+    ahead = control._lead_times()[0, 0].item()
+
+    ball._tar_pos = torch.tensor([[-4.0, 0.0, 0.0]])      # directly behind
+    control._deadline_ball[:] = float("nan")
+    behind = control._lead_times()[0, 0].item()
+
+    assert ahead == pytest.approx(2.0, rel=1e-3)          # 4 m / 2 m/s, no turn
+    # same 4 m, plus pi / 3.5 rad/s of turning
+    assert behind == pytest.approx(2.0 + 3.14159 / 3.5, rel=1e-2)
+    assert behind > ahead

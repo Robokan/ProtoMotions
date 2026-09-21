@@ -169,6 +169,7 @@ class MaskedMimicSteeringControl(MaskedMimicControl):
         self._height_lo = 0.0
         self._height_hi = 0.0
         self._corpus_max_speed = None
+        self._corpus_max_yaw = None
 
         # Every conditioned pose is visible, and only the base link is
         # conditioned within it. Both are constant, so build them once.
@@ -217,6 +218,7 @@ class MaskedMimicSteeringControl(MaskedMimicControl):
             self._height_b = 0.0
             self._height_lo = self._height_hi = float(fixed)
             self._corpus_max_speed = None
+            self._corpus_max_yaw = None
             return
 
         num = self.config.height_fit_samples

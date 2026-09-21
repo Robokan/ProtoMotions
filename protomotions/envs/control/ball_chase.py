@@ -294,6 +294,15 @@ class MaskedMimicGoalControlConfig(MaskedMimicSteeringControlConfig):
     target_component: str = "ball"
     stop_distance: float = 0.0
     max_speed: Optional[float] = None
+    max_yaw_rate: Optional[float] = None
+    # How many conditioned slots carry a target. 1 gives the endpoint only,
+    # which leaves the PACE undetermined: "be at X in 2 s" is satisfied just
+    # as well by ambling there in 2 s as by sprinting and waiting, so nothing
+    # prefers a natural gait (Eric: even after turning it "often moves slowly
+    # to the target in an unantural way"). More than one pins where the dog
+    # should be ALONG the way, and two positions at two times ARE a velocity
+    # -- which is how mimic playback never leaves the pace open.
+    visible_targets: int = 1
     min_horizon_sec: float = 0.05
     max_horizon_sec: float = 15.0
 
@@ -313,12 +322,15 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         # them means retraining. All this task can do is refuse to use them:
         # every slot but one is masked out of the attention mask AND of the
         # pose features, so nothing downstream sees more than a single target.
+        self._visible = min(
+            max(int(config.visible_targets), 1), config.num_masked_future_steps
+        )
         self.masked_mimic_target_poses_masks[:] = False
-        self.masked_mimic_target_poses_masks[:, -1] = True
+        self.masked_mimic_target_poses_masks[:, -self._visible:] = True
         bodies = self.masked_mimic_target_bodies_masks.view(
             env.num_envs, config.num_masked_future_steps, -1
         )
-        bodies[:, :-1, :] = False
+        bodies[:, :-self._visible, :] = False
 
         # Absolute deadline per env, in elapsed seconds. Set once per throw
         # and then counted DOWN -- see _lead_times.
@@ -334,6 +346,26 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         if self._corpus_max_speed is None:
             self._measure_height_fit()
         return max(self._corpus_max_speed or 1.0, 1e-6)
+
+    def _fractions(self) -> Tensor:
+        """Where each visible slot sits, as a fraction of the remaining
+        distance AND of the remaining time -- so the pace they imply is
+        constant and reachable by construction."""
+        n = self.config.num_masked_future_steps
+        f = torch.ones(n, device=self.env.device)
+        f[-self._visible:] = (
+            torch.arange(1, self._visible + 1, device=self.env.device).float()
+            / self._visible
+        )
+        return f
+
+    def _top_yaw(self) -> float:
+        """Top yaw rate, measured from the corpus unless configured."""
+        if self.config.max_yaw_rate is not None:
+            return max(float(self.config.max_yaw_rate), 1e-6)
+        if self._corpus_max_yaw is None:
+            self._measure_height_fit()
+        return max(self._corpus_max_yaw or 1.0, 1e-6)
 
     def _goal_xy(self) -> Tensor:
         target = self.env.control_manager.components[self.config.target_component]
@@ -369,20 +401,33 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         restart = expired | ~torch.isfinite(moved) | (moved > 1e-4)
         if bool(restart.any()):
             self._set_deadline(restart)
-        return (self._deadline - now).clamp_min(self.config.min_horizon_sec).unsqueeze(
-            -1
-        ).expand(-1, self.config.num_masked_future_steps)
+        remaining = (self._deadline - now).clamp_min(self.config.min_horizon_sec)
+        return remaining.unsqueeze(-1) * self._fractions().unsqueeze(0)
 
     def _set_deadline(self, env_ids: Tensor) -> None:
         """Budget range / top_speed from now: the most urgent time the robot
         could actually meet, fixed for the rest of this throw."""
-        root_pos = self.env.simulator.get_root_state().root_pos
+        root_state = self.env.simulator.get_root_state()
+        root_pos = root_state.root_pos
         ball = self._goal_xy()
+        delta = ball - root_pos[:, :2]
         aim = (
-            torch.linalg.norm(ball - root_pos[:, :2], dim=-1)
-            - self.config.stop_distance
+            torch.linalg.norm(delta, dim=-1) - self.config.stop_distance
         ).clamp_min(0.0)
-        budget = (aim / self._top_speed()).clamp(
+
+        # Budget the TURN as well as the run. range/top_speed alone assumes a
+        # straight sprint from a standing start already facing the ball, so a
+        # ball behind is demanded in 70% of the time it genuinely needs -- and
+        # the whole shortfall lands exactly when the dog should be turning. A
+        # 180 deg turn takes 0.89 s at the go2's measured 3.51 rad/s; the old
+        # budget allowed 0.00 s for it (Eric: with a ball behind it "choses to
+        # turn slowly and sometimes not in a natural way").
+        heading = rotations.calc_heading(root_state.root_rot, True)
+        goal_heading = torch.atan2(delta[:, 1], delta[:, 0])
+        bearing = torch.atan2(
+            torch.sin(goal_heading - heading), torch.cos(goal_heading - heading)
+        ).abs()
+        budget = (bearing / self._top_yaw() + aim / self._top_speed()).clamp(
             self.config.min_horizon_sec, self.config.max_horizon_sec
         )
         self._deadline[env_ids] = self._now()[env_ids] + budget[env_ids]
@@ -400,13 +445,14 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         heading = torch.atan2(direction[:, 1], direction[:, 0])
 
         steps = self.config.num_masked_future_steps
-        # Same goal at every lead time. The near slots are the urgent ones and
-        # the far slots the relaxed ones; the policy decides what it can do
-        # about that.
-        return (
-            goal.unsqueeze(1).expand(-1, steps, -1),
-            heading.unsqueeze(-1).expand(-1, steps),
-        )
+        frac = self._fractions().view(1, steps, 1)
+        # Each visible slot sits the same fraction of the way along as it does
+        # through the remaining time, so together they state a steady PACE to
+        # the ball rather than only its endpoint.
+        along = root_pos[:, :2].unsqueeze(1) + (
+            goal - root_pos[:, :2]
+        ).unsqueeze(1) * frac
+        return along, heading.unsqueeze(-1).expand(-1, steps)
 
     def _command(self) -> Tensor:
         """The velocity the goal implies -- for the inherited readout only.
