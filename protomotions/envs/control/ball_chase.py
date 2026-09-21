@@ -374,15 +374,46 @@ class MaskedMimicGoalControlConfig(MaskedMimicSteeringControlConfig):
     # It is not a throttle: at 120-180 deg the useful speed is already
     # negative. Set position_gate_zero_deg <= position_gate_full_deg to
     # disable it.
-    # DISABLED by default: measured, and it made the thing it targeted WORSE.
-    # Holding the position target on the robot did not produce a pivot -- the
-    # 120-180 deg band went from -0.66 to -0.88 efficiency and catches fell
-    # 13.6 -> 13.1/min. The dog drives forward when the ball is behind it
-    # REGARDLESS of what the position target says; removing the (weak) pull
-    # toward the ball only removed what little closing there was. The forward
-    # motion is the policy's own prior, not something this file commands, so
-    # no reshaping of the target here can fix it.
-    position_gate_full_deg: float = 60.0
+    # How much of a turn must be finished BEFORE running, as a function of
+    # bearing. A ball behind has to be turned to on the spot; one 45 deg off
+    # can be turned into gradually, while running (Eric).
+    #
+    # The gate scales TWO things together, and that is the point. Gating only
+    # the position (measured, earlier) made things WORSE: the deadline stayed
+    # at turn+run, so the instruction became "be here, facing the ball, in 3
+    # seconds", which invites loitering -- and the dog wandered forward
+    # instead. Gating the deadline too makes a large bearing mean "pivot, and
+    # you have |bearing|/top_yaw to do it": 0.89 s for 180 deg on the go2.
+    #
+    # Staging then falls out by itself: the short pivot-only deadline expires,
+    # a new one is set from the now-smaller bearing, and it carries more of
+    # the run each time.
+    #
+    # DISABLED by default (zero <= full). Measured three ways against the
+    # ungated build, on one checkpoint:
+    #
+    #                              catches   0-30   30-60  60-120  120-180
+    #     ungated                  13.6/min  +0.87  +0.61  +0.11   -0.66
+    #     position gated only      13.4/min  +0.96  +0.78  +0.15   -0.88
+    #     turn-first (both gated)  13.3/min  +0.91  +0.72  +0.30   -0.82
+    #
+    # Gating buys efficiency in the middle bands and costs speed everywhere,
+    # netting the same catch rate -- and it never produced the pivot it was
+    # built for: 120-180 deg stays strongly negative under all three. Even
+    # with the position target sitting on the robot AND a 0.89 s pivot-only
+    # deadline, an instruction saying nothing but "turn, now", the dog still
+    # drives away at ~1.1 m/s. That motion is the policy's own prior and no
+    # reshaping of the target reaches it.
+    #
+    # Ungated is also what Eric judged in the viewer: "pretty good... it only
+    # makes mistakes sometimes". Naturalness is the criterion here and the
+    # catch-rate metric cannot see it.
+    #
+    # full: at or below this bearing the run is fully in the budget and the
+    #       position target reaches the ball.
+    # zero: at or above it neither is -- a pure pivot.
+    # Set zero > full to enable.
+    position_gate_full_deg: float = 45.0
     position_gate_zero_deg: float = 0.0
     min_horizon_sec: float = 0.05
     max_horizon_sec: float = 15.0
@@ -439,6 +470,20 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
             / self._visible
         )
         return f
+
+    def _bearing_gate(self, bearing: Tensor) -> Tensor:
+        """1 when the dog is pointed at the ball, 0 when it is behind.
+
+        bearing in RADIANS. Scales the position target and the run term of the
+        deadline together, so the two never disagree about whether the dog is
+        pivoting or running.
+        """
+        full = self.config.position_gate_full_deg
+        zero = self.config.position_gate_zero_deg
+        if zero <= full:
+            return torch.ones_like(bearing)
+        deg = torch.rad2deg(bearing.abs())
+        return ((zero - deg) / (zero - full)).clamp(0.0, 1.0)
 
     def _top_yaw(self) -> float:
         """Top yaw rate, measured from the corpus unless configured."""
@@ -508,7 +553,13 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         bearing = torch.atan2(
             torch.sin(goal_heading - heading), torch.cos(goal_heading - heading)
         ).abs()
-        budget = (bearing / self._top_yaw() + aim / self._top_speed()).clamp(
+        # The turn is always paid for; the run enters the budget only as the
+        # bearing closes, so a ball behind buys a short, urgent, pivot-only
+        # deadline instead of three seconds of licence to wander.
+        budget = (
+            bearing / self._top_yaw()
+            + self._bearing_gate(bearing) * aim / self._top_speed()
+        ).clamp(
             self.config.min_horizon_sec, self.config.max_horizon_sec
         )
         self._deadline[env_ids] = self._now()[env_ids] + budget[env_ids]
@@ -528,19 +579,11 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         steps = self.config.num_masked_future_steps
         # Bearing gate: hold the position target near the robot while the
         # ball is behind, so the only live instruction is "turn".
-        full = self.config.position_gate_full_deg
-        zero = self.config.position_gate_zero_deg
-        if zero > full:
-            cur = rotations.calc_heading(root_rot, True)
-            bearing = torch.rad2deg(
-                torch.atan2(
-                    torch.sin(heading - cur), torch.cos(heading - cur)
-                ).abs()
-            )
-            gate = ((zero - bearing) / (zero - full)).clamp(0.0, 1.0)
-        else:
-            gate = torch.ones_like(heading)
-
+        cur = rotations.calc_heading(root_rot, True)
+        bearing = torch.atan2(
+            torch.sin(heading - cur), torch.cos(heading - cur)
+        )
+        gate = self._bearing_gate(bearing)
         frac = self._fractions().view(1, steps, 1) * gate.view(-1, 1, 1)
         # Each visible slot sits the same fraction of the way along as it does
         # through the remaining time, so together they state a steady PACE to

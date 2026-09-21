@@ -1733,12 +1733,17 @@ def test_ball_chase_a_new_throw_sets_a_new_deadline():
 
 
 def test_ball_chase_deadline_budgets_the_turn_not_just_the_run():
-    """range/top_speed alone assumes a straight sprint from a standing start
-    already facing the ball. A ball BEHIND needs the turn paid for first --
-    0.89 s for 180 deg at the go2's measured 3.51 rad/s -- and without it the
-    target is unreachable from the first frame, with the whole shortfall
-    landing exactly when the dog should be turning."""
-    control, ball = _goal_control(num_envs=1, max_speed=2.0, max_yaw_rate=3.5)
+    """The turn is always paid for on top of the run, so a ball BEHIND gets a
+    strictly larger budget than the same distance ahead. range/top_speed alone
+    assumed a straight sprint from a standing start already facing the ball,
+    and the whole shortfall landed exactly when the dog should be turning.
+
+    Gating the run term out entirely (turn-first) is a separate, optional
+    behaviour -- measured and left off by default."""
+    control, ball = _goal_control(
+        num_envs=1, max_speed=2.0, max_yaw_rate=3.5,
+        position_gate_zero_deg=0.0,   # gate off: the shipped default
+    )
     root = torch.zeros(1, 3)
 
     ball._tar_pos = torch.tensor([[4.0, 0.0, 0.0]])       # dead ahead
@@ -1750,7 +1755,7 @@ def test_ball_chase_deadline_budgets_the_turn_not_just_the_run():
     behind = control._lead_times()[0, 0].item()
 
     assert ahead == pytest.approx(2.0, rel=1e-3)          # 4 m / 2 m/s, no turn
-    # same 4 m, plus pi / 3.5 rad/s of turning
+    # same 4 m of running, plus pi / 3.5 rad/s of turning
     assert behind == pytest.approx(2.0 + 3.14159 / 3.5, rel=1e-2)
     assert behind > ahead
 
