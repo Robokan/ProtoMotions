@@ -57,6 +57,10 @@ if TYPE_CHECKING:
 # not a tuning knob.
 TWO_FEET_M = 0.6096
 
+# Range bands for the closing-speed readout. An average hides a chase that
+# sprints the first four metres and then crawls the last one.
+_RANGE_BANDS = [(0.0, 1.0), (1.0, 2.0), (2.0, 4.0), (4.0, 99.0)]
+
 
 @dataclass
 class BallChaseCommandSourceConfig(RandomTargetCommandSourceConfig):
@@ -104,6 +108,8 @@ class BallChaseCommandSource(RandomTargetCommandSource):
         self._report_range_sum = 0.0
         self._report_closing_sum = 0.0
         self._report_prev_range = None
+        self._report_band_sum = [0.0] * len(_RANGE_BANDS)
+        self._report_band_n = [0] * len(_RANGE_BANDS)
         self._report_catch_steps = []
 
     def reset(self, env_ids: Tensor) -> None:
@@ -144,6 +150,11 @@ class BallChaseCommandSource(RandomTargetCommandSource):
             sane = rate.abs() < 10.0
             if bool(sane.any()):
                 self._report_closing_sum += float(rate[sane].mean())
+            for i, (lo, hi) in enumerate(_RANGE_BANDS):
+                m = sane & (rng >= lo) & (rng < hi)
+                if bool(m.any()):
+                    self._report_band_sum[i] += float(rate[m].sum())
+                    self._report_band_n[i] += int(m.sum())
         self._report_prev_range = rng.clone()
         if self._report_steps < every:
             return
@@ -161,10 +172,18 @@ class BallChaseCommandSource(RandomTargetCommandSource):
             f"time-to-catch {ttc_s:.1f} s",
             flush=True,
         )
+        bands = "  ".join(
+            (f"{lo:g}-{hi:g}m {self._report_band_sum[i]/self._report_band_n[i]:5.2f}"
+             if self._report_band_n[i] else f"{lo:g}-{hi:g}m    --")
+            for i, (lo, hi) in enumerate(_RANGE_BANDS)
+        )
+        print(f"[ball-chase]   closing m/s by range: {bands}", flush=True)
         self._report_steps = 0
         self._report_catches = 0
         self._report_range_sum = 0.0
         self._report_closing_sum = 0.0
+        self._report_band_sum = [0.0] * len(_RANGE_BANDS)
+        self._report_band_n = [0] * len(_RANGE_BANDS)
         self._report_catch_steps = []
 
     def _sample_heading_relative_target(
@@ -254,8 +273,15 @@ class MaskedMimicGoalControlConfig(MaskedMimicSteeringControlConfig):
             "amble over". None measures it from the corpus (p99 of root speed
             -- 2.44 m/s on the go2, against a 2.60 m/s fastest clip mean and a
             4.10 m/s single-frame spike), which keeps it robot-agnostic.
-        min_horizon_sec: Floor on the deadline, so an almost-reached ball
-            does not collapse the target onto the robot's current position.
+        min_horizon_sec: Numerical guard only -- it keeps the deadline off
+            zero so nothing divides by it. NOT a brake. At 0.05 s it sits
+            below the p10 of the nearest lead time the policy trained on, so
+            the implied speed holds at top speed the whole way in and the dog
+            runs AT the ball instead of easing off. The old 0.5 s floor was a
+            deceleration ramp in disguise: inside 1.2 m the implied speed
+            became range/0.5 and decayed to nothing (Eric: "no deceleration
+            ramp!!!"). The dog does not need to STOP at the ball, it needs to
+            REACH it -- the ball is re-thrown the instant it does.
         max_horizon_sec: Ceiling on the deadline. Working mimic playback sits
             far further out than a fixed ladder suggests -- measured in steady
             state, the furthest slot has a median of 5.54 s and a p90 of
@@ -268,7 +294,7 @@ class MaskedMimicGoalControlConfig(MaskedMimicSteeringControlConfig):
     target_component: str = "ball"
     stop_distance: float = 0.0
     max_speed: Optional[float] = None
-    min_horizon_sec: float = 0.5
+    min_horizon_sec: float = 0.05
     max_horizon_sec: float = 15.0
 
 
@@ -294,6 +320,13 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         )
         bodies[:, :-1, :] = False
 
+        # Absolute deadline per env, in elapsed seconds. Set once per throw
+        # and then counted DOWN -- see _lead_times.
+        self._deadline = torch.zeros(env.num_envs, device=env.device)
+        self._deadline_ball = torch.full(
+            (env.num_envs, 2), float("nan"), device=env.device
+        )
+
     def _top_speed(self) -> float:
         """The robot's top speed, measured from the corpus unless configured."""
         if self.config.max_speed is not None:
@@ -306,36 +339,54 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         target = self.env.control_manager.components[self.config.target_component]
         return target._tar_pos[:, :2]
 
+    def _now(self) -> Tensor:
+        """Elapsed seconds per env. Monotonic: this task never resets."""
+        return self.env.progress_buf.float() * self.env.dt
+
     def _lead_times(self) -> Tensor:
-        """Give it the time to get there: the deadline scales with distance.
+        """Time remaining until the deadline -- counting DOWN.
 
-        The inherited fixed ladder (0.2 .. 1.0 s) demanded the same second of
-        a ball 1 m away and one 8 m away -- the latter works out at 8 m/s,
-        which nothing in the corpus can do, so every slot held an unreachable
-        target and the bearing signal was swamped by targets that sat far
-        ahead however the dog was pointing.
+        The deadline is ABSOLUTE, set once when the ball is thrown, exactly as
+        MaskedMimic target times are absolute moments in a clip. What the
+        policy sees is therefore 2.00 s, 1.98 s, 1.96 s ... and that countdown
+        is the urgency signal it was distilled against.
 
-Measured over actual mimic playback -- where the policy works well --
-        lead times have a median of 3.42 s and a p90 of 16.5 s, with only
-        21.9% under 1 s, so that ladder lived entirely inside the shortest
-        fifth of what the policy knows.
+        Recomputing range / top_speed every step -- which is what this did
+        before -- makes the deadline recede perpetually: always "get there in
+        2 seconds from now", never arriving, so the countdown never happens
+        (Eric: "you are always saying: be at the target immediately? That
+        isn't how mimic is supposed to work"). It is a standing demand for
+        maximum urgency re-issued fifty times a second, not a deadline.
 
-        The deadline is range / top speed: the most urgent one the robot could
-        actually meet. A ball 5 m out at the go2's measured 2.44 m/s is asked
-        for in 2.0 s, inside the 3.42 s playback median.
+        A fresh throw sets a new deadline. So does letting one expire, which
+        is the miss case -- the analogue of MaskedMimic shifting its slot on
+        to the next target once the current one is passed.
         """
-        root_state = self.env.simulator.get_root_state()
-        delta = self._goal_xy() - root_state.root_pos[:, :2]
-        rng = torch.linalg.norm(delta, dim=-1)
-        aim = (rng - self.config.stop_distance).clamp_min(0.0)
-        horizon = (aim / self._top_speed()).clamp(
+        now = self._now()
+        ball = self._goal_xy()
+        moved = (ball - self._deadline_ball).abs().sum(dim=-1)
+        expired = (self._deadline - now) <= self.config.min_horizon_sec
+        restart = expired | ~torch.isfinite(moved) | (moved > 1e-4)
+        if bool(restart.any()):
+            self._set_deadline(restart)
+        return (self._deadline - now).clamp_min(self.config.min_horizon_sec).unsqueeze(
+            -1
+        ).expand(-1, self.config.num_masked_future_steps)
+
+    def _set_deadline(self, env_ids: Tensor) -> None:
+        """Budget range / top_speed from now: the most urgent time the robot
+        could actually meet, fixed for the rest of this throw."""
+        root_pos = self.env.simulator.get_root_state().root_pos
+        ball = self._goal_xy()
+        aim = (
+            torch.linalg.norm(ball - root_pos[:, :2], dim=-1)
+            - self.config.stop_distance
+        ).clamp_min(0.0)
+        budget = (aim / self._top_speed()).clamp(
             self.config.min_horizon_sec, self.config.max_horizon_sec
         )
-        # One deadline, not a ladder. The masked-out slots carry the same
-        # value so there is a single number in play anywhere in this task.
-        return horizon.unsqueeze(-1).expand(
-            -1, self.config.num_masked_future_steps
-        )
+        self._deadline[env_ids] = self._now()[env_ids] + budget[env_ids]
+        self._deadline_ball[env_ids] = ball[env_ids]
 
     def _rollout(
         self, root_pos: Tensor, root_rot: Tensor, lead: Tensor

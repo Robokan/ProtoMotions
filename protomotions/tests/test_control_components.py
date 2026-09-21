@@ -1605,6 +1605,7 @@ def _goal_control(num_envs=1, steps=5, horizon=1.0, **kwargs):
             root_pos=torch.zeros(num_envs, 3), root_rot=_yaw_quat(torch.zeros(num_envs))
         )
     )
+    env.progress_buf = torch.zeros(num_envs, dtype=torch.long)
     return control, ball
 
 
@@ -1653,9 +1654,11 @@ def test_ball_chase_target_is_re_anchored_so_approach_slows_itself():
     far = at(0.0)     # 5.0 m to run
     near = at(4.8)    # 0.2 m to run
 
-    # Far away the deadline scales with distance, so the implied speed sits at
-    # reference_speed. Close in the min-horizon floor binds and the implied
-    # speed falls away to nothing -- that is the whole braking mechanism.
+    # The deadline is absolute, so closing the distance without the clock
+    # moving means the dog is AHEAD of schedule and the implied speed drops.
+    # Nothing brakes it: min_horizon_sec is a divide-by-zero guard, not a
+    # ramp, so a dog that is on schedule keeps asking for top speed right up
+    # to the ball.
     assert far == pytest.approx(1.5, rel=0.05)
     assert near < far / 3.0
 
@@ -1696,3 +1699,33 @@ def test_ball_chase_has_a_single_deadline_not_a_ladder():
     assert lead.shape == (1, 5)
     assert lead[0].allclose(lead[0, 0].expand(5))
     assert lead[0, 0].item() == pytest.approx(3.0, rel=1e-3)  # 6 m / 2 m/s
+
+
+def test_ball_chase_deadline_counts_down_as_time_passes():
+    """The deadline is an absolute moment; the lead time the policy sees ticks
+    down toward it every step. Recomputing the deadline each step instead
+    holds the lead constant -- a standing "get there in N seconds", never
+    arriving, so the countdown the policy was trained on never happens."""
+    control, ball = _goal_control(num_envs=1, steps=5, max_speed=2.0)
+    ball._tar_pos = torch.tensor([[6.0, 0.0, 0.0]])
+
+    control.env.progress_buf = torch.tensor([0])
+    first = control._lead_times()[0, 0].item()
+    control.env.progress_buf = torch.tensor([25])   # +0.5 s at dt=0.02
+    later = control._lead_times()[0, 0].item()
+
+    assert first == pytest.approx(3.0, rel=1e-3)
+    assert later == pytest.approx(2.5, rel=1e-3)    # counted down, not reset
+
+
+def test_ball_chase_a_new_throw_sets_a_new_deadline():
+    control, ball = _goal_control(num_envs=1, steps=5, max_speed=2.0)
+    ball._tar_pos = torch.tensor([[6.0, 0.0, 0.0]])
+    control.env.progress_buf = torch.tensor([0])
+    control._lead_times()
+
+    control.env.progress_buf = torch.tensor([25])
+    ball._tar_pos = torch.tensor([[2.0, 0.0, 0.0]])  # caught, re-thrown closer
+    fresh = control._lead_times()[0, 0].item()
+
+    assert fresh == pytest.approx(1.0, rel=1e-3)     # 2 m / 2 m/s, from now
