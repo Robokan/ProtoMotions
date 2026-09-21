@@ -420,7 +420,19 @@ class MaskedMimicGoalControlConfig(MaskedMimicSteeringControlConfig):
 
 
 class MaskedMimicGoalControl(MaskedMimicSteeringControl):
-    """Base-link targets that say "be at the ball", and nothing else."""
+    """Base-link targets that say "be at the ball, facing it, by then".
+
+    As shipped the dog is told three things and no more:
+
+      * WHERE  -- the ball, ungated, at full distance.
+      * FACING -- straight at the ball, every slot, no rate limit.
+      * WHEN   -- |bearing|/top_yaw + range/top_speed, so the turn is paid
+                  for on top of the run.
+
+    It is never told to finish turning BEFORE running. That sequencing is what
+    the bearing gates would add, and they are off by default because they were
+    measured and did not deliver it.
+    """
 
     config: MaskedMimicGoalControlConfig
 
@@ -477,6 +489,9 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         bearing in RADIANS. Scales the position target and the run term of the
         deadline together, so the two never disagree about whether the dog is
         pivoting or running.
+
+        Returns all ones when disabled, which is the default -- see
+        position_gate_full_deg for the measurements that turned it off.
         """
         full = self.config.position_gate_full_deg
         zero = self.config.position_gate_zero_deg
@@ -553,9 +568,10 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         bearing = torch.atan2(
             torch.sin(goal_heading - heading), torch.cos(goal_heading - heading)
         ).abs()
-        # The turn is always paid for; the run enters the budget only as the
-        # bearing closes, so a ball behind buys a short, urgent, pivot-only
-        # deadline instead of three seconds of licence to wander.
+        # The turn is ALWAYS paid for, gate or no gate: a ball behind gets
+        # |bearing|/top_yaw more than the same distance ahead. The gate, when
+        # enabled, additionally removes the run term so the deadline becomes
+        # pivot-only; off by default, so the budget here is turn + run.
         budget = (
             bearing / self._top_yaw()
             + self._bearing_gate(bearing) * aim / self._top_speed()
@@ -577,8 +593,12 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         heading = torch.atan2(direction[:, 1], direction[:, 0])
 
         steps = self.config.num_masked_future_steps
-        # Bearing gate: hold the position target near the robot while the
-        # ball is behind, so the only live instruction is "turn".
+        # Optional bearing gate, OFF by default: it would hold the position
+        # target near the robot while the ball is behind, leaving "turn" as
+        # the only live instruction. Measured, it never produced that pivot
+        # (see position_gate_full_deg). Disabled, _bearing_gate returns ones
+        # and this is a no-op, so the target below is the plain one: the ball,
+        # faced, by the deadline.
         cur = rotations.calc_heading(root_rot, True)
         bearing = torch.atan2(
             torch.sin(heading - cur), torch.cos(heading - cur)
@@ -587,7 +607,9 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         frac = self._fractions().view(1, steps, 1) * gate.view(-1, 1, 1)
         # Each visible slot sits the same fraction of the way along as it does
         # through the remaining time, so together they state a steady PACE to
-        # the ball rather than only its endpoint.
+        # the ball rather than only its endpoint. With the default
+        # visible_targets=1 there is a single slot at fraction 1.0, i.e. the
+        # ball itself -- the fractions only bite when more are shown.
         along = root_pos[:, :2].unsqueeze(1) + (
             goal - root_pos[:, :2]
         ).unsqueeze(1) * frac
