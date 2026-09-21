@@ -1753,3 +1753,38 @@ def test_ball_chase_deadline_budgets_the_turn_not_just_the_run():
     # same 4 m, plus pi / 3.5 rad/s of turning
     assert behind == pytest.approx(2.0 + 3.14159 / 3.5, rel=1e-2)
     assert behind > ahead
+
+
+def test_ball_chase_holds_position_target_when_the_ball_is_behind():
+    """The gate holds the position target on the robot when the ball is
+    behind, leaving only the facing live. Kept and tested because the option
+    exists, but DISABLED by default: measured, it made the 120-180 deg band
+    worse (-0.66 -> -0.88 efficiency), because the forward motion there is the
+    policy's own prior rather than anything this target commands."""
+    control, ball = _goal_control(
+        num_envs=1, max_speed=2.0,
+        position_gate_full_deg=60.0, position_gate_zero_deg=120.0,
+    )
+    root = torch.zeros(1, 3)
+    rot = _yaw_quat(torch.tensor([0.0]))       # facing +x
+
+    ball._tar_pos = torch.tensor([[-4.0, 0.0, 0.0]])   # directly behind
+    control._deadline_ball[:] = float("nan")
+    xy, heading = control._rollout(root, rot, control._lead_times())
+
+    # Position target stays on the robot: nothing asks it to translate yet.
+    assert torch.linalg.norm(xy[0], dim=-1).max() < 1e-4
+    # But it is still told to face the ball.
+    assert heading[0].abs().allclose(torch.full((5,), torch.pi), atol=1e-4)
+
+
+def test_ball_chase_position_target_is_full_when_the_ball_is_ahead():
+    control, ball = _goal_control(num_envs=1, max_speed=2.0)
+    ball._tar_pos = torch.tensor([[4.0, 0.0, 0.0]])    # dead ahead
+    control._deadline_ball[:] = float("nan")
+
+    xy, _ = control._rollout(
+        torch.zeros(1, 3), _yaw_quat(torch.tensor([0.0])), control._lead_times()
+    )
+
+    assert xy[0, -1, 0].item() == pytest.approx(4.0, abs=1e-4)

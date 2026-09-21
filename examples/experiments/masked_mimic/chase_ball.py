@@ -145,6 +145,10 @@ def _install_chase(cfg: EnvConfig, args: argparse.Namespace) -> None:
         ),
     }
 
+    from protomotions.envs.control.speed_probe import RootSpeedProbeConfig
+
+    cfg.control_components["speed_probe"] = RootSpeedProbeConfig(label="chase")
+
     # Wired but unused while this component does the driving: these are what a
     # learned high-level policy (or a VLA fine-tune) would train against. The
     # steering reward is dropped with the steering command it scored.

@@ -61,6 +61,14 @@ TWO_FEET_M = 0.6096
 # sprints the first four metres and then crawls the last one.
 _RANGE_BANDS = [(0.0, 1.0), (1.0, 2.0), (2.0, 4.0), (4.0, 99.0)]
 
+# Bearing-error bands (degrees) for the path-efficiency readout. Efficiency is
+# closing rate divided by actual speed: 1.0 is running straight at the ball,
+# 0.0 is moving without shortening the gap at all. It separates "slow" from
+# "fast but pointed wrong", which a speed number alone cannot -- the chase runs
+# at a median 1.86 m/s while the gap closes at ~1.2, so about a third of the
+# motion is going somewhere other than the ball.
+_BEARING_BANDS = [(0.0, 30.0), (30.0, 60.0), (60.0, 120.0), (120.0, 180.0)]
+
 
 @dataclass
 class BallChaseCommandSourceConfig(RandomTargetCommandSourceConfig):
@@ -110,6 +118,9 @@ class BallChaseCommandSource(RandomTargetCommandSource):
         self._report_prev_range = None
         self._report_band_sum = [0.0] * len(_RANGE_BANDS)
         self._report_band_n = [0] * len(_RANGE_BANDS)
+        self._eff_sum = [0.0] * len(_BEARING_BANDS)
+        self._eff_spd = [0.0] * len(_BEARING_BANDS)
+        self._eff_n = [0] * len(_BEARING_BANDS)
         self._report_catch_steps = []
 
     def reset(self, env_ids: Tensor) -> None:
@@ -134,6 +145,33 @@ class BallChaseCommandSource(RandomTargetCommandSource):
         self.steps_since_throw[ids] = 0
         self._set_random_target(ids)
 
+    def _accumulate_efficiency(self, rate: Tensor, sane: Tensor) -> None:
+        """How much of the dog's motion actually shortens the gap, by bearing.
+
+        High speed with a low closing rate means it is running hard in the
+        wrong direction -- arcing toward the ball rather than pivoting and
+        then sprinting. Speed alone cannot tell those apart.
+        """
+        env = self.control.env
+        root = env.simulator.get_root_state()
+        speed = root.root_vel[:, :2].norm(dim=-1)
+        delta = self.control._tar_pos[:, :2] - root.root_pos[:, :2]
+        heading = rotations.calc_heading(root.root_rot, True)
+        goal_heading = torch.atan2(delta[:, 1], delta[:, 0])
+        bearing = torch.rad2deg(
+            torch.atan2(
+                torch.sin(goal_heading - heading),
+                torch.cos(goal_heading - heading),
+            ).abs()
+        )
+        moving = sane & (speed > 0.2)
+        for i, (lo, hi) in enumerate(_BEARING_BANDS):
+            m = moving & (bearing >= lo) & (bearing < hi)
+            if bool(m.any()):
+                self._eff_sum[i] += float((rate[m] / speed[m]).sum())
+                self._eff_spd[i] += float(speed[m].sum())
+                self._eff_n[i] += int(m.sum())
+
     def _report(self, rng: Tensor) -> None:
         every = self.config.report_every_steps
         if every <= 0:
@@ -155,6 +193,7 @@ class BallChaseCommandSource(RandomTargetCommandSource):
                 if bool(m.any()):
                     self._report_band_sum[i] += float(rate[m].sum())
                     self._report_band_n[i] += int(m.sum())
+            self._accumulate_efficiency(rate, sane)
         self._report_prev_range = rng.clone()
         if self._report_steps < every:
             return
@@ -178,6 +217,16 @@ class BallChaseCommandSource(RandomTargetCommandSource):
             for i, (lo, hi) in enumerate(_RANGE_BANDS)
         )
         print(f"[ball-chase]   closing m/s by range: {bands}", flush=True)
+        eff = "  ".join(
+            (f"{lo:g}-{hi:g}deg eff {self._eff_sum[i]/self._eff_n[i]:+.2f} "
+             f"spd {self._eff_spd[i]/self._eff_n[i]:.2f}"
+             if self._eff_n[i] else f"{lo:g}-{hi:g}deg --")
+            for i, (lo, hi) in enumerate(_BEARING_BANDS)
+        )
+        print(f"[ball-chase]   by bearing: {eff}", flush=True)
+        self._eff_sum = [0.0] * len(_BEARING_BANDS)
+        self._eff_spd = [0.0] * len(_BEARING_BANDS)
+        self._eff_n = [0] * len(_BEARING_BANDS)
         self._report_steps = 0
         self._report_catches = 0
         self._report_range_sum = 0.0
@@ -303,6 +352,38 @@ class MaskedMimicGoalControlConfig(MaskedMimicSteeringControlConfig):
     # should be ALONG the way, and two positions at two times ARE a velocity
     # -- which is how mimic playback never leaves the pace open.
     visible_targets: int = 1
+    # Bearing gate on the POSITION target only; the rotation target always
+    # faces the ball. Measured, the dog's motion is counterproductive when the
+    # ball is behind it:
+    #
+    #     bearing        efficiency   speed
+    #     0-30 deg         +0.94      2.02
+    #     30-60 deg        +0.78      1.44
+    #     60-120 deg       +0.25      1.10
+    #     120-180 deg      -0.64      1.35   <- running AWAY at 1.35 m/s
+    #
+    # Efficiency is closing rate over speed. Negative means it drives forward
+    # and curves round instead of pivoting, so a position commanded BEHIND the
+    # dog produces velocity pointing away from it. Holding the position target
+    # near the robot while the bearing is large deletes that instruction: only
+    # the facing stays live, so the dog pivots, and the position extends toward
+    # the ball as it comes round.
+    #
+    # This is structurally the cos(bearing) scale Eric cut earlier, but that
+    # was framed as a speed throttle and tested under an impossible deadline.
+    # It is not a throttle: at 120-180 deg the useful speed is already
+    # negative. Set position_gate_zero_deg <= position_gate_full_deg to
+    # disable it.
+    # DISABLED by default: measured, and it made the thing it targeted WORSE.
+    # Holding the position target on the robot did not produce a pivot -- the
+    # 120-180 deg band went from -0.66 to -0.88 efficiency and catches fell
+    # 13.6 -> 13.1/min. The dog drives forward when the ball is behind it
+    # REGARDLESS of what the position target says; removing the (weak) pull
+    # toward the ball only removed what little closing there was. The forward
+    # motion is the policy's own prior, not something this file commands, so
+    # no reshaping of the target here can fix it.
+    position_gate_full_deg: float = 60.0
+    position_gate_zero_deg: float = 0.0
     min_horizon_sec: float = 0.05
     max_horizon_sec: float = 15.0
 
@@ -445,7 +526,22 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         heading = torch.atan2(direction[:, 1], direction[:, 0])
 
         steps = self.config.num_masked_future_steps
-        frac = self._fractions().view(1, steps, 1)
+        # Bearing gate: hold the position target near the robot while the
+        # ball is behind, so the only live instruction is "turn".
+        full = self.config.position_gate_full_deg
+        zero = self.config.position_gate_zero_deg
+        if zero > full:
+            cur = rotations.calc_heading(root_rot, True)
+            bearing = torch.rad2deg(
+                torch.atan2(
+                    torch.sin(heading - cur), torch.cos(heading - cur)
+                ).abs()
+            )
+            gate = ((zero - bearing) / (zero - full)).clamp(0.0, 1.0)
+        else:
+            gate = torch.ones_like(heading)
+
+        frac = self._fractions().view(1, steps, 1) * gate.view(-1, 1, 1)
         # Each visible slot sits the same fraction of the way along as it does
         # through the remaining time, so together they state a steady PACE to
         # the ball rather than only its endpoint.
