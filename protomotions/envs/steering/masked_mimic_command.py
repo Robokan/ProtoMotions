@@ -247,12 +247,21 @@ class MaskedMimicSteeringControl(MaskedMimicControl):
         # the max is a single-frame spike (4.10 m/s on the go2) while p99
         # (2.44) sits at the fastest sustained gait (fastest clip mean 2.60).
         self._corpus_max_speed = float(speed.quantile(0.99))
+        # Same statistic for the turn, for the same reason: the deadline
+        # budgets |bearing| / top_yaw, and the corpus max is a spike (6.93
+        # rad/s on the go2) while p99 (3.51) is the fastest pivot it sustains.
+        # Left unset, ball_chase falls back to 1.0 rad/s and budgets a 180 deg
+        # turn at 3.1 s -- the dog then turns slowly, exactly on schedule.
+        yaw_rate = state.rigid_body_ang_vel[:, 0, 2].abs()
+        self._corpus_max_yaw = float(yaw_rate.quantile(0.99))
         print(
             f"[mm-steering] commanded root height from corpus: "
             f"{self._height_a:.4f} + {self._height_b:.4f}*speed, clamped to "
             f"[{self._height_lo:.4f}, {self._height_hi:.4f}] "
             f"(robot default_root_height is "
-            f"{self.env.robot_config.default_root_height:.4f})",
+            f"{self.env.robot_config.default_root_height:.4f}); "
+            f"corpus p99 speed {self._corpus_max_speed:.2f} m/s, "
+            f"p99 yaw rate {self._corpus_max_yaw:.2f} rad/s",
             flush=True,
         )
 

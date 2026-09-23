@@ -314,7 +314,9 @@ class MaskedMimicGoalControlConfig(MaskedMimicSteeringControlConfig):
             threshold and parks it just outside -- measured, mean range stuck
             at 1.2-2.8 m against 4.4-5.3 m when aiming at the ball.
         max_speed: The robot's top speed, used ONLY to turn a distance into
-            a deadline: horizon = range / max_speed. Not a cap -- nothing
+            a deadline: horizon = |bearing| / max_yaw_rate + range / max_speed
+            (see _set_deadline; max_yaw_rate defaults to the corpus p99 yaw
+            rate, measured alongside this). Not a cap -- nothing
             clamps what the dog attempts, and it may beat the deadline or miss
             it. Using the TOP speed rather than a comfortable one is the point
             (Eric): it makes the deadline the most urgent one physics allows,
