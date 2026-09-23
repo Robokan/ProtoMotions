@@ -319,8 +319,14 @@ class RecordingMixin:
                         f"Started recording to folder {self._curr_user_recording_name}"
                     )
                 else:
-                    # Finalize recording and create video
-                    from moviepy import ImageSequenceClip
+                    # Finalize recording and create video. moviepy moved this
+                    # to the top-level namespace in 2.x; Isaac Lab 3 pins
+                    # moviepy<2 (2.x caps pillow<12, below its pillow floor),
+                    # so boxes running Lab 3 only have the 1.x editor module.
+                    try:
+                        from moviepy import ImageSequenceClip
+                    except ImportError:
+                        from moviepy.editor import ImageSequenceClip
 
                     image_dir = self._curr_user_recording_name
                     images = sorted(
