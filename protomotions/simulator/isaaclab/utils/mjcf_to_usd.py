@@ -29,7 +29,7 @@ from protomotions.robot_configs.base import RobotAssetConfig
 _CONVERSION_CACHE: Dict[Tuple[Any, ...], str] = {}
 
 ConverterFactory = Callable[..., str]
-_MJCF_CONVERTER_CACHE_VERSION = "isaaclab3-d6-workaround-v2"
+_MJCF_CONVERTER_CACHE_VERSION = "isaaclab3-d6-workaround-v3-textures"
 _DEFAULT_ASSET_ROOT = "protomotions/data/assets"
 
 
@@ -367,6 +367,7 @@ def convert_mjcf_to_usd(
         usd_path = _absolute_path(converter_factory(**factory_kwargs))
         if Path(usd_path).is_file():
             sanitize_converted_mjcf_usd(usd_path)
+            bind_mjcf_diffuse_textures(usd_path, cfg_kwargs["asset_path"])
         cache_store[key] = usd_path
         if Path(usd_path).is_file():
             _publish_completed_conversion(marker_path, usd_path)
@@ -470,6 +471,181 @@ def convert_robot_mjcf_to_usd(
         merge_mesh=merge_mesh,
         collision_from_visuals=collision_from_visuals,
     )
+
+
+# Per-family PBR values and exceptions carried over from
+# usd_convert/patch_atlas_usd_bindings.py (hand-tuned for the Atlas2025 rig
+# under Omniverse renderers). Families not listed use the painted-metal
+# default. Dark families (Plastic's diffuse averages 0.1) must be dielectric
+# (metallic 0) or they render as environment-gray.
+_FAMILY_PBR = {
+    "Plastic": (0.0, 0.56),
+    "Emission": (0.0, 0.5),
+    "Bbody": (0.0, 0.48),
+}
+_FAMILY_PBR_DEFAULT = (0.4, 0.5)
+# Families rendered as a plain color constant instead of their texture.
+# Emission's shipped texture is a flat green (std ~0.01) — nothing is lost,
+# and a constant stays editable in the GUI.
+_FAMILY_CONSTANT_COLOR = {
+    "Emission": (0.341, 0.906, 0.349),
+}
+
+
+def _parse_mjcf_material_textures(mjcf_path: str) -> Dict[str, Path]:
+    """Map MJCF material names to their (existing) diffuse texture files.
+
+    Follows the same path convention as ``_mjcf_fingerprint``: texture file
+    references resolve against ``<compiler texturedir>`` relative to the MJCF
+    directory. Materials whose texture file is missing are omitted.
+    """
+    root_path = Path(_absolute_path(mjcf_path))
+    try:
+        root = ET.fromstring(root_path.read_bytes())
+    except (OSError, ET.ParseError):
+        return {}
+    compiler = root.find("compiler")
+    texture_dir = compiler.get("texturedir", "") if compiler is not None else ""
+    textures: Dict[str, Path] = {}
+    for element in root.iter("texture"):
+        name, reference = element.get("name"), element.get("file")
+        if not name or not reference:
+            continue
+        reference_path = Path(reference).expanduser()
+        if texture_dir and not reference_path.is_absolute():
+            reference_path = Path(texture_dir).expanduser() / reference_path
+        textures[name] = Path(
+            _absolute_path(root_path.parent / reference_path)
+        )
+    family_textures: Dict[str, Path] = {}
+    for element in root.iter("material"):
+        name, texture_name = element.get("name"), element.get("texture")
+        if name and texture_name in textures and textures[texture_name].is_file():
+            family_textures[name] = textures[texture_name]
+    return family_textures
+
+
+def bind_mjcf_diffuse_textures(usd_path: str, mjcf_path: str) -> None:
+    """Wire the MJCF's diffuse textures into the converted USD's materials.
+
+    The Isaac Sim 6 MuJoCo converter binds visual meshes to per-instance
+    materials that reference family templates in ``payloads/materials.usda``,
+    but (a) drops every MJCF texture, authoring plain white
+    ``UsdPreviewSurface`` templates, and (b) writes only ONE family template,
+    leaving the other instances' references dangling — the whole robot
+    renders untextured. This pass rebuilds the family templates from the
+    MJCF's ``<texture>``/``<material>`` tables: missing templates are cloned
+    from the authored one, texture images are copied under ``Textures/`` next
+    to the root layer, and each family's ``diffuseColor`` is driven by a
+    ``UsdUVTexture`` (visual meshes carry ``primvars:st``).
+
+    Purely cosmetic; failures are reported but never abort the conversion.
+    """
+    try:
+        _bind_mjcf_diffuse_textures(usd_path, mjcf_path)
+    except Exception as error:  # pragma: no cover - defensive, visual-only
+        print(
+            f"[WARN] bind_mjcf_diffuse_textures: leaving {usd_path} "
+            f"untextured ({type(error).__name__}: {error})"
+        )
+
+
+def _bind_mjcf_diffuse_textures(usd_path: str, mjcf_path: str) -> None:
+    import shutil
+
+    from pxr import Gf, Sdf, Usd, UsdShade
+
+    family_textures = _parse_mjcf_material_textures(mjcf_path)
+    if not family_textures:
+        return
+    usd_root = Path(usd_path).parent
+    materials_path = usd_root / "payloads" / "materials.usda"
+    if not materials_path.is_file():
+        return
+
+    stage = Usd.Stage.Open(str(materials_path))
+    if stage is None:
+        return
+    scope = stage.GetPrimAtPath("/Materials")
+    if not scope:
+        return
+    template = next(
+        (child for child in scope.GetChildren() if child.IsA(UsdShade.Material)),
+        None,
+    )
+    if template is None or not template.GetChild("PreviewSurface"):
+        return
+
+    textures_dir = usd_root / "Textures"
+    textures_dir.mkdir(exist_ok=True)
+    layer = stage.GetRootLayer()
+
+    for family, texture_path in sorted(family_textures.items()):
+        material_path = Sdf.Path(f"/Materials/{family}")
+        if not stage.GetPrimAtPath(material_path):
+            Sdf.CopySpec(layer, template.GetPath(), layer, material_path)
+        material = UsdShade.Material(stage.GetPrimAtPath(material_path))
+        surface = UsdShade.Shader(
+            stage.GetPrimAtPath(material_path.AppendChild("PreviewSurface"))
+        )
+        if not material or not surface:
+            continue
+
+        # Clones keep the template's absolute connection paths; repoint the
+        # material outputs and shader inputs at this family's own prims.
+        for output_name in ("surface", "displacement"):
+            material.CreateOutput(
+                output_name, Sdf.ValueTypeNames.Token
+            ).ConnectToSource(
+                surface.CreateOutput(output_name, Sdf.ValueTypeNames.Token)
+            )
+        for input_name, value_type in (
+            ("metallic", Sdf.ValueTypeNames.Float),
+            ("roughness", Sdf.ValueTypeNames.Float),
+            ("opacity", Sdf.ValueTypeNames.Float),
+            ("diffuseColor", Sdf.ValueTypeNames.Color3f),
+        ):
+            surface.CreateInput(input_name, value_type).GetAttr().ClearConnections()
+
+        metallic, roughness = _FAMILY_PBR.get(family, _FAMILY_PBR_DEFAULT)
+        surface.GetInput("metallic").Set(metallic)
+        surface.GetInput("roughness").Set(roughness)
+        surface.GetInput("opacity").Set(1.0)
+
+        constant = _FAMILY_CONSTANT_COLOR.get(family)
+        if constant is not None:
+            surface.GetInput("diffuseColor").Set(Gf.Vec3f(*constant))
+            continue
+
+        local_texture = textures_dir / texture_path.name
+        if not local_texture.is_file():
+            shutil.copy2(texture_path, local_texture)
+        reader = UsdShade.Shader.Define(
+            stage, material_path.AppendChild("stReader")
+        )
+        reader.CreateIdAttr("UsdPrimvarReader_float2")
+        reader.CreateInput("varname", Sdf.ValueTypeNames.Token).Set("st")
+        texture = UsdShade.Shader.Define(
+            stage, material_path.AppendChild("diffuseTex")
+        )
+        texture.CreateIdAttr("UsdUVTexture")
+        # Layer-relative: materials.usda sits in payloads/, images one level up.
+        texture.CreateInput("file", Sdf.ValueTypeNames.Asset).Set(
+            f"../Textures/{local_texture.name}"
+        )
+        texture.CreateInput("st", Sdf.ValueTypeNames.Float2).ConnectToSource(
+            reader.CreateOutput("result", Sdf.ValueTypeNames.Float2)
+        )
+        texture.CreateInput("sourceColorSpace", Sdf.ValueTypeNames.Token).Set(
+            "sRGB"
+        )
+        for wrap in ("wrapS", "wrapT"):
+            texture.CreateInput(wrap, Sdf.ValueTypeNames.Token).Set("repeat")
+        surface.GetInput("diffuseColor").ConnectToSource(
+            texture.CreateOutput("rgb", Sdf.ValueTypeNames.Float3)
+        )
+
+    layer.Save()
 
 
 def clear_mjcf_usd_conversion_cache() -> None:
