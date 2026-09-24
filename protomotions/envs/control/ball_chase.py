@@ -465,6 +465,23 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
             (env.num_envs, 2), float("nan"), device=env.device
         )
 
+    def reset(self, env_ids: Tensor) -> None:
+        """Forget the throw's deadline so the first real step re-issues it.
+
+        The inherited reset calls _lead_times() while progress_buf still holds
+        its PRE-reset value (env.reset zeroes it only after the control
+        components reset). After the R key that value is the 100000000000-step
+        sentinel user_reset() plants: a clock of ~2e9 s, where float32 spacing
+        is 128 s and the whole budget rounds away. Left alone, the deadline is
+        stamped two billion seconds out, the ball re-throw is stamped against
+        the same clock, nothing ever moves the ball again, and the dog ambles
+        at clip-playback pace for the rest of the run. Clearing the anchors
+        here forces a clean restart on the next step, when the clock is zero.
+        """
+        super().reset(env_ids)
+        self._deadline[env_ids] = 0.0
+        self._deadline_ball[env_ids] = float("nan")
+
     def _top_speed(self) -> float:
         """The robot's top speed, measured from the corpus unless configured."""
         if self.config.max_speed is not None:
@@ -544,7 +561,12 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         restart = expired | ~torch.isfinite(moved) | (moved > 1e-4)
         if bool(restart.any()):
             self._set_deadline(restart)
-        remaining = (self._deadline - now).clamp_min(self.config.min_horizon_sec)
+        # Both bounds, not just the floor: max_horizon_sec caps the BUDGET at
+        # issue time, but a stale deadline (clock rewound under it) would
+        # otherwise pass straight through here as an absurd lead time.
+        remaining = (self._deadline - now).clamp(
+            self.config.min_horizon_sec, self.config.max_horizon_sec
+        )
         return remaining.unsqueeze(-1) * self._fractions().unsqueeze(0)
 
     def _set_deadline(self, env_ids: Tensor) -> None:
