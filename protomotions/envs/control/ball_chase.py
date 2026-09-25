@@ -24,6 +24,13 @@ goal, so arrival slows by construction.
 
 It is also the format a VLA will emit, which matters for what this is FOR.
 
+Which is why the chase can also be run UNPRIVILEGED (``--unprivileged``): the
+demonstrator is then restricted to what a front camera would show it, and when
+the ball is not in frame it believes -- correctly, most of the time -- that the
+ball is behind, which makes it turn and look. A demonstrator that tracks a ball
+through the back of its own head teaches a student that cannot. See
+``MaskedMimicGoalControlConfig.fov_deg``.
+
 That split is the point for data collection. The pursuit controller is a
 demonstrator: it produces (what the robot sees, where the ball is) ->
 (MaskedMimic targets) pairs at whatever scale you want to run envs, which is
@@ -32,6 +39,7 @@ Swap BallPursuitControl for a learned high-level policy later and the rest of
 the task -- ball, success radius, markers, obs, reward -- is unchanged.
 """
 
+import math
 from dataclasses import dataclass, field
 from typing import Optional, TYPE_CHECKING, Tuple
 
@@ -502,6 +510,44 @@ class MaskedMimicGoalControlConfig(MaskedMimicSteeringControlConfig):
     min_horizon_sec: float = 0.05
     max_horizon_sec: float = 15.0
 
+    # ------------------------------------------------------------------
+    # Unprivileged sight: what the dog would actually know from a camera
+    # ------------------------------------------------------------------
+    # The chase as shipped is PRIVILEGED -- the ball's position is read
+    # straight out of the simulator, including when it is behind the robot.
+    # A go2 cannot see behind itself, and a VLA watching its front camera
+    # will not be handed that either, so a demonstrator trained on
+    # privileged targets teaches a behaviour the student cannot reproduce:
+    # the moment the ball leaves the frame the expert keeps tracking it and
+    # the student has nothing to track it with.
+    #
+    # fov_deg > 0 takes the truth away. The ball is KNOWN only while it
+    # falls inside a forward cone of this total width (yaw only -- the
+    # camera is modelled as a heading-frame wedge, not a pinhole: pitch and
+    # roll do not gate it, and nothing occludes). Outside it the dog holds
+    # a BELIEF instead, and the belief is the one a dog actually acts on:
+    # if I cannot see it, it is behind me. That belief is a position target
+    # behind the robot, so the existing machinery turns it into a pivot,
+    # and pivoting sweeps the camera -- the search falls out of the belief
+    # rather than being a separate mode with its own controller.
+    #
+    # 0 disables all of this and restores the privileged chase exactly.
+    fov_deg: float = 0.0
+    # How far the ball can be recognised at all. 0 = unlimited (the cone is
+    # then the only gate).
+    sight_range_m: float = 0.0
+    # The belief when blind: the ball is this many degrees off the current
+    # heading (180 = directly behind, the default and the honest prior) at
+    # search_range_m. Latched in WORLD coordinates when the plan is issued,
+    # not recomputed per step -- a belief that rotates with the robot is a
+    # carrot on a stick and the dog spins without ever arriving at it.
+    # Below 180 the sign matters and the search keeps turning the way the
+    # ball was last seen leaving, which sweeps one direction consistently.
+    search_turn_deg: float = 180.0
+    # Near enough that the leg is mostly pivot (the part that actually
+    # searches) and the target stays inside the trained displacement range.
+    search_range_m: float = 1.5
+
 
 class MaskedMimicGoalControl(MaskedMimicSteeringControl):
     """Base-link targets that say "be at the ball, facing it, by then".
@@ -556,6 +602,39 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         # robot whose estimate improves as it closes).
         self._intercept_xy = torch.zeros(env.num_envs, 2, device=env.device)
 
+        # --- belief state (unprivileged mode; inert when fov_deg == 0) ---
+        # Is the ball in view RIGHT NOW. Privileged mode pins this True.
+        self._ball_seen = torch.full(
+            (env.num_envs,), not self._unprivileged(), dtype=torch.bool,
+            device=env.device,
+        )
+        # The latched "it must be behind me" point, used while blind.
+        self._search_xy = torch.zeros(env.num_envs, 2, device=env.device)
+        # Which way to sweep: +1 left, -1 right. Set to the side the ball
+        # was last seen leaving on.
+        self._search_sign = torch.ones(env.num_envs, device=env.device)
+        # Bearing at the last honest sighting -- which side it was on when it
+        # was last actually visible. Not the bearing at the moment of loss:
+        # a catch re-throws the ball before the next look, so that reading
+        # would be of the NEW ball and would leak its position into the
+        # search direction.
+        self._last_bearing = torch.zeros(env.num_envs, device=env.device)
+        # Bumped whenever the BELIEF changes (acquired / lost). The deadline
+        # is keyed to this as well as to the ball's plan id, so acquiring the
+        # ball re-plans immediately instead of finishing the search leg.
+        self._epoch = torch.zeros(
+            env.num_envs, dtype=torch.long, device=env.device
+        )
+        self._deadline_epoch = torch.full(
+            (env.num_envs,), -1, dtype=torch.long, device=env.device
+        )
+        self._sight_steps = 0
+        self._sight_seen = 0
+        self._blind_run = torch.zeros(
+            env.num_envs, dtype=torch.long, device=env.device
+        )
+        self._blind_spans = []
+
     def reset(self, env_ids: Tensor) -> None:
         """Forget the throw's deadline so the first real step re-issues it.
 
@@ -569,9 +648,14 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         at clip-playback pace for the rest of the run. Clearing the anchors
         here forces a clean restart on the next step, when the clock is zero.
         """
+        # Look first: otherwise the inherited reset plans this env's first
+        # deadline against a stale belief and the dog opens with a search leg
+        # while the ball sits in front of it.
+        self._update_belief()
         super().reset(env_ids)
         self._deadline[env_ids] = 0.0
         self._deadline_plan[env_ids] = -1
+        self._deadline_epoch[env_ids] = -1
 
     def _top_speed(self) -> float:
         """The robot's top speed, measured from the corpus unless configured."""
@@ -642,6 +726,96 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
             return torch.zeros(self.env.num_envs, dtype=torch.long, device=self.env.device)
         return pid
 
+    # ------------------------------------------------------------------
+    # Sight and belief
+    # ------------------------------------------------------------------
+
+    def _unprivileged(self) -> bool:
+        """True when the dog has to earn the ball's position by looking."""
+        return self.config.fov_deg > 0.0
+
+    def _bearing_to(self, xy: Tensor) -> Tensor:
+        """Signed bearing to a planar point, in the robot's heading frame."""
+        root_state = self.env.simulator.get_root_state()
+        delta = xy - root_state.root_pos[:, :2]
+        heading = rotations.calc_heading(root_state.root_rot, True)
+        to = torch.atan2(delta[:, 1], delta[:, 0])
+        return torch.atan2(torch.sin(to - heading), torch.cos(to - heading))
+
+    def _in_view(self) -> Tensor:
+        """Is the ball inside the forward cone (and close enough to see)."""
+        ball = self._goal_xy()
+        seen = self._bearing_to(ball).abs() <= math.radians(self.config.fov_deg) * 0.5
+        if self.config.sight_range_m > 0:
+            root_state = self.env.simulator.get_root_state()
+            rng = torch.linalg.norm(ball - root_state.root_pos[:, :2], dim=-1)
+            seen = seen & (rng <= self.config.sight_range_m)
+        return seen
+
+    def _update_belief(self) -> None:
+        """Look, and note the moments the answer changes.
+
+        Only the CHANGES matter downstream: acquiring or losing the ball
+        bumps the epoch, which is what makes the deadline re-plan. While the
+        answer holds steady nothing re-plans, exactly as with a moving ball
+        whose velocity is known -- see _lead_times.
+        """
+        if not self._unprivileged():
+            return
+        seen = self._in_view()
+        lost = self._ball_seen & ~seen
+        if bool(lost.any()):
+            # Sweep after it: it left the frame on one side, so keep turning
+            # that way rather than guessing. (Only bites below 180 deg.)
+            side = torch.where(
+                self._last_bearing >= 0,
+                torch.ones_like(self._search_sign),
+                -torch.ones_like(self._search_sign),
+            )
+            self._search_sign = torch.where(lost, side, self._search_sign)
+        changed = lost | (seen & ~self._ball_seen)
+        if bool(changed.any()):
+            self._epoch[changed] += 1
+        self._ball_seen = seen
+        if bool(seen.any()):
+            self._last_bearing = torch.where(
+                seen, self._bearing_to(self._goal_xy()), self._last_bearing
+            )
+
+    def _latch_search(self, env_ids: Tensor) -> None:
+        """Believe the ball is behind, and nail that belief to the ground.
+
+        Placing it in world coordinates is the whole trick: the dog turns
+        toward a point that stays put, so the turn ends. Re-deriving "behind
+        me" every step would move the point with the robot and the dog would
+        rotate forever at a fixed bearing error.
+        """
+        root_state = self.env.simulator.get_root_state()
+        heading = rotations.calc_heading(root_state.root_rot, True)
+        ang = heading + self._search_sign * math.radians(self.config.search_turn_deg)
+        point = root_state.root_pos[:, :2] + self.config.search_range_m * torch.stack(
+            [torch.cos(ang), torch.sin(ang)], dim=-1
+        )
+        self._search_xy[env_ids] = point[env_ids]
+
+    def _belief_xy(self) -> Tensor:
+        """Where the dog thinks the ball is. The truth when privileged."""
+        if not self._unprivileged():
+            return self._goal_xy()
+        return torch.where(
+            self._ball_seen.unsqueeze(-1), self._goal_xy(), self._search_xy
+        )
+
+    def _belief_vel(self) -> Tensor:
+        """Believed ball velocity -- zero for a belief, which is not moving."""
+        if not self._unprivileged():
+            return self._ball_vel()
+        return torch.where(
+            self._ball_seen.unsqueeze(-1),
+            self._ball_vel(),
+            torch.zeros_like(self._search_xy),
+        )
+
     def _target_xy(self) -> Tensor:
         """The point to run at: where the ball will be when the deadline arrives.
 
@@ -655,13 +829,17 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         if a better estimate reveals it cannot be met, it expires and
         _lead_times re-plans from where the dog actually is.
         (_ball_vel() is where an estimated velocity would plug in.)
+
+        Unprivileged: this is the BELIEF, not the ball -- the sighting while
+        it is in view, the latched point behind the robot while it is not.
         """
         have = (self._deadline_plan >= 0).unsqueeze(-1)
         remaining = (self._deadline - self._now()).clamp(
             self.config.min_horizon_sec, self.config.max_horizon_sec
         )
-        live = self._goal_xy() + self._ball_vel() * remaining.unsqueeze(-1)
-        return torch.where(have, live, self._goal_xy())
+        ball = self._belief_xy()
+        live = ball + self._belief_vel() * remaining.unsqueeze(-1)
+        return torch.where(have, live, ball)
 
     def _intercept_run_time(self, delta: Tensor, vel: Tensor, tau: Tensor) -> Tensor:
         """Running time s (after a turn of tau) to meet a ball moving at vel.
@@ -723,7 +901,13 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         # Restart per THROW, never per ball movement: a moving ball changes
         # position every step, and a deadline re-issued every step is the
         # standing maximum-urgency demand the docstring above warns of.
-        restart = expired | (self._plan_id() != self._deadline_plan)
+        # A throw or course change is only news if the dog can SEE it. When
+        # blind, the ball's plan id is privileged information -- keying off it
+        # would let the dog re-plan on a re-throw it has no way of noticing.
+        plan_changed = self._plan_id() != self._deadline_plan
+        if self._unprivileged():
+            plan_changed = plan_changed & self._ball_seen
+        restart = expired | plan_changed | (self._epoch != self._deadline_epoch)
         if bool(restart.any()):
             self._set_deadline(restart)
         # Both bounds, not just the floor: max_horizon_sec caps the BUDGET at
@@ -737,9 +921,22 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
     def _set_deadline(self, env_ids: Tensor) -> None:
         """Budget range / top_speed from now: the most urgent time the robot
         could actually meet, fixed for the rest of this throw."""
+        mask = torch.zeros(
+            self.env.num_envs, dtype=torch.bool, device=self.env.device
+        )
+        mask[env_ids] = True
+        if self._unprivileged():
+            # Planning with nothing in view: (re-)latch the belief behind the
+            # robot. Doing it HERE and only here means every search leg --
+            # the first one, and each one after the previous expires -- is
+            # measured from the heading the dog has now, so consecutive legs
+            # keep the sweep going instead of re-aiming at the same point.
+            blind = mask & ~self._ball_seen
+            if bool(blind.any()):
+                self._latch_search(blind)
         root_state = self.env.simulator.get_root_state()
         root_pos = root_state.root_pos
-        ball = self._goal_xy()
+        ball = self._belief_xy()
         delta = ball - root_pos[:, :2]
         aim = (
             torch.linalg.norm(delta, dim=-1) - self.config.stop_distance
@@ -765,7 +962,7 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         # Solve for the running time to meet the ball, then refine the turn
         # against the intercept point itself (the dog turns toward where it is
         # going, not toward where the ball is now) and solve once more.
-        vel = self._ball_vel()
+        vel = self._belief_vel()
         tau = bearing / self._top_yaw()
         run = self._intercept_run_time(delta, vel, tau)
         # Fixed point: the turn depends on where the intercept is, and the
@@ -791,6 +988,44 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         # arrives. _target_xy() recomputes the same quantity live each step.
         self._intercept_xy[env_ids] = (ball + vel * budget.unsqueeze(-1))[env_ids]
         self._deadline_plan[env_ids] = self._plan_id()[env_ids]
+        self._deadline_epoch[env_ids] = self._epoch[env_ids]
+
+    def step(self) -> None:
+        """Look first, then plan. The ball component has already moved."""
+        self._update_belief()
+        super().step()
+        self._report_sight()
+
+    def _report_sight(self) -> None:
+        """How much of the chase is spent blind, and how long a search takes."""
+        every = self.config.report_every_steps
+        if every <= 0 or not self._unprivileged():
+            return
+        self._sight_steps += 1
+        self._sight_seen += int(self._ball_seen.sum())
+        self._blind_run[~self._ball_seen] += 1
+        done = self._ball_seen & (self._blind_run > 0)
+        if bool(done.any()):
+            self._blind_spans.extend(self._blind_run[done].tolist())
+            self._blind_run[done] = 0
+        if self._sight_steps < every:
+            return
+        steps = max(self._sight_steps * self.env.num_envs, 1)
+        spans = self._blind_spans
+        blind_s = (
+            sum(spans) / len(spans) * self.env.dt if spans else float("nan")
+        )
+        print(
+            f"[chase-vision] ball in view {100.0 * self._sight_seen / steps:.0f}% "
+            f"of steps, {len(spans)} reacquisitions, mean {blind_s:.1f} s to "
+            f"find it (fov {self.config.fov_deg:.0f} deg, search "
+            f"{self.config.search_turn_deg:.0f} deg at "
+            f"{self.config.search_range_m:.1f} m)",
+            flush=True,
+        )
+        self._sight_steps = 0
+        self._sight_seen = 0
+        self._blind_spans = []
 
     def _rollout(
         self, root_pos: Tensor, root_rot: Tensor, lead: Tensor
@@ -835,7 +1070,7 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         the target asks for.
         """
         root_state = self.env.simulator.get_root_state()
-        delta = self._goal_xy() - root_state.root_pos[:, :2]
+        delta = self._belief_xy() - root_state.root_pos[:, :2]
         rng = torch.linalg.norm(delta, dim=-1)
         heading = rotations.calc_heading(root_state.root_rot, True)
         goal_heading = torch.atan2(delta[:, 1], delta[:, 0])

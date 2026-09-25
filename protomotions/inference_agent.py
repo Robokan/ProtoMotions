@@ -362,9 +362,95 @@ def apply_command_source_overrides(env_config, command_source_specs):
             )
 
 
+_EXPERIMENT_MODULE = {}
+
+
+def load_experiment_module(experiment_path: str):
+    """Import an experiment .py once, with the repo root importable.
+
+    Experiment files import from sibling packages (`from examples.experiments
+    ... import ...`), which only resolves with the repo root on sys.path --
+    the same fix train_agent.py carries.
+    """
+    if experiment_path in _EXPERIMENT_MODULE:
+        return _EXPERIMENT_MODULE[experiment_path]
+    import importlib.util
+    import sys
+    from pathlib import Path as _Path
+
+    _repo_root = str(_Path(__file__).resolve().parent.parent)
+    if _repo_root not in sys.path:
+        sys.path.insert(0, _repo_root)
+
+    spec = importlib.util.spec_from_file_location(
+        "experiment_module", experiment_path
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    _EXPERIMENT_MODULE[experiment_path] = module
+    return module
+
+
+class _SkipTakenFlags:
+    """add_argument proxy that drops options the parser already owns.
+
+    An experiment's flags are registered on top of this script's, and the two
+    sets were written independently -- a collision would otherwise be an
+    ArgumentError at startup. This script's own flag wins; the experiment's
+    duplicate is skipped rather than silently redefining it.
+    """
+
+    def __init__(self, parser):
+        self._parser = parser
+
+    def add_argument(self, *args, **kwargs):
+        taken = {opt for act in self._parser._actions for opt in act.option_strings}
+        if any(isinstance(a, str) and a.startswith("-") and a in taken for a in args):
+            return None
+        return self._parser.add_argument(*args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._parser, name)
+
+
+def register_experiment_arguments(parser, experiment_path: str) -> None:
+    """Let the experiment file add its own flags to this script's parser.
+
+    Training goes through the experiment's parser and so has always accepted
+    task flags (--unprivileged, --moving-ball, --throw-max ...). Inference did
+    not: it parses only its own, strictly, so every task flag was a hard
+    "unrecognized arguments" error -- and the workaround, spelling each one as
+    --overrides env.control_components.<name>.<field>=..., requires knowing the
+    internal config path. Same flags, both entry points.
+    """
+    try:
+        experiment = load_experiment_module(experiment_path)
+    except Exception:
+        log.warning(
+            f"Could not load {experiment_path} to register its arguments; "
+            "task flags will not be recognized.", exc_info=True
+        )
+        return
+    add = getattr(experiment, "additional_experiment_arguments", None)
+    if add is None:
+        return
+    try:
+        add(_SkipTakenFlags(parser))
+    except Exception:
+        log.warning(
+            f"additional_experiment_arguments from {experiment_path} failed; "
+            "its task flags will not be recognized.", exc_info=True
+        )
+
+
 def main():
     # Re-use the parser and args from module level
     global parser, args
+    # The module-level parse is lenient (parse_known_args, so the simulator
+    # can be imported before torch); this one is strict. Give the experiment
+    # its flags first, or they fail here as unrecognized.
+    if args.experiment_path is not None:
+        register_experiment_arguments(parser, args.experiment_path)
     args = parser.parse_args()
 
     checkpoint = Path(args.checkpoint)
@@ -502,22 +588,7 @@ def main():
     # experiment file; if omitted, checkpoints trained before the hook was
     # wired in keep their frozen behavior.
     if args.experiment_path is not None:
-        import importlib.util
-        import sys
-        from pathlib import Path as _Path
-
-        # Same fix as train_agent.py: experiment files import from sibling
-        # packages (`from examples.experiments... import ...`), which only
-        # resolves with the repo root on sys.path.
-        _repo_root = str(_Path(__file__).resolve().parent.parent)
-        if _repo_root not in sys.path:
-            sys.path.insert(0, _repo_root)
-
-        spec = importlib.util.spec_from_file_location(
-            "experiment_module", args.experiment_path
-        )
-        experiment = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(experiment)
+        experiment = load_experiment_module(args.experiment_path)
         if hasattr(experiment, "apply_inference_overrides"):
             log.info(
                 f"Applying apply_inference_overrides from {args.experiment_path}"

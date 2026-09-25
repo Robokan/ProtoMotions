@@ -54,6 +54,13 @@ _DEFAULTS = {
     "ball_speed_min": 0.5,
     "ball_speed_max": 2.0,
     "ball_turn_mean_sec": 5.0,
+    "unprivileged": False,
+    # Roughly the go2's forward camera. Total cone width, yaw only.
+    "fov_deg": 120.0,
+    "sight_range": 0.0,
+    "search_turn_deg": 180.0,
+    "search_range": 1.5,
+    "horizon_sec": None,
 }
 
 
@@ -98,6 +105,27 @@ def additional_experiment_arguments(parser: argparse.ArgumentParser):
         "--ball-turn-mean-sec", type=float, default=_DEFAULTS["ball_turn_mean_sec"],
         help="Mean seconds between random direction changes of a moving ball "
              "(Poisson). Each change makes the dog re-plan. 0 disables.")
+    parser.add_argument(
+        "--unprivileged", action="store_true", default=_DEFAULTS["unprivileged"],
+        help="Take the ball's true position away: the dog only knows where it "
+             "is while it is inside the forward camera cone (--fov-deg). Out "
+             "of frame it believes the ball is behind it and turns to look. "
+             "This is the observation a VLA will have.")
+    parser.add_argument(
+        "--fov-deg", type=float, default=_DEFAULTS["fov_deg"],
+        help="Total width of the forward cone, degrees (--unprivileged only).")
+    parser.add_argument(
+        "--sight-range", type=float, default=_DEFAULTS["sight_range"],
+        help="How far the ball can be recognised (m). 0 = unlimited.")
+    parser.add_argument(
+        "--search-turn-deg", type=float, default=_DEFAULTS["search_turn_deg"],
+        help="Where the dog believes an unseen ball is, in degrees off its "
+             "current heading. 180 = directly behind. Below 180 the search "
+             "sweeps consistently toward the side the ball was last seen.")
+    parser.add_argument(
+        "--search-range", type=float, default=_DEFAULTS["search_range"],
+        help="How far away that believed ball sits (m). Small keeps the "
+             "search leg mostly a pivot.")
     parser.add_argument(
         "--horizon-sec", type=float, default=None,
         help="Lead time of the farthest conditioned target, i.e. how long the "
@@ -155,9 +183,7 @@ def _install_chase(cfg: EnvConfig, args: argparse.Namespace) -> None:
             num_masked_future_steps=trained.num_masked_future_steps,
             future_steps=trained.future_steps,
             bootstrap_on_episode_end=trained.bootstrap_on_episode_end,
-            horizon_sec=(
-                getattr(args, "horizon_sec", None) or trained.horizon_sec
-            ),
+            horizon_sec=(_arg(args, "horizon_sec") or trained.horizon_sec),
             height_mode=trained.height_mode,
             condition_rotation=trained.condition_rotation,
             report_every_steps=trained.report_every_steps,
@@ -165,6 +191,14 @@ def _install_chase(cfg: EnvConfig, args: argparse.Namespace) -> None:
             # Aim AT the ball; two feet is the success TEST, not the
             # destination. Aiming at the boundary parks the dog outside it.
             stop_distance=0.0,
+            # 0 = privileged: the ball's position is handed over even when it
+            # is behind the robot. --unprivileged replaces that with sight.
+            fov_deg=(
+                _arg(args, "fov_deg") if _arg(args, "unprivileged") else 0.0
+            ),
+            sight_range_m=_arg(args, "sight_range"),
+            search_turn_deg=_arg(args, "search_turn_deg"),
+            search_range_m=_arg(args, "search_range"),
         ),
     }
 
