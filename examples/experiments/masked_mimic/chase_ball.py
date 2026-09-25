@@ -60,6 +60,10 @@ _DEFAULTS = {
     "sight_range": 0.0,
     "search_turn_deg": 180.0,
     "search_range": 1.5,
+    # The VLA will see frames at this rate; the search sweeps slowly enough
+    # that the scene moves only search_deg_per_frame between two of them.
+    "vla_hz": 10.0,
+    "search_deg_per_frame": 10.0,
     "horizon_sec": None,
 }
 
@@ -126,6 +130,15 @@ def additional_experiment_arguments(parser: argparse.ArgumentParser):
         "--search-range", type=float, default=_DEFAULTS["search_range"],
         help="How far away that believed ball sits (m). Small keeps the "
              "search leg mostly a pivot.")
+    parser.add_argument(
+        "--vla-hz", type=float, default=_DEFAULTS["vla_hz"],
+        help="Frame rate of whatever will be doing the seeing. Sets how slowly "
+             "the dog sweeps while searching, so the ball cannot cross the "
+             "camera between two frames.")
+    parser.add_argument(
+        "--search-deg-per-frame", type=float, default=_DEFAULTS["search_deg_per_frame"],
+        help="How far the view may rotate between two of those frames. Search "
+             "yaw rate = this x --vla-hz, capped at the robot's top yaw.")
     parser.add_argument(
         "--horizon-sec", type=float, default=None,
         help="Lead time of the farthest conditioned target, i.e. how long the "
@@ -199,6 +212,8 @@ def _install_chase(cfg: EnvConfig, args: argparse.Namespace) -> None:
             sight_range_m=_arg(args, "sight_range"),
             search_turn_deg=_arg(args, "search_turn_deg"),
             search_range_m=_arg(args, "search_range"),
+            vla_hz=_arg(args, "vla_hz"),
+            search_deg_per_frame=_arg(args, "search_deg_per_frame"),
         ),
     }
 

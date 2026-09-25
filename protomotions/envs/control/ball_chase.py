@@ -547,6 +547,29 @@ class MaskedMimicGoalControlConfig(MaskedMimicSteeringControlConfig):
     # Near enough that the leg is mostly pivot (the part that actually
     # searches) and the target stays inside the trained displacement range.
     search_range_m: float = 1.5
+    # How fast to sweep. A search turned at the dog's top yaw rate is a
+    # search run blind: the VLA that has to do the seeing will be sampling at
+    # vla_hz, and between two of its frames the whole scene rotates by
+    # (yaw rate / vla_hz). At the corpus top yaw of ~3.2 rad/s that is 18 deg
+    # a frame, which is a lot of apparent motion to detect a small ball
+    # across -- and the answer it returns is already that stale by the time
+    # it acts on it. So the SEARCH leg is budgeted at a deliberate rate
+    # instead of the top one:
+    #
+    #     search yaw = search_deg_per_frame * vla_hz
+    #
+    # 10 deg at 10 Hz = 100 deg/s, which holds any bearing inside a 120 deg
+    # cone for 1.2 s -- 12 frames to notice a ball in, against 6 at top yaw,
+    # and consecutive frames overlap by more than 90% of the cone.
+    #
+    # The budget is the only thing that sets pace here (there is no rate
+    # limiter anywhere): a longer deadline for the same turn IS a slower
+    # turn, which is exactly how the slow-turn bug worked in reverse. Clamped
+    # to the top yaw rate, since budgeting faster than the robot can pivot
+    # just makes the deadline unmeetable. Only the search is slowed -- the
+    # moment the ball is acquired the chase re-plans at full speed.
+    vla_hz: float = 10.0
+    search_deg_per_frame: float = 10.0
 
 
 class MaskedMimicGoalControl(MaskedMimicSteeringControl):
@@ -558,6 +581,11 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
       * FACING -- straight at the ball, every slot, no rate limit.
       * WHEN   -- |bearing|/top_yaw + range/top_speed, so the turn is paid
                   for on top of the run.
+
+    Unprivileged (fov_deg > 0) adds a fourth: when the ball is not in view,
+    WHERE and FACING come from the belief that it is behind, and WHEN is
+    budgeted at a deliberate sweep rate rather than the top one, so whatever
+    is doing the looking gets enough frames to look in.
 
     It is never told to finish turning BEFORE running. That sequencing is what
     the bearing gates would add, and they are off by default because they were
@@ -693,6 +721,19 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
             return torch.ones_like(bearing)
         deg = torch.rad2deg(bearing.abs())
         return ((zero - deg) / (zero - full)).clamp(0.0, 1.0)
+
+    def _search_yaw(self) -> float:
+        """Yaw rate to budget a SEARCH leg at, in rad/s.
+
+        Slow enough that the policy doing the looking gets a usable number of
+        frames per cone-width of sweep -- see search_deg_per_frame. Never
+        faster than the robot can actually pivot.
+        """
+        rate = math.radians(
+            max(self.config.search_deg_per_frame, 1e-3)
+            * max(self.config.vla_hz, 1e-3)
+        )
+        return min(rate, self._top_yaw())
 
     def _top_yaw(self) -> float:
         """Top yaw rate, measured from the corpus unless configured."""
@@ -963,7 +1004,14 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         # against the intercept point itself (the dog turns toward where it is
         # going, not toward where the ball is now) and solve once more.
         vel = self._belief_vel()
-        tau = bearing / self._top_yaw()
+        # A search leg is swept at the deliberate rate; a leg planned against
+        # a real sighting is turned as fast as the dog can.
+        yaw_rate = torch.full_like(bearing, self._top_yaw())
+        if self._unprivileged():
+            yaw_rate = torch.where(
+                self._ball_seen, yaw_rate, torch.full_like(bearing, self._search_yaw())
+            )
+        tau = bearing / yaw_rate
         run = self._intercept_run_time(delta, vel, tau)
         # Fixed point: the turn depends on where the intercept is, and the
         # intercept depends on how long the turn takes. A few vectorized
@@ -975,7 +1023,7 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
             bearing = torch.atan2(
                 torch.sin(heading2 - heading), torch.cos(heading2 - heading)
             ).abs()
-            tau = bearing / self._top_yaw()
+            tau = bearing / yaw_rate
             run = self._intercept_run_time(delta, vel, tau)
         # (aim / top_speed is what `run` reduces to for a static ball.)
         budget = (tau + self._bearing_gate(bearing) * run).clamp(
@@ -1015,12 +1063,16 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         blind_s = (
             sum(spans) / len(spans) * self.env.dt if spans else float("nan")
         )
+        sweep = math.degrees(self._search_yaw())
+        dwell = self.config.fov_deg / max(sweep, 1e-6)
         print(
             f"[chase-vision] ball in view {100.0 * self._sight_seen / steps:.0f}% "
             f"of steps, {len(spans)} reacquisitions, mean {blind_s:.1f} s to "
             f"find it (fov {self.config.fov_deg:.0f} deg, search "
             f"{self.config.search_turn_deg:.0f} deg at "
-            f"{self.config.search_range_m:.1f} m)",
+            f"{self.config.search_range_m:.1f} m, sweep {sweep:.0f} deg/s = "
+            f"{dwell:.1f} s / {dwell * self.config.vla_hz:.0f} frames in view "
+            f"at {self.config.vla_hz:.0f} Hz)",
             flush=True,
         )
         self._sight_steps = 0
