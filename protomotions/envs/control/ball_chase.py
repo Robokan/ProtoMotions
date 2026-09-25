@@ -91,6 +91,20 @@ class BallChaseCommandSourceConfig(RandomTargetCommandSourceConfig):
     # the only thing that distinguishes a dog that is CHASING from one merely
     # wandering near a ball. 0 disables it.
     report_every_steps: int = 250
+    # Moving ball. Each throw also draws a velocity -- uniform random
+    # direction, speed in [ball_speed_min, ball_speed_max] m/s -- which the
+    # ball keeps until it is caught or re-thrown. The dog does not chase the
+    # ball's current position: MaskedMimicGoalControl aims at where the ball
+    # WILL be when the deadline arrives (an intercept), see _set_deadline.
+    # With target_bounds set the ball reflects off the edges; unbounded
+    # otherwise.
+    moving: bool = False
+    ball_speed_min: float = 0.5
+    ball_speed_max: float = 2.0
+    # A moving ball occasionally changes direction (and speed): a Poisson
+    # process with this mean interval in seconds. Each change is a new plan
+    # for the dog -- intercept and deadline are re-solved once. 0 disables.
+    ball_turn_mean_sec: float = 5.0
 
 
 class BallChaseCommandSource(RandomTargetCommandSource):
@@ -122,14 +136,68 @@ class BallChaseCommandSource(RandomTargetCommandSource):
         self._eff_spd = [0.0] * len(_BEARING_BANDS)
         self._eff_n = [0] * len(_BEARING_BANDS)
         self._report_catch_steps = []
+        # Ball velocity (m/s, planar); zeros unless config.moving.
+        self._tar_vel = torch.zeros(
+            control.env.num_envs, 2, device=control.env.device
+        )
+        # Incremented on every throw AND every direction change. The goal
+        # control keys its deadline to this, not to the ball's position, so a
+        # moving ball does not restart the deadline every step -- only when
+        # the plan genuinely changes.
+        self.plan_id = torch.zeros(
+            control.env.num_envs, dtype=torch.long, device=control.env.device
+        )
 
     def reset(self, env_ids: Tensor) -> None:
         super().reset(env_ids)
         self.steps_since_throw[env_ids] = 0
 
+    def _set_random_target(self, env_ids: Tensor) -> None:
+        """A throw: place the ball (base behaviour), then give it a velocity."""
+        super()._set_random_target(env_ids)
+        self.plan_id[env_ids] += 1
+        if not self.config.moving:
+            self._tar_vel[env_ids] = 0.0
+            return
+        self._sample_velocity(env_ids)
+
+    def _sample_velocity(self, env_ids: Tensor) -> None:
+        num = len(env_ids)
+        device = self.control.env.device
+        speed = self.config.ball_speed_min + torch.rand(num, device=device) * max(
+            self.config.ball_speed_max - self.config.ball_speed_min, 0.0
+        )
+        angle = torch.rand(num, device=device) * 2 * torch.pi
+        self._tar_vel[env_ids, 0] = speed * torch.cos(angle)
+        self._tar_vel[env_ids, 1] = speed * torch.sin(angle)
+
+    def _advance_ball(self) -> None:
+        """Integrate the moving ball one control step; sometimes change course."""
+        control = self.control
+        if self.config.ball_turn_mean_sec > 0:
+            p = control.env.dt / self.config.ball_turn_mean_sec
+            turn = torch.rand(control.env.num_envs, device=control.env.device) < p
+            ids = turn.nonzero(as_tuple=False).flatten()
+            if len(ids) > 0:
+                self._sample_velocity(ids)
+                self.plan_id[ids] += 1   # the dog must re-solve its intercept
+        control._tar_pos[:, :2] += self._tar_vel * control.env.dt
+        if self._target_bounds is not None:
+            x_min, x_max, y_min, y_max = self._target_bounds
+            pos = control._tar_pos
+            for axis, (lo, hi) in enumerate(((x_min, x_max), (y_min, y_max))):
+                out = (pos[:, axis] < lo) | (pos[:, axis] > hi)
+                self._tar_vel[out, axis] = -self._tar_vel[out, axis]
+                pos[:, axis] = pos[:, axis].clamp(lo, hi)
+        control._update_target_heights(
+            torch.arange(control.env.num_envs, device=control.env.device)
+        )
+
     def step(self) -> None:
         # Timeout re-throw (the base class' behaviour).
         super().step()
+        if self.config.moving:
+            self._advance_ball()
 
         self.steps_since_throw += 1
         rng = self.control.distance_to_target()
@@ -275,6 +343,10 @@ def ball_chase_target_config(
     success_radius: float = TWO_FEET_M,
     throw_min: float = 2.0,
     throw_max: float = 8.0,
+    moving: bool = False,
+    ball_speed_min: float = 0.5,
+    ball_speed_max: float = 2.0,
+    ball_turn_mean_sec: float = 5.0,
 ) -> TargetControlConfig:
     """A red ball, caught at success_radius, re-thrown on every catch."""
     return TargetControlConfig(
@@ -287,6 +359,10 @@ def ball_chase_target_config(
         command_source=BallChaseCommandSourceConfig(
             tar_dist_min=throw_min,
             tar_dist_max=throw_max,
+            moving=moving,
+            ball_speed_min=ball_speed_min,
+            ball_speed_max=ball_speed_max,
+            ball_turn_mean_sec=ball_turn_mean_sec,
         ),
     )
 
@@ -461,9 +537,16 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         # Absolute deadline per env, in elapsed seconds. Set once per throw
         # and then counted DOWN -- see _lead_times.
         self._deadline = torch.zeros(env.num_envs, device=env.device)
-        self._deadline_ball = torch.full(
-            (env.num_envs, 2), float("nan"), device=env.device
+        # Which throw the deadline belongs to (-1: none yet). Keyed to the
+        # throw, not the ball's position, so a moving ball does not restart
+        # the deadline every step.
+        self._deadline_plan = torch.full(
+            (env.num_envs,), -1, dtype=torch.long, device=env.device
         )
+        # Where the ball will be when the deadline arrives. Fixed for the
+        # throw: the velocity is constant, so this is one world point, and
+        # it is THE target -- position and facing -- until the next throw.
+        self._intercept_xy = torch.zeros(env.num_envs, 2, device=env.device)
 
     def reset(self, env_ids: Tensor) -> None:
         """Forget the throw's deadline so the first real step re-issues it.
@@ -480,7 +563,7 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         """
         super().reset(env_ids)
         self._deadline[env_ids] = 0.0
-        self._deadline_ball[env_ids] = float("nan")
+        self._deadline_plan[env_ids] = -1
 
     def _top_speed(self) -> float:
         """The robot's top speed, measured from the corpus unless configured."""
@@ -528,8 +611,65 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         return max(self._corpus_max_yaw or 1.0, 1e-6)
 
     def _goal_xy(self) -> Tensor:
+        """The ball's CURRENT planar position (catch test, readouts)."""
         target = self.env.control_manager.components[self.config.target_component]
         return target._tar_pos[:, :2]
+
+    def _ball_source(self):
+        target = self.env.control_manager.components[self.config.target_component]
+        return target.command_source
+
+    def _ball_vel(self) -> Tensor:
+        """Planar ball velocity; zeros for a static ball or a plain source."""
+        vel = getattr(self._ball_source(), "_tar_vel", None)
+        if vel is None:
+            return torch.zeros_like(self._goal_xy())
+        return vel
+
+    def _plan_id(self) -> Tensor:
+        """Bumps on every throw and every ball direction change."""
+        pid = getattr(self._ball_source(), "plan_id", None)
+        if pid is None:
+            # Plain sources never re-throw on their own; treat as one plan.
+            return torch.zeros(self.env.num_envs, dtype=torch.long, device=self.env.device)
+        return pid
+
+    def _target_xy(self) -> Tensor:
+        """The point to run at: the intercept once a deadline exists, else the ball."""
+        have = (self._deadline_plan >= 0).unsqueeze(-1)
+        return torch.where(have, self._intercept_xy, self._goal_xy())
+
+    def _intercept_run_time(self, delta: Tensor, vel: Tensor, tau: Tensor) -> Tensor:
+        """Running time s (after a turn of tau) to meet a ball moving at vel.
+
+        Solves |delta + vel (tau + s)| = top_speed s + stop_distance for the
+        smallest s >= 0. With vel = 0 this is exactly (range - stop) /
+        top_speed, the static-ball budget. If the ball outruns the dog
+        (no positive root) the run term falls back to the horizon ceiling:
+        the dog is still sent after it, just with the longest deadline.
+        """
+        vmax = self._top_speed()
+        stop = self.config.stop_distance
+        q = delta + vel * tau.unsqueeze(-1)
+        a = (vel * vel).sum(-1) - vmax * vmax
+        b = 2.0 * ((q * vel).sum(-1) - vmax * stop)
+        c = (q * q).sum(-1) - stop * stop
+        fallback = (self.config.max_horizon_sec - tau).clamp_min(0.0)
+        inf = torch.full_like(a, float("inf"))
+
+        # Degenerate (|vel| == top_speed): linear.
+        linear = torch.where(b.abs() > 1e-9, -c / torch.where(b.abs() > 1e-9, b, torch.ones_like(b)), inf)
+        disc = b * b - 4.0 * a * c
+        safe_a = torch.where(a.abs() > 1e-9, a, torch.ones_like(a))
+        root = disc.clamp_min(0.0).sqrt()
+        r1 = (-b - root) / (2.0 * safe_a)
+        r2 = (-b + root) / (2.0 * safe_a)
+        pos1 = torch.where(r1 >= 0, r1, inf)
+        pos2 = torch.where(r2 >= 0, r2, inf)
+        quad = torch.where(disc >= 0, torch.minimum(pos1, pos2), inf)
+        s = torch.where(a.abs() > 1e-9, quad, linear)
+        s = torch.where(torch.isfinite(s), s, fallback)
+        return s.clamp(0.0, self.config.max_horizon_sec)
 
     def _now(self) -> Tensor:
         """Elapsed seconds per env. Monotonic: this task never resets."""
@@ -555,10 +695,11 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         to the next target once the current one is passed.
         """
         now = self._now()
-        ball = self._goal_xy()
-        moved = (ball - self._deadline_ball).abs().sum(dim=-1)
         expired = (self._deadline - now) <= self.config.min_horizon_sec
-        restart = expired | ~torch.isfinite(moved) | (moved > 1e-4)
+        # Restart per THROW, never per ball movement: a moving ball changes
+        # position every step, and a deadline re-issued every step is the
+        # standing maximum-urgency demand the docstring above warns of.
+        restart = expired | (self._plan_id() != self._deadline_plan)
         if bool(restart.any()):
             self._set_deadline(restart)
         # Both bounds, not just the floor: max_horizon_sec caps the BUDGET at
@@ -596,19 +737,43 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         # |bearing|/top_yaw more than the same distance ahead. The gate, when
         # enabled, additionally removes the run term so the deadline becomes
         # pivot-only; off by default, so the budget here is turn + run.
-        budget = (
-            bearing / self._top_yaw()
-            + self._bearing_gate(bearing) * aim / self._top_speed()
-        ).clamp(
+        # Moving ball: the run term is an INTERCEPT, not the current range.
+        # Solve for the running time to meet the ball, then refine the turn
+        # against the intercept point itself (the dog turns toward where it is
+        # going, not toward where the ball is now) and solve once more.
+        vel = self._ball_vel()
+        tau = bearing / self._top_yaw()
+        run = self._intercept_run_time(delta, vel, tau)
+        # Fixed point: the turn depends on where the intercept is, and the
+        # intercept depends on how long the turn takes. A few vectorized
+        # iterations converge it; for a static ball it is exact at once.
+        for _ in range(8):
+            point = ball + vel * (tau + run).unsqueeze(-1)
+            d2 = point - root_pos[:, :2]
+            heading2 = torch.atan2(d2[:, 1], d2[:, 0])
+            bearing = torch.atan2(
+                torch.sin(heading2 - heading), torch.cos(heading2 - heading)
+            ).abs()
+            tau = bearing / self._top_yaw()
+            run = self._intercept_run_time(delta, vel, tau)
+        # (aim / top_speed is what `run` reduces to for a static ball.)
+        budget = (tau + self._bearing_gate(bearing) * run).clamp(
             self.config.min_horizon_sec, self.config.max_horizon_sec
         )
-        self._deadline[env_ids] = self._now()[env_ids] + budget[env_ids]
-        self._deadline_ball[env_ids] = ball[env_ids]
+        now = self._now()
+        self._deadline[env_ids] = now[env_ids] + budget[env_ids]
+        # Fixed for the rest of this throw: velocity is constant, so where the
+        # ball will be at the deadline is one world point. Computed from the
+        # CLAMPED budget -- if the ceiling bit, this is still where the ball
+        # genuinely will be when the deadline arrives.
+        self._intercept_xy[env_ids] = (ball + vel * budget.unsqueeze(-1))[env_ids]
+        self._deadline_plan[env_ids] = self._plan_id()[env_ids]
 
     def _rollout(
         self, root_pos: Tensor, root_rot: Tensor, lead: Tensor
     ) -> Tuple[Tensor, Tensor]:
-        delta = self._goal_xy() - root_pos[:, :2]
+        # The intercept point, not the ball: for a static ball they coincide.
+        delta = self._target_xy() - root_pos[:, :2]
         rng = torch.linalg.norm(delta, dim=-1, keepdim=True)
         direction = delta / rng.clamp_min(1e-6)
 

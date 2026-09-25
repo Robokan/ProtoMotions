@@ -50,6 +50,10 @@ _DEFAULTS = {
     "throw_min": 2.0,
     "throw_max": 8.0,
     "report_every": 250,
+    "moving_ball": False,
+    "ball_speed_min": 0.5,
+    "ball_speed_max": 2.0,
+    "ball_turn_mean_sec": 5.0,
 }
 
 
@@ -79,6 +83,21 @@ def additional_experiment_arguments(parser: argparse.ArgumentParser):
     parser.add_argument(
         "--throw-max", type=float, default=_DEFAULTS["throw_max"],
         help="Furthest the ball is ever thrown (m).")
+    parser.add_argument(
+        "--moving-ball", action="store_true", default=_DEFAULTS["moving_ball"],
+        help="The ball moves: random direction and speed per throw, occasional "
+             "direction changes. The dog aims at where the ball WILL be when "
+             "its deadline arrives, not where it is.")
+    parser.add_argument(
+        "--ball-speed-min", type=float, default=_DEFAULTS["ball_speed_min"],
+        help="Slowest ball speed (m/s) when --moving-ball.")
+    parser.add_argument(
+        "--ball-speed-max", type=float, default=_DEFAULTS["ball_speed_max"],
+        help="Fastest ball speed (m/s) when --moving-ball.")
+    parser.add_argument(
+        "--ball-turn-mean-sec", type=float, default=_DEFAULTS["ball_turn_mean_sec"],
+        help="Mean seconds between random direction changes of a moving ball "
+             "(Poisson). Each change makes the dog re-plan. 0 disables.")
     parser.add_argument(
         "--horizon-sec", type=float, default=None,
         help="Lead time of the farthest conditioned target, i.e. how long the "
@@ -127,6 +146,10 @@ def _install_chase(cfg: EnvConfig, args: argparse.Namespace) -> None:
             success_radius=_arg(args, "success_radius"),
             throw_min=_arg(args, "throw_min"),
             throw_max=_arg(args, "throw_max"),
+            moving=_arg(args, "moving_ball"),
+            ball_speed_min=_arg(args, "ball_speed_min"),
+            ball_speed_max=_arg(args, "ball_speed_max"),
+            ball_turn_mean_sec=_arg(args, "ball_turn_mean_sec"),
         ),
         "masked_mimic": MaskedMimicGoalControlConfig(
             num_masked_future_steps=trained.num_masked_future_steps,
