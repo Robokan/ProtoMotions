@@ -87,6 +87,14 @@ class VisualizationMarkerConfig:
     markers: List[MarkerConfig] = field(
         default_factory=list, metadata={"help": "List of marker configurations."}
     )
+    cast_shadows: bool = field(
+        default=False,
+        metadata={
+            "help": "Spheres only: draw one real prim per env instead of a "
+            "PointInstancer so the marker casts a shadow (RTX casts none from "
+            "instancer instances). A prim per env -- viewer-scale env counts."
+        },
+    )
 
 
 @dataclass

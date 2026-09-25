@@ -114,6 +114,12 @@ class TargetControlConfig(ControlComponentConfig):
     marker_color: Tuple[float, float, float] = (0.0, 0.0, 1.0)
     marker_size: str = "huge"
     marker_z_offset: float = 0.1
+    # Draw the marker as one real prim per env instead of a PointInstancer.
+    # RTX does not cast shadows from instancer instances (measured: neither
+    # analytic nor mesh prototypes shadow; a standalone sphere does), so a
+    # ball that should look like an object on the ground needs this. Costs a
+    # prim per env -- fine for viewer/data-gen env counts, not for training.
+    marker_cast_shadows: bool = False
     # Measure proximity in the ground plane only. The target sits ON the
     # ground while the torso rides ~0.34 m above it, so a 3-D distance spends
     # half a small threshold on height the robot cannot remove.
@@ -443,6 +449,7 @@ class TargetControl(ControlComponent):
                 type="sphere",
                 color=tuple(self.config.marker_color),
                 markers=[MarkerConfig(size=self.config.marker_size)],
+                cast_shadows=self.config.marker_cast_shadows,
             )
         }
 

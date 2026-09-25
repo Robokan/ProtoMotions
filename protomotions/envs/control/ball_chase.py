@@ -353,6 +353,12 @@ def ball_chase_target_config(
         tar_proximity_threshold=success_radius,
         marker_color=(1.0, 0.1, 0.1),
         marker_size="huge",
+        # A real prim per env so the ball casts a shadow (instancer markers
+        # do not under RTX). The chase runs at viewer env counts.
+        marker_cast_shadows=True,
+        # "huge" is a 0.12 m radius; rest the ball on the ground (visual only,
+        # the catch test uses the planar target position).
+        marker_z_offset=0.12,
         proximity_planar=True,
         # The chase is the task; falling over is failure, but wandering is not.
         enable_fall_termination=False,
@@ -543,9 +549,11 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         self._deadline_plan = torch.full(
             (env.num_envs,), -1, dtype=torch.long, device=env.device
         )
-        # Where the ball will be when the deadline arrives. Fixed for the
-        # throw: the velocity is constant, so this is one world point, and
-        # it is THE target -- position and facing -- until the next throw.
+        # Where the ball was predicted to be at the deadline, as solved when
+        # the plan was issued. Kept for readouts; the live target is
+        # _target_xy(), which re-evaluates the prediction from the current
+        # ball measurement every step (identical in the sim, better on a
+        # robot whose estimate improves as it closes).
         self._intercept_xy = torch.zeros(env.num_envs, 2, device=env.device)
 
     def reset(self, env_ids: Tensor) -> None:
@@ -635,9 +643,25 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         return pid
 
     def _target_xy(self) -> Tensor:
-        """The point to run at: the intercept once a deadline exists, else the ball."""
+        """The point to run at: where the ball will be when the deadline arrives.
+
+        Re-evaluated EVERY step from the current ball state -- position and
+        velocity as measured now -- against the fixed deadline. With the
+        velocity known exactly (the sim) this is the same world point every
+        step, so nothing visibly re-plans. The point of evaluating it live is
+        the real robot: a perception estimate of the ball gets better as the
+        dog closes, and this folds each better measurement straight into the
+        target without touching the deadline. Only the DEADLINE is per plan;
+        if a better estimate reveals it cannot be met, it expires and
+        _lead_times re-plans from where the dog actually is.
+        (_ball_vel() is where an estimated velocity would plug in.)
+        """
         have = (self._deadline_plan >= 0).unsqueeze(-1)
-        return torch.where(have, self._intercept_xy, self._goal_xy())
+        remaining = (self._deadline - self._now()).clamp(
+            self.config.min_horizon_sec, self.config.max_horizon_sec
+        )
+        live = self._goal_xy() + self._ball_vel() * remaining.unsqueeze(-1)
+        return torch.where(have, live, self._goal_xy())
 
     def _intercept_run_time(self, delta: Tensor, vel: Tensor, tau: Tensor) -> Tensor:
         """Running time s (after a turn of tau) to meet a ball moving at vel.
@@ -762,10 +786,9 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         )
         now = self._now()
         self._deadline[env_ids] = now[env_ids] + budget[env_ids]
-        # Fixed for the rest of this throw: velocity is constant, so where the
-        # ball will be at the deadline is one world point. Computed from the
-        # CLAMPED budget -- if the ceiling bit, this is still where the ball
-        # genuinely will be when the deadline arrives.
+        # The prediction at issue time, from the CLAMPED budget -- if the
+        # ceiling bit, this is still where the ball will be when the deadline
+        # arrives. _target_xy() recomputes the same quantity live each step.
         self._intercept_xy[env_ids] = (ball + vel * budget.unsqueeze(-1))[env_ids]
         self._deadline_plan[env_ids] = self._plan_id()[env_ids]
 

@@ -1751,6 +1751,11 @@ class IsaacLabSimulator(Simulator):
                         scale = 0.007
                     elif marker.size == "small":
                         scale = 0.01
+                    elif marker.size == "large":
+                        scale = 0.08
+                    elif marker.size == "huge":
+                        # Was silently the "regular" 0.05 (5 cm ball).
+                        scale = 0.12
                     else:
                         scale = 0.05
                     marker_scale.append([scale, scale, scale])
@@ -1778,8 +1783,22 @@ class IsaacLabSimulator(Simulator):
                     "no scale entries -- unhandled type in _build_markers"
                 )
 
+            if markers_cfg.type == "sphere" and getattr(markers_cfg, "cast_shadows", False):
+                # One real prim per env: instancer markers cast no shadows
+                # under RTX. Opt-in, viewer-scale only.
+                from protomotions.simulator.isaaclab.utils.shadowed_markers import (  # noqa: PLC0415
+                    ShadowedSphereMarkers,
+                )
+
+                marker_impl = ShadowedSphereMarkers(
+                    prim_path=f"/Visuals/{marker_name}",
+                    num_envs=self.num_envs,
+                    color=markers_cfg.color,
+                )
+            else:
+                marker_impl = IsaacLabVisualizationMarkers(marker_obj_cfg)
             self._visualization_markers[marker_name] = ProtoMotionsIsaacLabMarkers(
-                marker=IsaacLabVisualizationMarkers(marker_obj_cfg),
+                marker=marker_impl,
                 scale=torch.tensor(marker_scale, device=self.device).repeat(
                     self.num_envs, 1
                 ),
