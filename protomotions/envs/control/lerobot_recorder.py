@@ -40,10 +40,19 @@ Run it headless. With a viewer open, every visualization marker renders into
 the camera too, including the conditioned-target ladder -- which is the label
 drawn on top of the image (see VisualizationMarkerConfig.camera_visible).
 
-Format is LeRobot v2.1: one parquet and one mp4 per episode, with
-meta/{info,episodes,episodes_stats,tasks}. The installed lerobot writes v3.0
-and ships ``convert_dataset_v21_to_v30.py`` to bring this forward; v2.1 is
-also what the Isaac-GR00T fine-tuning tutorial expects.
+What lands here is a STAGING layout, not the dataset you train on: one
+parquet and one mp4 per episode, with meta/{info,episodes,episodes_stats,
+tasks} -- LeRobot v2.1 shaped, so it is self-describing and their
+``convert_dataset_v21_to_v30.py`` can also read it.
+
+The dataset lerobot actually reads is **v3.0**, which it is not backward
+compatible with ("not backward compatible with v2.1", and it raises rather
+than guess). v3.0 concatenates many episodes into shared parquet and mp4
+files addressed by row and timestamp ranges, and hand-emitting that is a good
+way to produce something that loads happily and serves the wrong frames. So
+lerobot writes it, from these files, via ``scripts/chase_to_lerobot.py`` --
+run in the lerobot venv, since lerobot cannot be installed beside Isaac Sim.
+Recording stays here, where it is cheap and has no dependencies.
 """
 
 from __future__ import annotations
