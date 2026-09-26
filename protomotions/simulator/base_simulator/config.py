@@ -66,6 +66,65 @@ class MarkerConfig:
 
 
 @dataclass
+class OnboardCameraConfig:
+    """A camera bolted to the robot, rendering what the robot can see.
+
+    Distinct from ``SimulatorConfig.camera``, which is where the VIEWER looks
+    from. This one is a sensor: it is parented to a body of the articulation,
+    moves with it, and its images are an observation.
+
+    Rendering costs real time, so these are opt-in per experiment (an empty
+    ``SimulatorConfig.onboard_cameras`` renders nothing) and the simulation
+    app has to be launched with cameras enabled -- the entry points do that
+    automatically when any are configured.
+    """
+
+    body_name: str = field(
+        default="",
+        metadata={
+            "help": "Robot body to bolt the camera to (e.g. 'base_link'). "
+            "Empty means the robot's own root body."
+        },
+    )
+    pos: Tuple[float, float, float] = field(
+        default=(0.0, 0.0, 0.0),
+        metadata={"help": "Offset from that body's origin, in its frame (m)."},
+    )
+    pitch_deg: float = field(
+        default=0.0,
+        metadata={"help": "Downward tilt from level, degrees (positive = down)."},
+    )
+    yaw_deg: float = field(
+        default=0.0,
+        metadata={"help": "Rotation off straight ahead, degrees (positive = left)."},
+    )
+    width: int = field(default=224, metadata={"help": "Image width in pixels."})
+    height: int = field(default=224, metadata={"help": "Image height in pixels."})
+    horizontal_fov_deg: float = field(
+        default=120.0,
+        metadata={
+            "help": "Horizontal field of view. The vertical one follows from "
+            "the aspect ratio. Should match whatever field of view a policy "
+            "is told the robot has -- see ball_chase's fov_deg."
+        },
+    )
+    data_types: List[str] = field(
+        default_factory=lambda: ["rgb"],
+        metadata={"help": "Isaac Lab camera outputs, e.g. rgb, distance_to_camera."},
+    )
+    near_far: Tuple[float, float] = field(
+        default=(0.05, 40.0), metadata={"help": "Clipping range (m)."}
+    )
+    update_period: float = field(
+        default=0.0,
+        metadata={
+            "help": "Seconds between refreshes. 0 renders every control step; "
+            "set it to 1/vla_hz to render only as often as the policy looks."
+        },
+    )
+
+
+@dataclass
 class VisualizationMarkerConfig:
     """Configuration for a group of visualization markers."""
 
@@ -86,6 +145,19 @@ class VisualizationMarkerConfig:
     )
     markers: List[MarkerConfig] = field(
         default_factory=list, metadata={"help": "List of marker configurations."}
+    )
+    camera_visible: bool = field(
+        default=False,
+        metadata={
+            "help": "Let this marker appear in ONBOARD CAMERA images. Markers "
+            "are normally annotation for a human -- a conditioned target, a "
+            "velocity arrow -- and a policy learning from camera frames must "
+            "not see them, or it learns to read the answer off the overlay "
+            "instead of finding the object. Set True only for markers that "
+            "stand in for a real thing in the world, like the chase ball. "
+            "Enforced on headless (recording) runs; with a viewer open every "
+            "marker renders, including into the camera."
+        },
     )
     cast_shadows: bool = field(
         default=False,
@@ -585,6 +657,14 @@ class SimulatorConfig:
     )
     camera: Optional[Any] = field(
         default=None, metadata={"help": "Camera configuration for rendering."}
+    )
+    onboard_cameras: Dict[str, OnboardCameraConfig] = field(
+        default_factory=dict,
+        metadata={
+            "help": "Cameras carried BY the robot, keyed by name (the viewer "
+            "camera above is a different thing). Empty by default: rendering "
+            "them costs time, so each experiment opts in."
+        },
     )
     record_viewer: bool = field(
         default=False, metadata={"help": "Record viewer output to video."}

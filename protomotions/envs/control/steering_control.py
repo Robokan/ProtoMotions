@@ -238,7 +238,7 @@ class SteeringControl(ControlComponent):
 
     def get_markers_state(self) -> Dict[str, MarkerState]:
         """Get marker states for visualization."""
-        if self.env.simulator.headless:
+        if not self.env.simulator.show_markers:
             return {}
 
         root_pos = self.env.simulator.get_root_state().root_pos

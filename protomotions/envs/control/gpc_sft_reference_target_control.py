@@ -202,7 +202,7 @@ class GPCSFTReferenceTargetControl(ControlComponent):
         }
 
     def get_markers_state(self) -> Dict[str, MarkerState]:
-        if self.env.simulator.headless:
+        if not self.env.simulator.show_markers:
             return {}
         tar_pos = self._tar_pos.view(self.env.num_envs, 1, 3).clone()
         tar_pos[..., 2] += 0.1

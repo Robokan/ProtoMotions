@@ -733,6 +733,11 @@ def main():
             AppLauncher, "sync_visualizer_cli_settings_to_carb"
         ):
             app_launcher_flags["visualizer"] = ["kit"]
+        # Onboard cameras are RTX render products: Kit will not create them
+        # unless the app was launched with cameras enabled, and the failure is
+        # silent -- the sensor exists and its output is never populated.
+        if getattr(simulator_config, "onboard_cameras", None):
+            app_launcher_flags["enable_cameras"] = True
         app_launcher = AppLauncher(app_launcher_flags)
         simulator_extra_params["simulation_app"] = app_launcher.app
 

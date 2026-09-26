@@ -276,7 +276,7 @@ class PathFollowerControl(ControlComponent):
 
     def get_markers_state(self) -> Dict[str, MarkerState]:
         """Get marker states for visualization."""
-        if self.env.simulator.headless:
+        if not self.env.simulator.show_markers:
             return {}
 
         traj_samples = self.fetch_path_samples().clone()

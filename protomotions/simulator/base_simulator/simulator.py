@@ -1496,6 +1496,40 @@ class Simulator(RecordingMixin, ABC):
         """
         raise NotImplementedError
 
+    @property
+    def show_markers(self) -> bool:
+        """Whether visualization markers should be built and updated.
+
+        Not the same question as "is there a window". Markers are how this
+        codebase puts a thing in the world -- the chase ball IS one -- so
+        once the robot carries a camera it has an audience of its own and the
+        markers have to exist even with no viewer. A headless run with no
+        cameras still skips them, which is what keeps training fast.
+        """
+        if not self.headless:
+            return True
+        return bool(getattr(self.config, "onboard_cameras", None))
+
+    @property
+    def markers_camera_only(self) -> bool:
+        """True when the only viewer is the robot's own camera.
+
+        In that case markers that are annotation rather than world -- target
+        ladders, arrows -- are not built at all, so recorded frames cannot
+        leak the answer. See VisualizationMarkerConfig.camera_visible.
+        """
+        return self.headless and bool(getattr(self.config, "onboard_cameras", None))
+
+    def get_camera_images(self, data_type: str = "rgb") -> Dict[str, torch.Tensor]:
+        """Latest frame from each onboard camera, keyed by camera name.
+
+        Empty unless the backend implements onboard cameras AND the experiment
+        configured some (see SimulatorConfig.onboard_cameras). Returning an
+        empty dict rather than raising keeps a camera-using task loadable on a
+        backend that cannot render: the consumer sees no images and can say so.
+        """
+        return {}
+
     def get_object_contact_buf(
         self, env_ids: Optional[torch.Tensor] = None
     ) -> ObjectState:

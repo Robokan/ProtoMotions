@@ -120,6 +120,10 @@ class TargetControlConfig(ControlComponentConfig):
     # ball that should look like an object on the ground needs this. Costs a
     # prim per env -- fine for viewer/data-gen env counts, not for training.
     marker_cast_shadows: bool = False
+    # The target sphere stands in for a physical object (a ball), so it is
+    # allowed into camera frames. Off by default: a waypoint marker is
+    # annotation and must not be.
+    marker_camera_visible: bool = False
     # Measure proximity in the ground plane only. The target sits ON the
     # ground while the torso rides ~0.34 m above it, so a 3-D distance spends
     # half a small threshold on height the robot cannot remove.
@@ -450,11 +454,12 @@ class TargetControl(ControlComponent):
                 color=tuple(self.config.marker_color),
                 markers=[MarkerConfig(size=self.config.marker_size)],
                 cast_shadows=self.config.marker_cast_shadows,
+                camera_visible=self.config.marker_camera_visible,
             )
         }
 
     def get_markers_state(self) -> Dict[str, MarkerState]:
-        if self.env.simulator.headless:
+        if not self.env.simulator.show_markers:
             return {}
         tar_pos = self._tar_pos.view(self.env.num_envs, 1, 3).clone()
         tar_pos[..., 2] += self.config.marker_z_offset

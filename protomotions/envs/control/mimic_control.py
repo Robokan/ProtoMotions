@@ -243,7 +243,7 @@ class MimicControl(ControlComponent):
         Returns:
             Dictionary mapping marker names to MarkerState.
         """
-        if self.env.simulator.headless:
+        if not self.env.simulator.show_markers:
             return {}
         
         markers_state = {}

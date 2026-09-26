@@ -531,7 +531,7 @@ class MaskedMimicControl(MimicControl):
         Returns:
             Dictionary mapping marker names to MarkerState.
         """
-        if self.env.simulator.headless:
+        if not self.env.simulator.show_markers:
             return {}
         
         if not self._initialized:

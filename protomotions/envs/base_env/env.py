@@ -326,7 +326,7 @@ class BaseEnv:
         self.control_manager = ControlManager(self.config.control_components, self)
 
         visualization_markers = self.create_visualization_markers(
-            self.simulator.headless
+            not self.simulator.show_markers
         )
         self.simulator._initialize_with_markers(visualization_markers)
 
@@ -790,7 +790,7 @@ class BaseEnv:
         Returns:
             Dictionary mapping marker names to MarkerState objects
         """
-        if self.simulator.headless:
+        if not self.simulator.show_markers:
             return {}
 
         markers_state = {}
@@ -810,6 +810,13 @@ class BaseEnv:
         # Merge markers from control components
         control_markers_state = self.control_manager.get_markers_state()
         markers_state.update(control_markers_state)
+
+        # Components still publish state for markers that were filtered out
+        # above; dropping it here keeps the simulator's "state for a marker
+        # that was never created" assertion meaningful.
+        known = getattr(self, "_marker_names", None)
+        if known is not None:
+            markers_state = {k: v for k, v in markers_state.items() if k in known}
 
         return markers_state
 
@@ -2089,6 +2096,24 @@ class BaseEnv:
         # Merge markers from control components
         control_markers = self.control_manager.create_visualization_markers(headless)
         visualization_markers.update(control_markers)
+
+        if self.simulator.markers_camera_only:
+            # Nobody is watching but the robot: keep only what stands in for a
+            # real object, so a recorded frame shows the world and not the
+            # task's own annotation of it.
+            kept = {
+                name: cfg
+                for name, cfg in visualization_markers.items()
+                if getattr(cfg, "camera_visible", False)
+            }
+            dropped = sorted(set(visualization_markers) - set(kept))
+            print(
+                f"[markers] camera-only run: rendering {sorted(kept)}, hiding "
+                f"{dropped} so they cannot leak into recorded frames",
+                flush=True,
+            )
+            visualization_markers = kept
+        self._marker_names = set(visualization_markers)
 
         return visualization_markers
 

@@ -35,6 +35,70 @@ class TrimeshTerrainImporterCfg(TerrainImporterCfg):
     terrain_faces: list = None
 
 
+def _onboard_camera_cfg(name, cam, robot_config, body_prim_paths):
+    """An OnboardCameraConfig as an Isaac Lab camera sensor.
+
+    Parented to the body prim, so it rides the robot with no per-step pose
+    bookkeeping of our own. Isaac Lab 3 dropped the separate TiledCamera --
+    CameraCfg is batched -- so this imports whichever the installed version
+    has.
+    """
+    import math
+
+    try:
+        from isaaclab.sensors import TiledCameraCfg as _CameraCfg
+    except ImportError:
+        from isaaclab.sensors import CameraCfg as _CameraCfg
+
+    body_name = cam.body_name or robot_config.anchor_body_name
+    if body_prim_paths is not None:
+        from protomotions.simulator.isaaclab.utils.usd_body_paths import (
+            contact_sensor_prim_path,
+        )
+
+        body_path = contact_sensor_prim_path(body_name, body_prim_paths)
+    else:
+        body_path = f"{robot_config.asset.usd_bodies_root_prim_path}{body_name}"
+
+    # "world" convention: the camera looks along the parent body's +X with +Z
+    # up, which for a robot is straight ahead and level -- so an identity
+    # rotation is already a forward-facing camera and the two angles below are
+    # departures from it. Quaternions are (x, y, z, w), Isaac Lab's order for
+    # an offset. Pitch about +Y tips the view down; yaw about +Z swings it to
+    # the left.
+    pitch = math.radians(cam.pitch_deg) / 2.0
+    yaw = math.radians(cam.yaw_deg) / 2.0
+    qp = (0.0, math.sin(pitch), 0.0, math.cos(pitch))
+    qy = (0.0, 0.0, math.sin(yaw), math.cos(yaw))
+    rot = (
+        qy[3] * qp[0] + qy[0] * qp[3] + qy[1] * qp[2] - qy[2] * qp[1],
+        qy[3] * qp[1] - qy[0] * qp[2] + qy[1] * qp[3] + qy[2] * qp[0],
+        qy[3] * qp[2] + qy[0] * qp[1] - qy[1] * qp[0] + qy[2] * qp[3],
+        qy[3] * qp[3] - qy[0] * qp[0] - qy[1] * qp[1] - qy[2] * qp[2],
+    )
+
+    # Field of view is set through the aperture, the way a real lens does it:
+    # hfov = 2 atan(aperture / 2f). Isaac Lab derives the vertical aperture
+    # from the image aspect ratio, so a square image sees the same angle both
+    # ways.
+    focal_length = 24.0
+    aperture = 2.0 * focal_length * math.tan(math.radians(cam.horizontal_fov_deg) / 2.0)
+
+    return _CameraCfg(
+        prim_path=f"{body_path}/{name}",
+        offset=_CameraCfg.OffsetCfg(pos=tuple(cam.pos), rot=rot, convention="world"),
+        data_types=list(cam.data_types),
+        spawn=sim_utils.PinholeCameraCfg(
+            focal_length=focal_length,
+            horizontal_aperture=aperture,
+            clipping_range=tuple(cam.near_far),
+        ),
+        width=cam.width,
+        height=cam.height,
+        update_period=cam.update_period,
+    )
+
+
 @configclass
 class SceneCfg(InteractiveSceneCfg):
     """Configuration for a cart-pole scene."""
@@ -224,9 +288,15 @@ class SceneCfg(InteractiveSceneCfg):
             contact_body_names = (
                 robot_config.contact_bodies if activate_contact_sensors else []
             )
+            # Onboard cameras hang off a body too, and that body is often not
+            # one of the contact bodies -- resolve both sets in one pass.
+            camera_body_names = [
+                cam.body_name or robot_config.anchor_body_name
+                for cam in getattr(config, "onboard_cameras", {}).values()
+            ]
             articulation_root_prim_path, body_prim_paths = resolve_robot_prim_paths(
                 robot_usd_path,
-                contact_body_names,
+                list(dict.fromkeys(list(contact_body_names) + camera_body_names)),
             )
             default_joint_pos = (
                 {
@@ -431,6 +501,13 @@ class SceneCfg(InteractiveSceneCfg):
                     history_length=config.sim.decimation,
                 )
                 setattr(self, f"contact_sensor_{body_name}", contact_sensor_cfg)
+
+        for cam_name, cam in getattr(config, "onboard_cameras", {}).items():
+            setattr(
+                self,
+                cam_name,
+                _onboard_camera_cfg(cam_name, cam, robot_config, body_prim_paths),
+            )
 
         if terrain is not None:
             terrain_physics_material = sim_utils.RigidBodyMaterialCfg(

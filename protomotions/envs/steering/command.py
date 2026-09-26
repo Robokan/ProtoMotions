@@ -400,7 +400,7 @@ class SteeringCommandControl(ControlComponent):
         to the robot's heading; turn dial at the root, spun by the
         accumulated phase, flipped about x for negative yaw so the arrows
         visually reverse. Buttons held -> markers sink to z=-1 (hidden)."""
-        if self.env.simulator.headless:
+        if not self.env.simulator.show_markers:
             return {}
         root_state = self.env.simulator.get_root_state()
         root_pos = root_state.root_pos

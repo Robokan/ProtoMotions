@@ -924,7 +924,12 @@ class IsaacLabSimulator(Simulator):
             self._apply_control()
             self._scene.write_data_to_sim()
             self._sim.step(render=False)
-            if (idx + 1) % self.decimation == 0 and not self.headless:
+            # Onboard cameras are RTX render products: they only refresh on a
+            # render, so a headless data-generation run has to render too even
+            # though nobody is watching.
+            if (idx + 1) % self.decimation == 0 and (
+                not self.headless or getattr(self.config, "onboard_cameras", None)
+            ):
                 self._sim.render()
             self._scene.update(dt=self._sim.get_physics_dt())
 
@@ -1508,6 +1513,21 @@ class IsaacLabSimulator(Simulator):
     # =====================================================
     # Group 6: Rendering & Visualization
     # =====================================================
+    def get_camera_images(self, data_type: str = "rgb") -> Dict[str, torch.Tensor]:
+        """Latest frame from each onboard camera, keyed by camera name.
+
+        Shape is [num_envs, H, W, C] -- uint8 for rgb. Empty when the
+        experiment configured no cameras. The tensors are the sensor's own
+        buffers; clone before holding on to one across a step.
+        """
+        images = {}
+        for name in getattr(self.config, "onboard_cameras", {}) or {}:
+            sensor = self._scene[name]
+            output = sensor.data.output
+            if data_type in output:
+                images[name] = output[data_type]
+        return images
+
     def render(self) -> None:
         """
         Render the simulation view. Initializes or updates the camera if the simulator is not in headless mode.

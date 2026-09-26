@@ -364,6 +364,9 @@ def ball_chase_target_config(
         # A real prim per env so the ball casts a shadow (instancer markers
         # do not under RTX). The chase runs at viewer env counts.
         marker_cast_shadows=True,
+        # The ball is the one thing in this scene the robot is supposed to
+        # see, so it is the one marker allowed into camera frames.
+        marker_camera_visible=True,
         # "huge" is a 0.12 m radius; rest the ball on the ground (visual only,
         # the catch test uses the planar target position).
         marker_z_offset=0.12,

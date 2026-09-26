@@ -65,6 +65,9 @@ _DEFAULTS = {
     "vla_hz": 10.0,
     "search_deg_per_frame": 10.0,
     "horizon_sec": None,
+    "camera": False,
+    "camera_res": 224,
+    "camera_probe_every": 50,
 }
 
 
@@ -139,6 +142,18 @@ def additional_experiment_arguments(parser: argparse.ArgumentParser):
         "--search-deg-per-frame", type=float, default=_DEFAULTS["search_deg_per_frame"],
         help="How far the view may rotate between two of those frames. Search "
              "yaw rate = this x --vla-hz, capped at the robot's top yaw.")
+    parser.add_argument(
+        "--camera", action="store_true", default=_DEFAULTS["camera"],
+        help="Mount the go2's forward camera and render it. This is the image "
+             "a VLA would be shown; --camera-probe-every saves some to look "
+             "at. Costs render time, so it is off by default.")
+    parser.add_argument(
+        "--camera-res", type=int, default=_DEFAULTS["camera_res"],
+        help="Square camera resolution in pixels.")
+    parser.add_argument(
+        "--camera-probe-every", type=int, default=_DEFAULTS["camera_probe_every"],
+        help="Save a frame from env 0 every N control steps (0 = never). The "
+             "probe stops after a dozen frames.")
     parser.add_argument(
         "--horizon-sec", type=float, default=None,
         help="Lead time of the farthest conditioned target, i.e. how long the "
@@ -221,11 +236,45 @@ def _install_chase(cfg: EnvConfig, args: argparse.Namespace) -> None:
 
     cfg.control_components["speed_probe"] = RootSpeedProbeConfig(label="chase")
 
+    if _arg(args, "camera") and _arg(args, "camera_probe_every") > 0:
+        from protomotions.envs.control.camera_probe import CameraProbeConfig
+
+        cfg.control_components["camera_probe"] = CameraProbeConfig(
+            every_steps=_arg(args, "camera_probe_every")
+        )
+
     # Wired but unused while this component does the driving: these are what a
     # learned high-level policy (or a VLA fine-tune) would train against. The
     # steering reward is dropped with the steering command it scored.
     cfg.observation_components["target_obs"] = target_obs_factory()
     cfg.reward_components = {"target_rew": target_reward_factory()}
+
+
+def _install_camera(simulator_cfg, args: argparse.Namespace) -> None:
+    """Give the dog the camera it would actually be looking through.
+
+    The field of view is shared deliberately: the demonstrator's sight gate
+    (--fov-deg) and the lens are the same number, so what the expert is
+    allowed to know matches what the student will be shown. Letting them
+    drift apart would teach the student to find a ball that never appears in
+    its frame.
+    """
+    if simulator_cfg is None or not _arg(args, "camera"):
+        return
+    from protomotions.robot_configs.go2 import go2_front_camera
+
+    res = _arg(args, "camera_res")
+    simulator_cfg.onboard_cameras = {
+        "front_camera": go2_front_camera(
+            width=res, height=res, fov_deg=_arg(args, "fov_deg")
+        )
+    }
+
+
+def configure_robot_and_simulator(robot_cfg, simulator_cfg, args: argparse.Namespace):
+    """Training-path hook (config_builder calls this). The inference path
+    goes through apply_inference_overrides below, which does the same."""
+    _install_camera(simulator_cfg, args)
 
 
 def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
@@ -246,6 +295,7 @@ def apply_inference_overrides(
 ):
     """inference_agent.py builds configs from the checkpoint pickle and calls
     only this hook, so the task has to be installed here, not in env_config."""
+    _install_camera(simulator_cfg, args)
     if env_cfg is None:
         return
     _install_chase(env_cfg, args)

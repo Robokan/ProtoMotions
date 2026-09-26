@@ -216,3 +216,36 @@ class Go2RobotConfig(RobotConfig):
             ),
         )
     )
+
+
+def go2_front_camera(
+    width: int = 224,
+    height: int = 224,
+    fov_deg: float = 120.0,
+    update_period: float = 0.0,
+):
+    """The go2's forward camera, where the real one is.
+
+    The MJCF puts the trunk's front face at x = 0.188 and the head assembly
+    ahead of it (a cylinder at x = 0.285, a nose sphere at x = 0.293), so the
+    lens sits at x = 0.33 -- just proud of the nose, on the centreline, level
+    with the trunk origin and therefore about 0.34 m off the ground when the
+    dog is standing.
+
+    Level by default. A ball on the floor is only 5 deg below the axis at 4 m
+    and 20 deg at arm's length, both well inside a 120 deg frame, so tilting
+    down buys nothing and costs the horizon. The local go2 USD has no separate
+    head body, so this rides base_link -- which is what the real camera does
+    too, rigidly.
+    """
+    from protomotions.simulator.base_simulator.config import OnboardCameraConfig
+
+    return OnboardCameraConfig(
+        body_name="base_link",
+        pos=(0.33, 0.0, 0.0),
+        pitch_deg=0.0,
+        width=width,
+        height=height,
+        horizontal_fov_deg=fov_deg,
+        update_period=update_period,
+    )

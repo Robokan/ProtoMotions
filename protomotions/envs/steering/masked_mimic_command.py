@@ -533,7 +533,7 @@ class MaskedMimicSteeringControl(MaskedMimicControl):
         }
 
     def get_markers_state(self) -> Dict[str, MarkerState]:
-        if self.env.simulator.headless or not self._initialized:
+        if not self.env.simulator.show_markers or not self._initialized:
             return {}
         target_pos = getattr(self, "_marker_target_pos", None)
         if target_pos is None:
