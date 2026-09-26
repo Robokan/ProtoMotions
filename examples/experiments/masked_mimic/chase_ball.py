@@ -276,6 +276,17 @@ def _install_chase(cfg: EnvConfig, args: argparse.Namespace) -> None:
 
     cfg.control_components["speed_probe"] = RootSpeedProbeConfig(label="chase")
 
+    # Parallel envs share one world: another env's dog in frame is an object
+    # the labels say nothing about, and its ball is a second red blob. Always
+    # on when recording, so a contaminated dataset announces itself instead
+    # of being discovered later in the training curve.
+    if _arg(args, "camera") or _arg(args, "record"):
+        from protomotions.envs.control.env_separation import (
+            EnvSeparationProbeConfig,
+        )
+
+        cfg.control_components["env_separation"] = EnvSeparationProbeConfig()
+
     if _arg(args, "record"):
         from protomotions.envs.control.lerobot_recorder import LeRobotRecorderConfig
 

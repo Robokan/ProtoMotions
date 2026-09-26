@@ -104,6 +104,23 @@ class LeRobotRecorderConfig(ControlComponentConfig):
     # several objects and the prompt has to pick one.
     robot_type: str = "go2"
     video_codec: str = "libx264"
+    # Parallel envs share one world, and where they spawn is random: measured,
+    # four of them sit 53-61 m apart at the default spacing and 16-26 m apart
+    # at a LARGER one, because a wider scatter radius means more chances to
+    # land near someone. They drift too -- the chase never resets, so each dog
+    # random-walks behind its own ball. No setting guarantees isolation, so
+    # this does: a frame whose env has a neighbour closer than this is not
+    # recorded.
+    #
+    # Where to put it follows from what a neighbour looks like. At 1.87 px/deg
+    # (120 deg over 224 px) an object of size s at distance d is 107*s/d px,
+    # so the neighbour's BALL -- the thing that could be mistaken for ours --
+    # is 26/d px and the neighbour's DOG is 43/d px. At 30 m that is a
+    # 0.9 px ball and a 1.4 px dog: nothing a convolution can find. Below
+    # about 13 m the ball becomes a real 2 px blob and the frame is a lie.
+    # 30 m has margin and, at the separations actually observed, costs
+    # nothing. 0 disables the check.
+    min_neighbour_m: float = 30.0
     state_names: List[str] = field(default_factory=list)
 
 
@@ -134,6 +151,7 @@ class LeRobotRecorder(ControlComponent):
         # by one, so the ball does not exist yet while this runs.
         self._last_plan: Optional[Tensor] = None
         self._dropped = 0
+        self._crowded_out = 0
 
         effective_fps = 1.0 / (self._every * env.dt)
         if abs(effective_fps - config.fps) > 1e-6:
@@ -173,6 +191,26 @@ class LeRobotRecorder(ControlComponent):
             )
         return plan
 
+    def _crowded(self) -> Tensor:
+        """Envs with another robot close enough to be in frame.
+
+        Another env's dog is an object the labels say nothing about, and its
+        ball is a second red blob directly contradicting them. Distance is a
+        conservative test -- it also drops frames where the neighbour is
+        behind -- but it is a test that cannot miss.
+        """
+        limit = self.config.min_neighbour_m
+        if limit <= 0 or self.env.num_envs < 2:
+            return torch.zeros(
+                self.env.num_envs, dtype=torch.bool, device=self.env.device
+            )
+        from protomotions.envs.control.env_separation import (  # noqa: PLC0415
+            nearest_neighbour,
+        )
+
+        xy = self.env.simulator.get_root_state().root_pos[:, :2]
+        return nearest_neighbour(xy) < limit
+
     def _thrown(self) -> Tensor:
         """Envs whose ball moved discontinuously since the last look.
 
@@ -201,6 +239,7 @@ class LeRobotRecorder(ControlComponent):
         # four steps back has been rendered since, so that frame is good and
         # dropping it would only cost data.
         thrown = self._thrown()
+        crowded = self._crowded()
         self._steps += 1
         if self._steps % self._every != 0:
             return
@@ -225,8 +264,18 @@ class LeRobotRecorder(ControlComponent):
             frames = frames[..., :3]
 
         for env_id in range(self.env.num_envs):
+            # A skipped frame is a hole in the timeline. Writing the next one
+            # as if it followed immediately would put a 200 ms step inside a
+            # 10 Hz episode -- which lerobot checks, and which is a lie to
+            # anything reading timestamps either way. So a skip ENDS the
+            # episode and the next good frame starts a fresh one.
             if bool(thrown[env_id]):
                 self._dropped += 1
+                self._flush(env_id, reason="re-throw")
+                continue
+            if bool(crowded[env_id]):
+                self._crowded_out += 1
+                self._flush(env_id, reason="neighbour")
                 continue
             rows = self._rows.setdefault(env_id, [])
             self._frames.setdefault(env_id, []).append(
@@ -314,7 +363,9 @@ class LeRobotRecorder(ControlComponent):
         self._rows[env_id] = []
         self._frames[env_id] = []
         # A stub is worse than nothing: too short to slice an action chunk out
-        # of, and it still costs an episode index.
+        # of, and it still costs an episode index. Cutting at every catch
+        # means most episodes are one pursuit long, a few seconds -- which is
+        # the natural unit anyway.
         if len(rows) < max(int(self._fps), 2):
             return
         if self._done:
@@ -346,7 +397,8 @@ class LeRobotRecorder(ControlComponent):
             print(
                 f"[recorder] done: {self._episode_index} episodes, "
                 f"{self._frame_total} frames at {self._fps:.1f} Hz in "
-                f"{self._root} ({self._dropped} frames dropped at re-throws)",
+                f"{self._root} ({self._dropped} dropped at re-throws, "
+                f"{self._crowded_out} with a robot too close)",
                 flush=True,
             )
 
