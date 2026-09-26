@@ -539,6 +539,15 @@ class MaskedMimicGoalControlConfig(MaskedMimicSteeringControlConfig):
     # How far the ball can be recognised at all. 0 = unlimited (the cone is
     # then the only gate).
     sight_range_m: float = 0.0
+    # Where the eye is. A camera is not at the root: the go2's lens sits
+    # 0.33 m ahead of base_link, and testing the cone from the root instead
+    # of the lens quietly lies at the edges. Measured against 3600 recorded
+    # frames: every single acquisition the camera could not corroborate was
+    # at 55-60 deg from the root, which parallax puts at 59-67 deg from the
+    # lens -- outside a 120 deg frame. Moving the test to the lens took
+    # "the demonstrator can see it but the camera cannot" from 0.9% of
+    # frames to 0.00%. Control stays rooted at the root; only SIGHT moves.
+    sight_forward_m: float = 0.0
     # The belief when blind: the ball is this many degrees off the current
     # heading (180 = directly behind, the default and the honest prior) at
     # search_range_m. Latched in WORLD coordinates when the plan is issued,
@@ -786,13 +795,35 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         to = torch.atan2(delta[:, 1], delta[:, 0])
         return torch.atan2(torch.sin(to - heading), torch.cos(to - heading))
 
+    def _eye_xy(self) -> Tensor:
+        """Where the camera is: ahead of the root by sight_forward_m."""
+        root_state = self.env.simulator.get_root_state()
+        eye = root_state.root_pos[:, :2]
+        if self.config.sight_forward_m == 0.0:
+            return eye
+        heading = rotations.calc_heading(root_state.root_rot, True)
+        forward = torch.stack([torch.cos(heading), torch.sin(heading)], dim=-1)
+        return eye + forward * self.config.sight_forward_m
+
     def _in_view(self) -> Tensor:
-        """Is the ball inside the forward cone (and close enough to see)."""
-        ball = self._goal_xy()
-        seen = self._bearing_to(ball).abs() <= math.radians(self.config.fov_deg) * 0.5
+        """Is the ball inside the forward cone (and close enough to see).
+
+        Measured from the LENS. Yaw only: body pitch and roll tilt the real
+        frustum and this does not follow them, which is the residual ~0.5% of
+        frames where the ball is on screen and this says otherwise. That
+        direction is harmless -- the dog searches for something it could have
+        seen -- unlike the reverse.
+        """
+        delta = self._goal_xy() - self._eye_xy()
+        root_state = self.env.simulator.get_root_state()
+        heading = rotations.calc_heading(root_state.root_rot, True)
+        to = torch.atan2(delta[:, 1], delta[:, 0])
+        bearing = torch.atan2(
+            torch.sin(to - heading), torch.cos(to - heading)
+        ).abs()
+        seen = bearing <= math.radians(self.config.fov_deg) * 0.5
         if self.config.sight_range_m > 0:
-            root_state = self.env.simulator.get_root_state()
-            rng = torch.linalg.norm(ball - root_state.root_pos[:, :2], dim=-1)
+            rng = torch.linalg.norm(delta, dim=-1)
             seen = seen & (rng <= self.config.sight_range_m)
         return seen
 

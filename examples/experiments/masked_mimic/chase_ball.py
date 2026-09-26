@@ -256,6 +256,10 @@ def _install_chase(cfg: EnvConfig, args: argparse.Namespace) -> None:
                 _arg(args, "fov_deg") if _arg(args, "unprivileged") else 0.0
             ),
             sight_range_m=_arg(args, "sight_range"),
+            # Test sight from where the lens actually is. Same number the
+            # camera is mounted at, so the demonstrator's "can I see it"
+            # matches the picture the student will be handed.
+            sight_forward_m=_go2_camera_forward(),
             search_turn_deg=_arg(args, "search_turn_deg"),
             search_range_m=_arg(args, "search_range"),
             vla_hz=_arg(args, "vla_hz"),
@@ -291,6 +295,13 @@ def _install_chase(cfg: EnvConfig, args: argparse.Namespace) -> None:
     # steering reward is dropped with the steering command it scored.
     cfg.observation_components["target_obs"] = target_obs_factory()
     cfg.reward_components = {"target_rew": target_reward_factory()}
+
+
+def _go2_camera_forward() -> float:
+    """How far ahead of the root the go2's lens sits."""
+    from protomotions.robot_configs.go2 import go2_front_camera
+
+    return float(go2_front_camera().pos[0])
 
 
 def _install_camera(simulator_cfg, args: argparse.Namespace) -> None:

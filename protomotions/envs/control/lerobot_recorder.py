@@ -28,6 +28,14 @@ Three choices that matter more than the file format:
   honest evaluation ("did it know where the ball was, or did it get lucky"),
   but nothing the student is fed at inference may come from them.
 
+One timing fact worth knowing: the frame is rendered during the physics
+step, BEFORE the control components update, so every image is one control
+step (20 ms) older than the labels beside it. For continuous motion that is
+a few centimetres, inside the measured alignment error. For a re-throw it is
+a different ball entirely -- the image still shows the old one, huge and
+underfoot, while the label describes a new one metres away. Those frames are
+dropped (see _thrown), which is 0.4% of them.
+
 Run it headless. With a viewer open, every visualization marker renders into
 the camera too, including the conditioned-target ladder -- which is the label
 drawn on top of the image (see VisualizationMarkerConfig.camera_visible).
@@ -113,6 +121,10 @@ class LeRobotRecorder(ControlComponent):
         )
         self._root = os.path.abspath(config.root)
         self._announced = False
+        # Filled on the first step: control components are constructed one
+        # by one, so the ball does not exist yet while this runs.
+        self._last_plan: Optional[Tensor] = None
+        self._dropped = 0
 
         effective_fps = 1.0 / (self._every * env.dt)
         if abs(effective_fps - config.fps) > 1e-6:
@@ -141,6 +153,34 @@ class LeRobotRecorder(ControlComponent):
     def populate_context(self, ctx: EnvContext) -> None:
         """Recording only: publishes nothing."""
 
+    def _plan_id(self) -> Tensor:
+        """The ball's plan counter; bumps on every throw and course change."""
+        ball = self.env.control_manager.components.get(self.config.ball_component)
+        source = getattr(ball, "command_source", None)
+        plan = getattr(source, "plan_id", None)
+        if plan is None:
+            return torch.zeros(
+                self.env.num_envs, dtype=torch.long, device=self.env.device
+            )
+        return plan
+
+    def _thrown(self) -> Tensor:
+        """Envs whose ball moved discontinuously since the last look.
+
+        The image in hand was rendered before this step's control update, so
+        on the step a ball is caught and re-thrown the picture shows the old
+        ball -- filling the frame, about to be caught -- and the label points
+        at the new one. Unlabelable: drop it rather than teach it. Measured
+        at 0.4% of frames, and every one of them was a catch.
+        """
+        plan = self._plan_id()
+        if self._last_plan is None:
+            self._last_plan = plan.clone()
+            return torch.zeros_like(plan, dtype=torch.bool)
+        moved = plan != self._last_plan
+        self._last_plan = plan.clone()
+        return moved
+
     def step(self) -> None:
         if self._done:
             return
@@ -148,6 +188,10 @@ class LeRobotRecorder(ControlComponent):
             self._flush(env_id, reason="reset")
         self._reset_pending[:] = False
 
+        # Checked every control step, not only the recorded ones: a throw
+        # four steps back has been rendered since, so that frame is good and
+        # dropping it would only cost data.
+        thrown = self._thrown()
         self._steps += 1
         if self._steps % self._every != 0:
             return
@@ -172,6 +216,9 @@ class LeRobotRecorder(ControlComponent):
             frames = frames[..., :3]
 
         for env_id in range(self.env.num_envs):
+            if bool(thrown[env_id]):
+                self._dropped += 1
+                continue
             rows = self._rows.setdefault(env_id, [])
             self._frames.setdefault(env_id, []).append(
                 np.ascontiguousarray(frames[env_id])
@@ -290,7 +337,7 @@ class LeRobotRecorder(ControlComponent):
             print(
                 f"[recorder] done: {self._episode_index} episodes, "
                 f"{self._frame_total} frames at {self._fps:.1f} Hz in "
-                f"{self._root}",
+                f"{self._root} ({self._dropped} frames dropped at re-throws)",
                 flush=True,
             )
 
