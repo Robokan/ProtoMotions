@@ -68,6 +68,12 @@ _DEFAULTS = {
     "camera": False,
     "camera_res": 224,
     "camera_probe_every": 50,
+    "record": False,
+    "record_dir": "output/datasets/go2_chase",
+    "record_fps": 10.0,
+    "record_episodes": 40,
+    "record_episode_steps": 200,
+    "record_task": "chase the red ball",
 }
 
 
@@ -155,6 +161,31 @@ def additional_experiment_arguments(parser: argparse.ArgumentParser):
         help="Save a frame from env 0 every N control steps (0 = never). The "
              "probe stops after a dozen frames.")
     parser.add_argument(
+        "--record", action="store_true", default=_DEFAULTS["record"],
+        help="Write a LeRobot dataset of (camera, proprioception) -> "
+             "(egocentric target, seconds left) pairs. Implies --camera. Run "
+             "headless: with a viewer open the conditioned-target markers "
+             "render into the camera and the label ends up drawn on the "
+             "image.")
+    parser.add_argument(
+        "--record-dir", type=str, default=_DEFAULTS["record_dir"],
+        help="Where the dataset goes.")
+    parser.add_argument(
+        "--record-fps", type=float, default=_DEFAULTS["record_fps"],
+        help="Sampling rate, i.e. the rate the student will run at. Rounded "
+             "to a divisor of the control rate.")
+    parser.add_argument(
+        "--record-episodes", type=int, default=_DEFAULTS["record_episodes"],
+        help="Stop after this many episodes.")
+    parser.add_argument(
+        "--record-episode-steps", type=int,
+        default=_DEFAULTS["record_episode_steps"],
+        help="Frames per episode. The chase never ends, so this is a "
+             "bookkeeping unit; a reset cuts an episode short.")
+    parser.add_argument(
+        "--record-task", type=str, default=_DEFAULTS["record_task"],
+        help="The language prompt stored with every frame.")
+    parser.add_argument(
         "--horizon-sec", type=float, default=None,
         help="Lead time of the farthest conditioned target, i.e. how long the "
              "dog is given to reach the ball. Shorter = more urgent. There is "
@@ -236,6 +267,18 @@ def _install_chase(cfg: EnvConfig, args: argparse.Namespace) -> None:
 
     cfg.control_components["speed_probe"] = RootSpeedProbeConfig(label="chase")
 
+    if _arg(args, "record"):
+        from protomotions.envs.control.lerobot_recorder import LeRobotRecorderConfig
+
+        cfg.control_components["recorder"] = LeRobotRecorderConfig(
+            root=_arg(args, "record_dir"),
+            fps=_arg(args, "record_fps"),
+            episode_steps=_arg(args, "record_episode_steps"),
+            max_episodes=_arg(args, "record_episodes"),
+            task=_arg(args, "record_task"),
+            robot_type=getattr(args, "robot_name", "go2"),
+        )
+
     if _arg(args, "camera") and _arg(args, "camera_probe_every") > 0:
         from protomotions.envs.control.camera_probe import CameraProbeConfig
 
@@ -259,7 +302,7 @@ def _install_camera(simulator_cfg, args: argparse.Namespace) -> None:
     drift apart would teach the student to find a ball that never appears in
     its frame.
     """
-    if simulator_cfg is None or not _arg(args, "camera"):
+    if simulator_cfg is None or not (_arg(args, "camera") or _arg(args, "record")):
         return
     from protomotions.robot_configs.go2 import go2_front_camera
 
