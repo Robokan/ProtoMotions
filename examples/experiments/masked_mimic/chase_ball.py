@@ -48,7 +48,9 @@ from protomotions.envs.base_env.config import EnvConfig
 _DEFAULTS = {
     "success_radius": 0.6096,   # two feet
     "throw_min": 2.0,
-    "throw_max": 8.0,
+    # Measured against the camera: past ~4 m the ball is a handful of pixels
+    # and often none at all. See BallChaseCommandSourceConfig.tar_dist_max.
+    "throw_max": 4.0,
     "report_every": 250,
     "moving_ball": False,
     "ball_speed_min": 0.5,
@@ -102,7 +104,10 @@ def additional_experiment_arguments(parser: argparse.ArgumentParser):
         help="Closest the ball is ever thrown (m).")
     parser.add_argument(
         "--throw-max", type=float, default=_DEFAULTS["throw_max"],
-        help="Furthest the ball is ever thrown (m).")
+        help="Furthest the ball is ever thrown (m), and the leash on a "
+             "moving one. Past ~4 m the camera cannot resolve the ball "
+             "(measured), so raising this records targets the student "
+             "cannot see.")
     parser.add_argument(
         "--moving-ball", action="store_true", default=_DEFAULTS["moving_ball"],
         help="The ball moves: random direction and speed per throw, occasional "

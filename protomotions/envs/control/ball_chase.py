@@ -87,9 +87,27 @@ class BallChaseCommandSourceConfig(RandomTargetCommandSourceConfig):
     )
 
     # Re-throw distance. Far enough that catching it means travelling, close
-    # enough that the robot can plausibly see it.
+    # enough that the robot can actually SEE it -- which is now a measured
+    # number rather than a hopeful one. Counting red pixels in recorded
+    # camera frames against the ball's true range, for balls geometrically
+    # inside the 120 deg frame:
+    #
+    #     range     detected   median area   width
+    #     0-2 m      100.0%      101-607 px   17-50 px
+    #     2-3 m      100.0%           48 px     10 px
+    #     3-4 m       99.4%           24 px      7 px
+    #     4-5 m       92.8%           16 px      6 px
+    #     5-6 m       71.5%            8 px      5 px
+    #     6-9 m      ~53%             4-5 px     3 px
+    #
+    # The knee is between 4 and 5 m: a 0.12 m ball subtends 3 px at 7 m and
+    # the camera simply does not resolve it. Beyond the cap the demonstrator
+    # would be chasing something absent from the student's input. 4 m also
+    # sits inside MaskedMimic's trained displacement (p90 2.1 m, p99 5.7 m),
+    # so it fixes the "too far, so it just walks" case at the same time.
+    # Raise it with --throw-max if you want the range and accept the misses.
     tar_dist_min: float = 2.0
-    tar_dist_max: float = 8.0
+    tar_dist_max: float = 4.0
     # Give up and re-throw if the ball has not been caught in this long. The
     # base class' tar_change_time_* do this; the defaults here are much longer
     # because a chase should be allowed to take a while.
@@ -113,6 +131,13 @@ class BallChaseCommandSourceConfig(RandomTargetCommandSourceConfig):
     # process with this mean interval in seconds. Each change is a new plan
     # for the dog -- intercept and deadline are re-solved once. 0 disables.
     ball_turn_mean_sec: float = 5.0
+    # Leash for a MOVING ball. Rolling at up to ball_speed_max with 20-30 s
+    # before the timeout re-throws it, an unbounded ball ends up tens of
+    # metres away and invisible -- the cap above only governs where it is
+    # THROWN. Past this distance from the robot it is thrown again.
+    # None: use tar_dist_max, so "as far as it is ever thrown" is also "as
+    # far as it is ever allowed to get". 0 disables.
+    leash_m: Optional[float] = None
 
 
 class BallChaseCommandSource(RandomTargetCommandSource):
@@ -190,6 +215,20 @@ class BallChaseCommandSource(RandomTargetCommandSource):
                 self._sample_velocity(ids)
                 self.plan_id[ids] += 1   # the dog must re-solve its intercept
         control._tar_pos[:, :2] += self._tar_vel * control.env.dt
+        leash = self.config.leash_m
+        if leash is None:
+            leash = self.config.tar_dist_max
+        if leash > 0:
+            root = control.env.simulator.get_root_state()
+            gone = (
+                torch.linalg.norm(
+                    control._tar_pos[:, :2] - root.root_pos[:, :2], dim=-1
+                )
+                > leash
+            )
+            ids = gone.nonzero(as_tuple=False).flatten()
+            if len(ids) > 0:
+                self._set_random_target(ids)
         if self._target_bounds is not None:
             x_min, x_max, y_min, y_max = self._target_bounds
             pos = control._tar_pos
@@ -350,7 +389,7 @@ class BallChaseCommandSource(RandomTargetCommandSource):
 def ball_chase_target_config(
     success_radius: float = TWO_FEET_M,
     throw_min: float = 2.0,
-    throw_max: float = 8.0,
+    throw_max: float = 4.0,
     moving: bool = False,
     ball_speed_min: float = 0.5,
     ball_speed_max: float = 2.0,
