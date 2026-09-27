@@ -60,8 +60,8 @@ _DEFAULTS = {
     # Roughly the go2's forward camera. Total cone width, yaw only.
     "fov_deg": 120.0,
     "sight_range": 0.0,
-    "search_turn_deg": 180.0,
-    "search_range": 1.5,
+    "search_turn_deg": 90.0,
+    "search_follows_lean": True,
     # The VLA will see frames at this rate; the search sweeps slowly enough
     # that the scene moves only search_deg_per_frame between two of them.
     "vla_hz": 10.0,
@@ -137,13 +137,16 @@ def additional_experiment_arguments(parser: argparse.ArgumentParser):
         help="How far the ball can be recognised (m). 0 = unlimited.")
     parser.add_argument(
         "--search-turn-deg", type=float, default=_DEFAULTS["search_turn_deg"],
-        help="Where the dog believes an unseen ball is, in degrees off its "
-             "current heading. 180 = directly behind. Below 180 the search "
-             "sweeps consistently toward the side the ball was last seen.")
+        help="How far each leg of the in-place search sweep turns, degrees. "
+             "Legs compose in one direction, so this is the granularity of "
+             "the sweep rather than its extent.")
     parser.add_argument(
-        "--search-range", type=float, default=_DEFAULTS["search_range"],
-        help="How far away that believed ball sits (m). Small keeps the "
-             "search leg mostly a pivot.")
+        "--search-by-last-seen", dest="search_follows_lean",
+        action="store_false", default=_DEFAULTS["search_follows_lean"],
+        help="Sweep toward the side the ball was last seen leaving instead "
+             "of the side the dog's weight is on. Faster, but only "
+             "learnable by a student with memory -- ACT sees one frame, and "
+             "two empty frames look identical whichever way the ball went.")
     parser.add_argument(
         "--vla-hz", type=float, default=_DEFAULTS["vla_hz"],
         help="Frame rate of whatever will be doing the seeing. Sets how slowly "
@@ -266,7 +269,7 @@ def _install_chase(cfg: EnvConfig, args: argparse.Namespace) -> None:
             # matches the picture the student will be handed.
             sight_forward_m=_go2_camera_forward(),
             search_turn_deg=_arg(args, "search_turn_deg"),
-            search_range_m=_arg(args, "search_range"),
+            search_follows_lean=_arg(args, "search_follows_lean"),
             vla_hz=_arg(args, "vla_hz"),
             search_deg_per_frame=_arg(args, "search_deg_per_frame"),
         ),
@@ -320,6 +323,26 @@ def _go2_camera_forward() -> float:
     return float(go2_front_camera().pos[0])
 
 
+def _install_load_sensing(robot_cfg, args: argparse.Namespace) -> None:
+    """Put contact sensors where the ground actually pushes back.
+
+    Only for runs that record or look: contact sensing costs simulation time
+    and every other go2 experiment should keep the defaults. Scoped by
+    assigning to the run's own robot config rather than editing go2.py.
+
+    The bodies are the calves, not the *_foot frames -- see GO2_LOAD_BODIES.
+    A real go2 has foot force sensors, so this is proprioception the robot
+    genuinely has; the demonstrator reads it to decide which way to sweep
+    when it loses sight of the ball, and it goes into observation.state so
+    the student can read it too.
+    """
+    if robot_cfg is None or not (_arg(args, "camera") or _arg(args, "record")):
+        return
+    from protomotions.robot_configs.go2 import GO2_LOAD_BODIES
+
+    robot_cfg.contact_bodies = list(GO2_LOAD_BODIES)
+
+
 def _install_camera(simulator_cfg, args: argparse.Namespace) -> None:
     """Give the dog the camera it would actually be looking through.
 
@@ -348,6 +371,7 @@ def configure_robot_and_simulator(robot_cfg, simulator_cfg, args: argparse.Names
 
 
 def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
+    _install_load_sensing(robot_cfg, args)
     cfg = _steering()._transformer().env_config(robot_cfg, args)
     _install_chase(cfg, args)
     return cfg
@@ -365,6 +389,7 @@ def apply_inference_overrides(
 ):
     """inference_agent.py builds configs from the checkpoint pickle and calls
     only this hook, so the task has to be installed here, not in env_config."""
+    _install_load_sensing(robot_cfg, args)
     _install_camera(simulator_cfg, args)
     if env_cfg is None:
         return

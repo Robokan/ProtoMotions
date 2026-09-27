@@ -65,7 +65,11 @@ def read_video(path: Path) -> np.ndarray:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "staging", type=Path, help="Directory the recorder wrote."
+        "staging", type=Path, nargs="+",
+        help="One or more directories the recorder wrote. Recording happens "
+             "in sessions -- a box gets rebooted, a run gets restarted -- and "
+             "each one starts its episode numbering at zero, so they are "
+             "separate directories and get merged here."
     )
     parser.add_argument(
         "--repo-id", required=True, help="e.g. yourname/go2_chase."
@@ -169,21 +173,34 @@ def main() -> None:
     args = parse_args()
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
-    staging = args.staging
-    info = json.loads((staging / "meta" / "info.json").read_text())
+    # (staging dir, episode metadata) pairs, in the order given.
+    work = []
+    info = None
+    for staging in args.staging:
+        this_info = json.loads((staging / "meta" / "info.json").read_text())
+        if info is None:
+            info = this_info
+        elif this_info["features"] != info["features"] or (
+            this_info["fps"] != info["fps"]
+        ):
+            raise SystemExit(
+                f"{staging} was recorded with different features or fps than "
+                f"{args.staging[0]}; they cannot go in one dataset."
+            )
+        episodes = [
+            json.loads(line)
+            for line in (staging / "meta" / "episodes.jsonl").read_text().splitlines()
+            if line.strip()
+        ]
+        if args.max_episodes is not None:
+            episodes = episodes[: args.max_episodes]
+        work.extend((staging, meta) for meta in episodes)
     tasks = [
         json.loads(line)
-        for line in (staging / "meta" / "tasks.jsonl").read_text().splitlines()
+        for line in (args.staging[0] / "meta" / "tasks.jsonl").read_text().splitlines()
         if line.strip()
     ]
     task_by_index = {t["task_index"]: t["task"] for t in tasks}
-    episodes = [
-        json.loads(line)
-        for line in (staging / "meta" / "episodes.jsonl").read_text().splitlines()
-        if line.strip()
-    ]
-    if args.max_episodes is not None:
-        episodes = episodes[: args.max_episodes]
     features = staging_features(info)
     video_keys = [k for k, v in features.items() if v["dtype"] in ("video", "image")]
     vector_keys = [k for k in features if k not in video_keys]
@@ -193,8 +210,8 @@ def main() -> None:
         shutil.rmtree(root)
 
     dropped_tilt = dropped_short = written = 0
-    print(f"{len(episodes)} episodes, {info['total_frames']} frames at "
-          f"{info['fps']} Hz")
+    print(f"{len(work)} staged episodes from {len(args.staging)} recording(s) "
+          f"at {info['fps']} Hz")
     print("features: " + ", ".join(f"{k}{tuple(v['shape'])}" for k, v in features.items()))
 
     dataset = LeRobotDataset.create(
@@ -206,7 +223,7 @@ def main() -> None:
         use_videos=bool(video_keys),
     )
 
-    for meta in episodes:
+    for staging, meta in work:
         index = meta["episode_index"]
         table = pq.read_table(
             staging / "data" / "chunk-000" / f"episode_{index:06d}.parquet"
@@ -247,7 +264,7 @@ def main() -> None:
                      task, start, stop)
             dataset.save_episode()
             written += 1
-        print(f"  episode {index}: {kept}/{length} frames in "
+        print(f"  {staging.name} episode {index}: {kept}/{length} frames in "
               f"{sum(1 for a, b in runs if b - a >= args.min_frames)} run(s)")
 
     dataset.finalize()

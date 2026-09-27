@@ -249,3 +249,17 @@ def go2_front_camera(
         horizontal_fov_deg=fov_deg,
         update_period=update_period,
     )
+
+
+# The bodies that actually carry ground load. NOT the *_foot bodies: in the
+# MJCF those are empty frames marking the toe position
+# (<body name="FL_foot" pos="0 0 -0.213"/>), and the foot's collider is a
+# sphere attached to the CALF (<geom name="FL" class="foot"/>). A contact
+# sensor on an empty body reports zero forever, which is how this was found
+# -- four correctly named sensors all reading 0.0 N.
+#
+# Deliberately not the default contact_bodies: changing that would alter
+# contact semantics for every other go2 experiment. An experiment that wants
+# foot load opts in by assigning this to robot_cfg.contact_bodies, which is
+# also what creates the sensors -- they are not free.
+GO2_LOAD_BODIES = ["FL_calf", "FR_calf", "RL_calf", "RR_calf"]

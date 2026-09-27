@@ -587,17 +587,47 @@ class MaskedMimicGoalControlConfig(MaskedMimicSteeringControlConfig):
     # "the demonstrator can see it but the camera cannot" from 0.9% of
     # frames to 0.00%. Control stays rooted at the root; only SIGHT moves.
     sight_forward_m: float = 0.0
-    # The belief when blind: the ball is this many degrees off the current
-    # heading (180 = directly behind, the default and the honest prior) at
-    # search_range_m. Latched in WORLD coordinates when the plan is issued,
-    # not recomputed per step -- a belief that rotates with the robot is a
-    # carrot on a stick and the dog spins without ever arriving at it.
-    # Below 180 the sign matters and the search keeps turning the way the
-    # ball was last seen leaving, which sweeps one direction consistently.
-    search_turn_deg: float = 180.0
-    # Near enough that the leg is mostly pivot (the part that actually
-    # searches) and the target stays inside the trained displacement range.
-    search_range_m: float = 1.5
+    # Searching is a SWEEP IN PLACE: the dog turns one way, steadily, until
+    # the ball enters the frame. It does not travel.
+    #
+    # The first version of this put a believed ball behind the robot and let
+    # the ordinary machinery chase it, which was wrong in a way worth
+    # recording: the deadline budgets turn PLUS run, so once the dog came
+    # round and still saw nothing, it ran at a point it had invented, in a
+    # direction chosen by where it happened to be facing when it lost sight
+    # (Eric: "if it faces that target and doesn't see the ball then it runs
+    # the wrong direction"). Searching by moving also makes the problem
+    # harder -- it changes the bearing to everything it has not looked at
+    # yet, and a ball can be carried out of range by the search for it.
+    #
+    # A sweep has no such failure. The position target stays on the robot,
+    # so the only live instruction is "face this way by then", and the leg
+    # is a pure pivot. Each leg turns search_turn_deg further in the SAME
+    # direction -- the side the ball was last seen leaving, and otherwise
+    # left -- so consecutive legs compose into one continuous rotation that
+    # covers every bearing rather than rocking back and forth. 90 deg is
+    # short enough that the dog never finishes a leg and stands waiting,
+    # and long enough to read as a decisive turn.
+    search_turn_deg: float = 90.0
+    # Which way to sweep. The obvious signal -- the side the ball was last
+    # seen leaving -- is the one thing we cannot use: ACT refuses
+    # n_obs_steps != 1, so the student sees a single frame, and two frames
+    # with no ball in them look identical whichever side it left by. Giving
+    # them opposite labels trains an L1 regressor towards the average of
+    # left and right, which is standing still.
+    #
+    # The dog's own WEIGHT is observable (Eric). A go2 has foot force
+    # sensors, they are in observation.state, and load already favours one
+    # side when it is mid-stride -- so "turn the way you are already
+    # leaning" is both a function of the input and the cheaper turn
+    # biomechanically. It carries no information about where the BALL is,
+    # which is fine: nothing does. Its job is to make the choice consistent
+    # rather than lucky, and the turn then sustains its own lean, so the
+    # sweep holds its direction once it starts.
+    #
+    # Set false to fall back to the last side the ball was seen leaving --
+    # faster, and correct only for a student with memory.
+    search_follows_lean: bool = True
     # How fast to sweep. A search turned at the dog's top yaw rate is a
     # search run blind: the VLA that has to do the seeing will be sampling at
     # vla_hz, and between two of its frames the whole scene rotates by
@@ -611,7 +641,8 @@ class MaskedMimicGoalControlConfig(MaskedMimicSteeringControlConfig):
     #
     # 10 deg at 10 Hz = 100 deg/s, which holds any bearing inside a 120 deg
     # cone for 1.2 s -- 12 frames to notice a ball in, against 6 at top yaw,
-    # and consecutive frames overlap by more than 90% of the cone.
+    # and consecutive frames overlap by more than 90% of the cone. A 90 deg
+    # leg therefore takes 0.9 s, and a full revolution 3.6 s.
     #
     # The budget is the only thing that sets pace here (there is no rate
     # limiter anywhere): a longer deadline for the same turn IS a slower
@@ -687,8 +718,8 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
             (env.num_envs,), not self._unprivileged(), dtype=torch.bool,
             device=env.device,
         )
-        # The latched "it must be behind me" point, used while blind.
-        self._search_xy = torch.zeros(env.num_envs, 2, device=env.device)
+        # Heading (world yaw) the current sweep leg is turning towards.
+        self._sweep_heading = torch.zeros(env.num_envs, device=env.device)
         # Which way to sweep: +1 left, -1 right. Set to the side the ball
         # was last seen leaving on.
         self._search_sign = torch.ones(env.num_envs, device=env.device)
@@ -698,6 +729,7 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         # would be of the NEW ball and would leak its position into the
         # search direction.
         self._last_bearing = torch.zeros(env.num_envs, device=env.device)
+        self._lean_warned = False
         # Bumped whenever the BELIEF changes (acquired / lost). The deadline
         # is keyed to this as well as to the ball's plan id, so acquiring the
         # ball re-plans immediately instead of finishing the search leg.
@@ -879,13 +911,17 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         seen = self._in_view()
         lost = self._ball_seen & ~seen
         if bool(lost.any()):
-            # Sweep after it: it left the frame on one side, so keep turning
-            # that way rather than guessing. (Only bites below 180 deg.)
-            side = torch.where(
-                self._last_bearing >= 0,
-                torch.ones_like(self._search_sign),
-                -torch.ones_like(self._search_sign),
-            )
+            # Fix the sweep direction once, at the moment sight is lost, and
+            # hold it for the whole search: a direction that can change
+            # mid-sweep is a dog rocking between two headings.
+            if self.config.search_follows_lean:
+                side = self._lean_sign()
+            else:
+                side = torch.where(
+                    self._last_bearing >= 0,
+                    torch.ones_like(self._search_sign),
+                    -torch.ones_like(self._search_sign),
+                )
             self._search_sign = torch.where(lost, side, self._search_sign)
         changed = lost | (seen & ~self._ball_seen)
         if bool(changed.any()):
@@ -897,28 +933,90 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
             )
 
     def _latch_search(self, env_ids: Tensor) -> None:
-        """Believe the ball is behind, and nail that belief to the ground.
+        """Aim the next leg of the sweep: search_turn_deg further round.
 
-        Placing it in world coordinates is the whole trick: the dog turns
-        toward a point that stays put, so the turn ends. Re-deriving "behind
-        me" every step would move the point with the robot and the dog would
-        rotate forever at a fixed bearing error.
+        Measured from the heading the dog has NOW, so legs compose -- each
+        one picks up where the last finished and the rotation continues in
+        one direction instead of rocking between two. Stored as an absolute
+        world heading so the target stops receding once it is reached; a
+        target re-derived from the current heading every step is a carrot on
+        a stick and the dog spins forever chasing a fixed bearing error.
         """
         root_state = self.env.simulator.get_root_state()
         heading = rotations.calc_heading(root_state.root_rot, True)
-        ang = heading + self._search_sign * math.radians(self.config.search_turn_deg)
-        point = root_state.root_pos[:, :2] + self.config.search_range_m * torch.stack(
-            [torch.cos(ang), torch.sin(ang)], dim=-1
-        )
-        self._search_xy[env_ids] = point[env_ids]
+        self._sweep_heading[env_ids] = (
+            heading + self._search_sign * math.radians(self.config.search_turn_deg)
+        )[env_ids]
+
+    def _foot_load(self) -> Optional[Tensor]:
+        """Load under each contact body, or None if unavailable.
+
+        get_bodies_contact_buf() returns forces already converted to the
+        common body ordering, which is the ordering contact_body_ids
+        indexes -- so the two line up. The field is
+        rigid_body_contact_forces; RobotState also has a rigid_body_contacts
+        this does NOT populate, and reading that one silently yields None.
+        """
+        ids = getattr(self.env, "contact_body_ids", None)
+        if ids is None or len(ids) == 0:
+            return None
+        contacts = self.env.simulator.get_bodies_contact_buf()
+        forces = getattr(contacts, "rigid_body_contact_forces", None)
+        if forces is None:
+            forces = getattr(contacts, "rigid_body_contacts", None)
+        if forces is None:
+            return None
+        return forces[:, ids].norm(dim=-1)
+
+    def _lean_sign(self) -> Tensor:
+        """+1 if the weight is on the left feet, -1 if on the right.
+
+        The go2 names its feet FL/FR/RL/RR, so the second letter is the
+        side. Falls back to +1 when the load cannot be read or the robot
+        has no left/right feet to compare -- an arbitrary but CONSTANT
+        choice, which is the property that matters.
+        """
+        default = torch.ones(self.env.num_envs, device=self.env.device)
+        load = self._foot_load()
+        names = list(self.env.robot_config.contact_bodies or [])
+        left = [i for i, n in enumerate(names) if len(n) > 1 and n[1] in "Ll"]
+        right = [i for i, n in enumerate(names) if len(n) > 1 and n[1] in "Rr"]
+        if load is None or not left or not right or load.shape[1] != len(names):
+            # Say so. Falling back to a constant is survivable behaviour but
+            # it is NOT the configured one, and a silent fallback here is
+            # what hid the field-name bug that made every sweep turn left.
+            if not self._lean_warned:
+                print(
+                    "[chase-vision] search_follows_lean is on but foot load "
+                    f"is unreadable (load={None if load is None else tuple(load.shape)}, "
+                    f"contact_bodies={names}) -- sweeping one fixed "
+                    "direction instead.",
+                    flush=True,
+                )
+                self._lean_warned = True
+            return default
+        bias = load[:, left].sum(-1) - load[:, right].sum(-1)
+        return torch.where(bias >= 0, default, -default)
+
+    def _sweep_error(self) -> Tensor:
+        """Signed angle still to turn on this leg."""
+        root_state = self.env.simulator.get_root_state()
+        heading = rotations.calc_heading(root_state.root_rot, True)
+        delta = self._sweep_heading - heading
+        return torch.atan2(torch.sin(delta), torch.cos(delta))
 
     def _belief_xy(self) -> Tensor:
-        """Where the dog thinks the ball is. The truth when privileged."""
+        """Where to stand. The ball when it can be seen, here when it cannot.
+
+        A searching dog has no belief about WHERE the ball is -- that is what
+        it is searching for -- so it does not pretend to one. Its own
+        position is the honest answer, and as a target it says "do not
+        travel", leaving the heading as the only live instruction.
+        """
         if not self._unprivileged():
             return self._goal_xy()
-        return torch.where(
-            self._ball_seen.unsqueeze(-1), self._goal_xy(), self._search_xy
-        )
+        here = self.env.simulator.get_root_state().root_pos[:, :2]
+        return torch.where(self._ball_seen.unsqueeze(-1), self._goal_xy(), here)
 
     def _belief_vel(self) -> Tensor:
         """Believed ball velocity -- zero for a belief, which is not moving."""
@@ -927,7 +1025,7 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         return torch.where(
             self._ball_seen.unsqueeze(-1),
             self._ball_vel(),
-            torch.zeros_like(self._search_xy),
+            torch.zeros_like(self._goal_xy()),
         )
 
     def _target_xy(self) -> Tensor:
@@ -1102,6 +1200,14 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         budget = (tau + self._bearing_gate(bearing) * run).clamp(
             self.config.min_horizon_sec, self.config.max_horizon_sec
         )
+        if self._unprivileged():
+            # Searching: no run term at all. The budget is exactly the time
+            # to turn this leg at the sweep rate, so the instruction reduces
+            # to "face that way by then" and the dog stays put.
+            sweep = (self._sweep_error().abs() / self._search_yaw()).clamp(
+                self.config.min_horizon_sec, self.config.max_horizon_sec
+            )
+            budget = torch.where(self._ball_seen, budget, sweep)
         now = self._now()
         self._deadline[env_ids] = now[env_ids] + budget[env_ids]
         # The prediction at issue time, from the CLAMPED budget -- if the
@@ -1141,11 +1247,11 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         print(
             f"[chase-vision] ball in view {100.0 * self._sight_seen / steps:.0f}% "
             f"of steps, {len(spans)} reacquisitions, mean {blind_s:.1f} s to "
-            f"find it (fov {self.config.fov_deg:.0f} deg, search "
-            f"{self.config.search_turn_deg:.0f} deg at "
-            f"{self.config.search_range_m:.1f} m, sweep {sweep:.0f} deg/s = "
-            f"{dwell:.1f} s / {dwell * self.config.vla_hz:.0f} frames in view "
-            f"at {self.config.vla_hz:.0f} Hz)",
+            f"find it (fov {self.config.fov_deg:.0f} deg, sweeping in place "
+            f"{self.config.search_turn_deg:.0f} deg per leg at "
+            f"{sweep:.0f} deg/s = {dwell:.1f} s / "
+            f"{dwell * self.config.vla_hz:.0f} frames in view at "
+            f"{self.config.vla_hz:.0f} Hz)",
             flush=True,
         )
         self._sight_steps = 0
@@ -1185,6 +1291,15 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         along = root_pos[:, :2].unsqueeze(1) + (
             goal - root_pos[:, :2]
         ).unsqueeze(1) * frac
+        if self._unprivileged():
+            # A search does not travel. Every slot sits on the robot, so the
+            # only thing the conditioning asks for is the heading -- which
+            # is the sweep, not the direction of some invented ball.
+            blind = ~self._ball_seen
+            along = torch.where(
+                blind.view(-1, 1, 1), root_pos[:, :2].unsqueeze(1), along
+            )
+            heading = torch.where(blind, self._sweep_heading, heading)
         return along, heading.unsqueeze(-1).expand(-1, steps)
 
     def _command(self) -> Tensor:

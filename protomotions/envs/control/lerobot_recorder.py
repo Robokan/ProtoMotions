@@ -264,6 +264,8 @@ class LeRobotRecorder(ControlComponent):
                 self._announced = True
             return
 
+        if not self._announced:
+            self._report_foot_sensors()
         state = self._state()
         action, extras = self._action()
         frames = frame_batch.detach().cpu().numpy()
@@ -335,7 +337,52 @@ class LeRobotRecorder(ControlComponent):
         dof = sim.get_dof_state()
         parts.append(dof.dof_pos)
         parts.append(dof.dof_vel)
+        # Load under each foot. A go2 has force sensors there, so this is
+        # proprioception and not a simulator privilege -- and it is what the
+        # demonstrator reads to decide which way to sweep when it loses
+        # sight of the ball (see ball_chase.search_follows_lean). Leaving it
+        # out would make that decision unlearnable: the student would see
+        # two identical empty frames labelled turn-left and turn-right.
+        load = self._foot_load()
+        if load is not None:
+            parts.append(load)
         return torch.cat(parts, dim=-1).detach().cpu().numpy().astype(np.float32)
+
+    def _report_foot_sensors(self) -> None:
+        """Say once whether the foot loads are real, because zeros are not.
+
+        A dead column is worse than a missing one: the width looks right,
+        the demonstrator's lean rule silently collapses to a constant, and
+        nothing complains until the trained policy only ever turns one way.
+        """
+        sim = self.env.simulator
+        sensors = getattr(sim, "_contact_sensor_map", {})
+        load = self._foot_load()
+        print(
+            f"[recorder] contact sensors: {len(sensors)} "
+            f"({sorted(sensors)[:6]}), foot load "
+            f"{'unreadable' if load is None else load[0].tolist()}",
+            flush=True,
+        )
+
+    def _foot_load(self) -> Optional[Tensor]:
+        """Contact force magnitude under each contact body, or None.
+
+        The populated field is rigid_body_contact_forces -- RobotState also
+        carries a rigid_body_contacts that this path leaves as None, and
+        reading that one drops the foot loads out of the state vector
+        without a word.
+        """
+        ids = getattr(self.env, "contact_body_ids", None)
+        if ids is None or len(ids) == 0:
+            return None
+        contacts = self.env.simulator.get_bodies_contact_buf()
+        forces = getattr(contacts, "rigid_body_contact_forces", None)
+        if forces is None:
+            forces = getattr(contacts, "rigid_body_contacts", None)
+        if forces is None:
+            return None
+        return forces[:, ids].norm(dim=-1)
 
     def _action(self):
         """The demonstrator's target, in the robot's own heading frame."""
@@ -560,6 +607,7 @@ class LeRobotRecorder(ControlComponent):
         names += [f"ang_vel_{a}" for a in "xyz"]
         dofs = list(self.env.robot_config.kinematic_info.dof_names)
         names += [f"{d}.pos" for d in dofs] + [f"{d}.vel" for d in dofs]
+        names += [f"{b}.load" for b in (self.env.robot_config.contact_bodies or [])]
         if len(names) != state_dim:
             return [f"s{i}" for i in range(state_dim)]
         return names
