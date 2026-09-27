@@ -118,14 +118,26 @@ def _object_state(root_pos, root_rot=None, root_vel=None):
 
 
 class _FakeSimulator:
-    def __init__(self, root_pos, *, num_bodies=1, headless=False):
+    def __init__(self, root_pos, *, num_bodies=1, headless=False, cameras=None):
         self.headless = headless
         self.user_interface = UserInterface()
         self.decimation = 2
-        self.config = SimpleNamespace(sim=SimpleNamespace(fps=20))
+        self.config = SimpleNamespace(
+            sim=SimpleNamespace(fps=20), onboard_cameras=cameras
+        )
         self.reset_calls = []
         self.robot_state = _robot_state(root_pos, num_bodies=num_bodies)
         self.object_state = None
+
+    @property
+    def show_markers(self) -> bool:
+        """Same rule as the real simulator: a viewer OR an onboard camera
+        gives the markers an audience. Markers are how this codebase puts a
+        thing in the world -- the chase ball IS one -- so a camera run needs
+        them even with no window."""
+        if not self.headless:
+            return True
+        return bool(self.config.onboard_cameras)
 
     def get_root_state(self, env_ids=None):
         root = SimpleNamespace(
@@ -943,7 +955,7 @@ def test_masked_mimic_fixed_masks_context_and_colored_marker_state():
         num_envs=2,
         device=torch.device("cpu"),
         dt=0.1,
-        simulator=SimpleNamespace(headless=False),
+        simulator=SimpleNamespace(headless=False, show_markers=True),
         motion_manager=SimpleNamespace(
             motion_ids=torch.tensor([0, 1]),
             motion_times=torch.tensor([0.2, 0.2]),
@@ -1008,6 +1020,7 @@ def test_masked_mimic_fixed_masks_context_and_colored_marker_state():
     assert torch.equal(ctx.masked_mimic.target_bodies_masks, control.masked_mimic_target_bodies_masks)
 
     env.simulator.headless = True
+    env.simulator.show_markers = False      # no viewer and no camera
     assert control.get_markers_state() == {}
 
 
@@ -1039,7 +1052,7 @@ def test_masked_mimic_reset_initializes_future_times_and_can_hide_all_targets():
         num_envs=2,
         device=torch.device("cpu"),
         dt=0.1,
-        simulator=SimpleNamespace(headless=True),
+        simulator=SimpleNamespace(headless=True, show_markers=False),
         motion_manager=motion_manager,
         motion_lib=_MotionLib(),
         get_spawn_to_ref_pose_offset_with_terrain_height_correction=lambda ref: torch.zeros(ref.shape[0], 1, 3),
@@ -1085,7 +1098,7 @@ def test_masked_mimic_body_mask_sampling_honors_max_and_small_body_probabilities
         num_envs=4,
         device=torch.device("cpu"),
         dt=0.1,
-        simulator=SimpleNamespace(headless=True),
+        simulator=SimpleNamespace(headless=True, show_markers=False),
         motion_manager=SimpleNamespace(
             motion_ids=torch.zeros(4, dtype=torch.long),
             motion_times=torch.zeros(4),
@@ -1161,7 +1174,7 @@ def test_masked_mimic_shifts_masks_resamples_nonempty_and_inherits_clip_terminat
         num_envs=2,
         device=torch.device("cpu"),
         dt=0.1,
-        simulator=SimpleNamespace(headless=True),
+        simulator=SimpleNamespace(headless=True, show_markers=False),
         motion_manager=motion_manager,
         motion_lib=_MotionLib(),
         get_spawn_to_ref_pose_offset_with_terrain_height_correction=lambda ref: torch.zeros(ref.shape[0], 1, 3),
@@ -1253,7 +1266,7 @@ def test_mimic_markers_reuse_populate_context_reference_until_key_changes():
         num_envs=2,
         device=torch.device("cpu"),
         dt=0.1,
-        simulator=SimpleNamespace(headless=False),
+        simulator=SimpleNamespace(headless=False, show_markers=True),
         motion_manager=manager,
         motion_lib=_MotionLib(),
         get_spawn_to_ref_pose_offset_with_terrain_height_correction=lambda ref: torch.ones(ref.shape[0], 1, 3),
@@ -1599,7 +1612,15 @@ def _goal_control(num_envs=1, steps=5, horizon=1.0, **kwargs):
         num_masked_future_steps=steps, horizon_sec=horizon, **kwargs
     )
     control = MaskedMimicGoalControl(cfg, env)
-    ball = SimpleNamespace(_tar_pos=torch.zeros(num_envs, 3))
+    # A bare command source: the goal control reads ball velocity and plan
+    # id THROUGH it (getattr, so absent means a static ball on one plan),
+    # which is what a stationary stub ball should look like.
+    ball = SimpleNamespace(
+        _tar_pos=torch.zeros(num_envs, 3),
+        command_source=SimpleNamespace(
+            plan_id=torch.zeros(num_envs, dtype=torch.long)
+        ),
+    )
     env.control_manager = SimpleNamespace(components={"ball": ball})
     env.simulator = SimpleNamespace(
         get_root_state=lambda: SimpleNamespace(
@@ -1720,13 +1741,23 @@ def test_ball_chase_deadline_counts_down_as_time_passes():
 
 
 def test_ball_chase_a_new_throw_sets_a_new_deadline():
+    """A THROW re-issues the deadline -- and only a throw. The ball simply
+    being somewhere else does not: a moving ball is somewhere else every
+    step, and a deadline re-issued every step is the standing "get there
+    immediately" demand rather than a countdown. The throw is what bumps the
+    source's plan id."""
     control, ball = _goal_control(num_envs=1, steps=5, max_speed=2.0)
     ball._tar_pos = torch.tensor([[6.0, 0.0, 0.0]])
     control.env.progress_buf = torch.tensor([0])
     control._lead_times()
 
+    # Same plan, ball rolled nearer: the original deadline keeps counting down.
     control.env.progress_buf = torch.tensor([25])
-    ball._tar_pos = torch.tensor([[2.0, 0.0, 0.0]])  # caught, re-thrown closer
+    ball._tar_pos = torch.tensor([[2.0, 0.0, 0.0]])
+    assert control._lead_times()[0, 0].item() == pytest.approx(2.5, rel=1e-3)
+
+    # Caught and re-thrown: a new plan, so a new deadline from now.
+    ball.command_source.plan_id += 1
     fresh = control._lead_times()[0, 0].item()
 
     assert fresh == pytest.approx(1.0, rel=1e-3)     # 2 m / 2 m/s, from now
@@ -1747,11 +1778,11 @@ def test_ball_chase_deadline_budgets_the_turn_not_just_the_run():
     root = torch.zeros(1, 3)
 
     ball._tar_pos = torch.tensor([[4.0, 0.0, 0.0]])       # dead ahead
-    control._deadline_ball[:] = float("nan")
+    control._deadline_plan[:] = -1        # force a fresh plan
     ahead = control._lead_times()[0, 0].item()
 
     ball._tar_pos = torch.tensor([[-4.0, 0.0, 0.0]])      # directly behind
-    control._deadline_ball[:] = float("nan")
+    control._deadline_plan[:] = -1        # force a fresh plan
     behind = control._lead_times()[0, 0].item()
 
     assert ahead == pytest.approx(2.0, rel=1e-3)          # 4 m / 2 m/s, no turn
@@ -1774,7 +1805,7 @@ def test_ball_chase_holds_position_target_when_the_ball_is_behind():
     rot = _yaw_quat(torch.tensor([0.0]))       # facing +x
 
     ball._tar_pos = torch.tensor([[-4.0, 0.0, 0.0]])   # directly behind
-    control._deadline_ball[:] = float("nan")
+    control._deadline_plan[:] = -1        # force a fresh plan
     xy, heading = control._rollout(root, rot, control._lead_times())
 
     # Position target stays on the robot: nothing asks it to translate yet.
@@ -1786,7 +1817,7 @@ def test_ball_chase_holds_position_target_when_the_ball_is_behind():
 def test_ball_chase_position_target_is_full_when_the_ball_is_ahead():
     control, ball = _goal_control(num_envs=1, max_speed=2.0)
     ball._tar_pos = torch.tensor([[4.0, 0.0, 0.0]])    # dead ahead
-    control._deadline_ball[:] = float("nan")
+    control._deadline_plan[:] = -1        # force a fresh plan
 
     xy, _ = control._rollout(
         torch.zeros(1, 3), _yaw_quat(torch.tensor([0.0])), control._lead_times()

@@ -219,6 +219,7 @@ class _FakeSimulator:
         self.config = SimpleNamespace(
             _target_="fake.IsaacGym",
             domain_randomization=SimpleNamespace(observation_noise=None),
+            onboard_cameras=None,
         )
         self.state = _robot_state(num_envs)
         self.reset_calls = []
@@ -237,6 +238,19 @@ class _FakeSimulator:
 
     def get_robot_state(self):
         return self.state
+
+    @property
+    def show_markers(self) -> bool:
+        """Markers need an audience: a viewer, or an onboard camera."""
+        if not self.headless:
+            return True
+        return bool(self.config.onboard_cameras)
+
+    @property
+    def markers_camera_only(self) -> bool:
+        """Only the robot's own camera is watching, so annotation markers
+        are dropped and a recorded frame cannot leak the answer."""
+        return self.headless and bool(self.config.onboard_cameras)
 
     def get_root_state(self):
         return self.state
@@ -412,8 +426,13 @@ def _robot_config():
             body_names=["root", "foot"],
             dof_limits_lower=torch.tensor([-1.0, -1.0]),
             dof_limits_upper=torch.tensor([1.0, 1.0]),
+            dof_names=["hip", "knee"],
             to=lambda device: None,
         ),
+        # RSI clamps reference dof velocities to each joint's declared
+        # velocity_limit. An empty table is a robot that declares none, so
+        # the reset path falls back to its documented 30 rad/s ceiling.
+        control=SimpleNamespace(control_info={}),
         contact_bodies=["root"],
         non_termination_contact_bodies=["foot"],
         anchor_body_index=0,

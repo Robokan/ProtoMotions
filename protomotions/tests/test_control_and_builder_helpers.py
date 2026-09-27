@@ -298,7 +298,7 @@ def test_mimic_control_visualization_marker_config_and_state():
     env = SimpleNamespace(
         num_envs=2,
         device=torch.device("cpu"),
-        simulator=SimpleNamespace(headless=False),
+        simulator=SimpleNamespace(headless=False, show_markers=True),
         motion_manager=SimpleNamespace(
             motion_ids=torch.tensor([2, 3]),
             motion_times=torch.tensor([0.25, 0.5]),
@@ -340,6 +340,7 @@ def test_mimic_control_visualization_marker_config_and_state():
     )
 
     env.simulator.headless = True
+    env.simulator.show_markers = False      # no viewer and no camera
     assert control.get_markers_state() == {}
 
 
