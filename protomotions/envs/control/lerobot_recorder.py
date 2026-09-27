@@ -149,6 +149,11 @@ class LeRobotRecorder(ControlComponent):
         self._announced = False
         # Filled on the first step: control components are constructed one
         # by one, so the ball does not exist yet while this runs.
+        # A catch between two sampled frames still ends the pursuit; the
+        # flag carries that across to the next sample.
+        self._cut_pending = torch.zeros(
+            env.num_envs, dtype=torch.bool, device=env.device
+        )
         self._last_plan: Optional[Tensor] = None
         self._dropped = 0
         self._crowded_out = 0
@@ -235,10 +240,12 @@ class LeRobotRecorder(ControlComponent):
             self._flush(env_id, reason="reset")
         self._reset_pending[:] = False
 
-        # Checked every control step, not only the recorded ones: a throw
-        # four steps back has been rendered since, so that frame is good and
-        # dropping it would only cost data.
+        # Checked every control step, not only the recorded ones. Two
+        # separate consequences, and conflating them was a bug: a throw ENDS
+        # THE EPISODE whenever it happens, but only makes the frame
+        # unusable if it happens on the step that frame was rendered for.
         thrown = self._thrown()
+        self._cut_pending |= thrown
         crowded = self._crowded()
         self._steps += 1
         if self._steps % self._every != 0:
@@ -264,14 +271,23 @@ class LeRobotRecorder(ControlComponent):
             frames = frames[..., :3]
 
         for env_id in range(self.env.num_envs):
-            # A skipped frame is a hole in the timeline. Writing the next one
-            # as if it followed immediately would put a 200 ms step inside a
-            # 10 Hz episode -- which lerobot checks, and which is a lie to
-            # anything reading timestamps either way. So a skip ENDS the
-            # episode and the next good frame starts a fresh one.
+            # An episode is ONE PURSUIT: throw to catch. It ends at the
+            # catch because past that point the future stops being
+            # predictable from the present -- the next ball has not been
+            # thrown yet and is in no pixel of this frame. A chunk spanning
+            # the boundary would be asking a policy to invent one, which it
+            # will duly learn to do. Ending here also keeps the timeline
+            # honest when a frame is skipped: writing the next frame as
+            # though it followed immediately would put a 200 ms step inside
+            # a 10 Hz episode, which lerobot checks.
+            if bool(self._cut_pending[env_id]):
+                self._flush(env_id, reason="catch")
+                self._cut_pending[env_id] = False
             if bool(thrown[env_id]):
+                # The throw landed on the step this frame was rendered for,
+                # so the picture is of the old ball and the labels describe
+                # the new one. Unlabelable.
                 self._dropped += 1
-                self._flush(env_id, reason="re-throw")
                 continue
             if bool(crowded[env_id]):
                 self._crowded_out += 1

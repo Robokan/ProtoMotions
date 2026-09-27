@@ -74,6 +74,21 @@ def parse_args() -> argparse.Namespace:
         "--root", type=Path, default=None,
         help="Where to put the dataset. Default: LeRobot's own home.")
     parser.add_argument(
+        "--max-tilt-deg", type=float, default=30.0,
+        help="Drop frames where the robot is tilted more than this from "
+             "vertical -- it has fallen over, and the target it is being "
+             "given is one no policy could act on. Splits the episode at the "
+             "gap rather than splicing across it. 0 keeps everything.")
+    parser.add_argument(
+        "--min-frames", type=int, default=10,
+        help="Discard runs shorter than this (1 s at 10 Hz): too short to "
+             "slice an action chunk out of.")
+    parser.add_argument(
+        "--max-episodes", type=int, default=None,
+        help="Convert only the first N episodes. Useful for a quick look at a "
+             "recording that is still running -- completed episodes are "
+             "already final, only the metadata tail grows.")
+    parser.add_argument(
         "--overwrite", action="store_true",
         help="Delete an existing dataset at that location first.")
     return parser.parse_args()
@@ -104,6 +119,52 @@ def staging_features(info: dict) -> dict:
     return features
 
 
+def upright_runs(state: np.ndarray, max_tilt_deg: float) -> list[tuple[int, int]]:
+    """Split an episode into runs of frames where the robot is on its feet.
+
+    The first three elements of observation.state are the gravity direction
+    in the body frame, so -g_z is the cosine of the tilt from vertical: 1 is
+    level, 0 is lying on its side.
+
+    Frames are dropped rather than repaired, and the episode is SPLIT at the
+    gap instead of being stitched back together -- a join would put a jump in
+    the timeline and imply a transition that never happened.
+    """
+    if max_tilt_deg <= 0:
+        return [(0, len(state))]
+    import math
+
+    upright = np.clip(-state[:, 2], -1.0, 1.0) >= math.cos(math.radians(max_tilt_deg))
+    runs, start = [], None
+    for i, ok in enumerate(upright):
+        if ok and start is None:
+            start = i
+        elif not ok and start is not None:
+            runs.append((start, i))
+            start = None
+    if start is not None:
+        runs.append((start, len(upright)))
+    return runs
+
+
+def _add_run(dataset, columns, frames, features, vector_keys, task, start, stop):
+    """Feed one contiguous run of frames to the dataset writer."""
+    for i in range(start, stop):
+        frame = {"task": task}
+        for key in vector_keys:
+            value = columns[key][i]
+            spec = features[key]
+            if spec["dtype"] == "bool":
+                frame[key] = np.array([bool(value)])
+            elif isinstance(value, list):
+                frame[key] = np.asarray(value, dtype=np.float32)
+            else:
+                frame[key] = np.asarray([value], dtype=np.float32)
+        for key, video in frames.items():
+            frame[key] = np.asarray(video[i])
+        dataset.add_frame(frame)
+
+
 def main() -> None:
     args = parse_args()
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
@@ -121,6 +182,8 @@ def main() -> None:
         for line in (staging / "meta" / "episodes.jsonl").read_text().splitlines()
         if line.strip()
     ]
+    if args.max_episodes is not None:
+        episodes = episodes[: args.max_episodes]
     features = staging_features(info)
     video_keys = [k for k, v in features.items() if v["dtype"] in ("video", "image")]
     vector_keys = [k for k in features if k not in video_keys]
@@ -129,6 +192,7 @@ def main() -> None:
     if root is not None and root.exists() and args.overwrite:
         shutil.rmtree(root)
 
+    dropped_tilt = dropped_short = written = 0
     print(f"{len(episodes)} episodes, {info['total_frames']} frames at "
           f"{info['fps']} Hz")
     print("features: " + ", ".join(f"{k}{tuple(v['shape'])}" for k, v in features.items()))
@@ -148,6 +212,16 @@ def main() -> None:
             staging / "data" / "chunk-000" / f"episode_{index:06d}.parquet"
         )
         columns = {k: table[k].to_pylist() for k in vector_keys}
+        # The parquet is the authority on how long the episode is; the
+        # metadata line is a summary of it. Trusting the summary once hid a
+        # second recorder writing into the same directory, so cross-check.
+        length = table.num_rows
+        if length != meta["length"]:
+            raise SystemExit(
+                f"episode {index}: parquet has {length} rows but "
+                f"meta/episodes.jsonl says {meta['length']}. Something else "
+                "wrote into this directory -- do not trust it."
+            )
         task = meta["tasks"][0] if meta.get("tasks") else task_by_index[0]
         frames = {
             key: read_video(
@@ -155,34 +229,34 @@ def main() -> None:
             )
             for key in video_keys
         }
-        length = meta["length"]
         for key, video in frames.items():
             if len(video) != length:
                 raise SystemExit(
                     f"episode {index}: {key} has {len(video)} frames but the "
                     f"table has {length}. The staging pair is inconsistent."
                 )
-        for i in range(length):
-            frame = {"task": task}
-            for key in vector_keys:
-                value = columns[key][i]
-                spec = features[key]
-                if spec["dtype"] == "bool":
-                    frame[key] = np.array([bool(value)])
-                elif isinstance(value, list):
-                    frame[key] = np.asarray(value, dtype=np.float32)
-                else:
-                    frame[key] = np.asarray([value], dtype=np.float32)
-            for key, video in frames.items():
-                frame[key] = np.asarray(video[i])
-            dataset.add_frame(frame)
-        dataset.save_episode()
-        print(f"  episode {index}: {length} frames")
+        state = np.asarray(columns["observation.state"], dtype=np.float32)
+        runs = upright_runs(state, args.max_tilt_deg)
+        kept = sum(b - a for a, b in runs if b - a >= args.min_frames)
+        dropped_tilt += length - sum(b - a for a, b in runs)
+        for start, stop in runs:
+            if stop - start < args.min_frames:
+                dropped_short += stop - start
+                continue
+            _add_run(dataset, columns, frames, features, vector_keys,
+                     task, start, stop)
+            dataset.save_episode()
+            written += 1
+        print(f"  episode {index}: {kept}/{length} frames in "
+              f"{sum(1 for a, b in runs if b - a >= args.min_frames)} run(s)")
 
     dataset.finalize()
     print(f"\nwrote {dataset.meta.total_episodes} episodes / "
           f"{dataset.meta.total_frames} frames as "
           f"{dataset.meta.info.codebase_version} to {dataset.root}")
+    print(f"dropped {dropped_tilt} frames with the robot tilted past "
+          f"{args.max_tilt_deg:.0f} deg, {dropped_short} in runs too short "
+          f"to use")
 
 
 if __name__ == "__main__":
