@@ -11,6 +11,12 @@ class PerspectiveViewer(object):
     def __init__(self):
         self.viewport_api = None
         self.get_viewport_api()
+        # The follow camera is whichever one the viewport shows at startup,
+        # pinned here. Re-reading viewport_api.camera_path per frame would
+        # hijack any camera the user switches to (e.g. a robot's onboard
+        # camera): the orbit pose gets written onto a prim that is parented
+        # to a moving body, so it lands metres away and bobs through the floor.
+        self._follow_camera_path = self._active_camera_path()
         # Lab 2 always has /OmniverseKit_Persp. Lab 3 Kit viewport may use a
         # different camera; Replicator then raises "No valid sensor paths".
         # The product is unused except as a resolution hint, so skip on fail.
@@ -78,12 +84,19 @@ class PerspectiveViewer(object):
             if self.viewport_api is None:
                 carb.log_warn("could not get active viewport, cannot set camera view")
 
-    def _camera_prim_path(self) -> str:
+    def _active_camera_path(self) -> str:
         if self.viewport_api is not None:
             path = getattr(self.viewport_api, "camera_path", None)
             if path:
                 return str(path)
         return "/OmniverseKit_Persp"
+
+    def _camera_prim_path(self) -> str:
+        return getattr(self, "_follow_camera_path", None) or self._active_camera_path()
+
+    def is_following(self) -> bool:
+        """True while the viewport is looking through the follow camera."""
+        return self._active_camera_path() == self._camera_prim_path()
 
     def get_camera_state(self):
         self.get_viewport_api()
@@ -108,6 +121,9 @@ class PerspectiveViewer(object):
 
     def set_camera_view(self, eye: np.array, target: np.array):
         self.get_viewport_api()
+        if not self.is_following():
+            # The user is looking through another camera; leave both alone.
+            return
 
         from omni.kit.viewport.utility.camera_state import ViewportCameraState
 
