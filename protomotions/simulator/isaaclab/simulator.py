@@ -1525,7 +1525,11 @@ class IsaacLabSimulator(Simulator):
             sensor = self._scene[name]
             output = sensor.data.output
             if data_type in output:
-                images[name] = output[data_type]
+                frames = output[data_type]
+                # Lab 3 hands back a warp ProxyArray; its .torch is the
+                # zero-copy tensor this method promises. Tensor methods on the
+                # proxy itself only work through a deprecation bridge.
+                images[name] = getattr(frames, "torch", frames)
         return images
 
     def render(self) -> None:

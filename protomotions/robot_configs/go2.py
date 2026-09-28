@@ -218,13 +218,27 @@ class Go2RobotConfig(RobotConfig):
     )
 
 
+GO2_CAMERA_ASPECT = 16.0 / 9.0
+"""The real front camera streams 1280x720 / 1920x1080: 16:9."""
+
+
 def go2_front_camera(
     width: int = 224,
-    height: int = 224,
+    height: int = 126,
     fov_deg: float = 120.0,
     update_period: float = 0.0,
 ):
     """The go2's forward camera, where the real one is.
+
+    Lens: Unitree specifies 120 deg for the front camera on every variant, at
+    16:9 (720p/1080p streams). The spec does not say which axis; it is taken
+    as horizontal here, which is also what the chase's --fov-deg sight gate
+    means. The vertical angle then follows from the aspect ratio (Isaac Lab
+    derives the vertical aperture from width/height): 2 atan(tan 60 * 9/16)
+    = 88.5 deg. The default 224x126 is that 16:9 frame at VLA scale. A square
+    image would see 120 deg vertically too -- far more floor and sky than the
+    real dog ever gets. What the sim does not model is the real ultra-wide
+    lens's barrel distortion: this is an ideal pinhole.
 
     The MJCF puts the trunk's front face at x = 0.188 and the head assembly
     ahead of it (a cylinder at x = 0.285, a nose sphere at x = 0.293), so the
@@ -233,7 +247,7 @@ def go2_front_camera(
     dog is standing.
 
     Level by default. A ball on the floor is only 5 deg below the axis at 4 m
-    and 20 deg at arm's length, both well inside a 120 deg frame, so tilting
+    and 20 deg at arm's length, both well inside the 44 deg half-height, so tilting
     down buys nothing and costs the horizon. The local go2 USD has no separate
     head body, so this rides base_link -- which is what the real camera does
     too, rigidly.

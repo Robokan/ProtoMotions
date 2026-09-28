@@ -98,6 +98,11 @@ class LeRobotRecorderConfig(ControlComponentConfig):
     goal_component: str = "masked_mimic"
     ball_component: str = "ball"
     camera: str = "front_camera"
+    # Name of a CameraEye component, or None. Set, the recorded image is the
+    # eye's crop of the full-resolution frame, observation.state ends with
+    # the gaze that crop was taken with, and the action ends with the gaze
+    # for the next frame -- see camera_eye.
+    eye_component: Optional[str] = None
     task: str = "chase the red ball"
     # Written even while it is the only task: a constant prompt costs one
     # column and is what makes the dataset usable later, when there are
@@ -266,8 +271,12 @@ class LeRobotRecorder(ControlComponent):
 
         if not self._announced:
             self._report_foot_sensors()
+            self._announced = True
         state = self._state()
         action, extras = self._action()
+        eye = self._eye()
+        if eye is not None:
+            frame_batch = eye.crop(frame_batch)
         frames = frame_batch.detach().cpu().numpy()
         if frames.shape[-1] == 4:
             frames = frames[..., :3]
@@ -346,7 +355,17 @@ class LeRobotRecorder(ControlComponent):
         load = self._foot_load()
         if load is not None:
             parts.append(load)
+        # Where the eye was pointed for this frame: without it a zoomed-in
+        # near ball and a far ball in a wide view are the same picture.
+        eye = self._eye()
+        if eye is not None:
+            parts.append(eye.gaze())
         return torch.cat(parts, dim=-1).detach().cpu().numpy().astype(np.float32)
+
+    def _eye(self):
+        if not self.config.eye_component:
+            return None
+        return self.env.control_manager.components.get(self.config.eye_component)
 
     def _report_foot_sensors(self) -> None:
         """Say once whether the foot loads are real, because zeros are not.
@@ -403,10 +422,13 @@ class LeRobotRecorder(ControlComponent):
             goal.config.min_horizon_sec, goal.config.max_horizon_sec
         )
         action = torch.cat([target, remaining.unsqueeze(-1)], dim=-1)
+        eye = self._eye()
+        if eye is not None:
+            action = torch.cat([action, eye.next_gaze()], dim=-1)
 
         ball_xy = to_body(goal._goal_xy())
         visible = (
-            goal._ball_seen
+            getattr(goal, "_ball_in_view", goal._ball_seen)
             if goal._unprivileged()
             else torch.ones_like(goal._deadline, dtype=torch.bool)
         )
@@ -582,10 +604,11 @@ class LeRobotRecorder(ControlComponent):
             },
             "action": {
                 "dtype": "float32",
-                "shape": [3],
+                "shape": [len(self._action_names())],
                 # Where to put the torso and by when, in the robot's own
-                # frame: x forward, y left, seconds.
-                "names": ["target_x", "target_y", "seconds_remaining"],
+                # frame: x forward, y left, seconds. Then, with the eye on,
+                # where to look for the next frame.
+                "names": self._action_names(),
             },
             "ball_visible": {"dtype": "bool", "shape": [1], "names": None},
             "ball_xy": {
@@ -600,6 +623,12 @@ class LeRobotRecorder(ControlComponent):
             "task_index": {"dtype": "int64", "shape": [1], "names": None},
         }
 
+    def _action_names(self) -> List[str]:
+        names = ["target_x", "target_y", "seconds_remaining"]
+        if self.config.eye_component:
+            names += ["gaze_u", "gaze_v", "gaze_zoom"]
+        return names
+
     def _state_names(self, state_dim: int) -> List[str]:
         """Label the state vector, so the columns are readable a year later."""
         names = [f"gravity_{a}" for a in "xyz"]
@@ -608,6 +637,8 @@ class LeRobotRecorder(ControlComponent):
         dofs = list(self.env.robot_config.kinematic_info.dof_names)
         names += [f"{d}.pos" for d in dofs] + [f"{d}.vel" for d in dofs]
         names += [f"{b}.load" for b in (self.env.robot_config.contact_bodies or [])]
+        if self.config.eye_component:
+            names += ["gaze_u", "gaze_v", "gaze_zoom"]
         if len(names) != state_dim:
             return [f"s{i}" for i in range(state_dim)]
         return names
@@ -649,6 +680,9 @@ class LeRobotRecorder(ControlComponent):
 
     @property
     def _frame_shape(self):
+        eye = self._eye()
+        if eye is not None:
+            return (eye.config.out_res, eye.config.out_res)
         cameras = getattr(self.env.simulator.config, "onboard_cameras", {}) or {}
         cam = cameras.get(self.config.camera)
         if cam is None:

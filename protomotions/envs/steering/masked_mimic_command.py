@@ -110,6 +110,9 @@ class MaskedMimicSteeringControlConfig(MaskedMimicControlConfig):
     condition_rotation: bool = True
     preserve_tilt: bool = True
     report_every_steps: int = 0
+    # Draw the conditioned base-link targets in the viewer. Off keeps the
+    # scene (and any onboard camera frame) to what the robot really sees.
+    show_target_markers: bool = True
 
 
 class MaskedMimicSteeringControl(MaskedMimicControl):
@@ -519,7 +522,7 @@ class MaskedMimicSteeringControl(MaskedMimicControl):
         steers by (green direction arrow, spinning turn dial) come from the
         sibling steering component.
         """
-        if headless:
+        if headless or not self.config.show_target_markers:
             return {}
         return {
             "mm_steering_targets": VisualizationMarkerConfig(
@@ -533,7 +536,11 @@ class MaskedMimicSteeringControl(MaskedMimicControl):
         }
 
     def get_markers_state(self) -> Dict[str, MarkerState]:
-        if not self.env.simulator.show_markers or not self._initialized:
+        if (
+            not self.config.show_target_markers
+            or not self.env.simulator.show_markers
+            or not self._initialized
+        ):
             return {}
         target_pos = getattr(self, "_marker_target_pos", None)
         if target_pos is None:

@@ -48,28 +48,42 @@ from protomotions.envs.base_env.config import EnvConfig
 _DEFAULTS = {
     "success_radius": 0.6096,   # two feet
     "throw_min": 2.0,
-    # Measured against the camera: past ~4 m the ball is a handful of pixels
-    # and often none at all. See BallChaseCommandSourceConfig.tar_dist_max.
-    "throw_max": 4.0,
+    # Past ~4 m the ball is a handful of pixels in a whole-frame 224 image
+    # (measured; see BallChaseCommandSourceConfig.tar_dist_max). 8 m is for
+    # --camera-zoom, whose 4x window keeps an 8 m ball ~8 px wide -- without
+    # the eye, far throws record targets the student cannot see.
+    "throw_max": 8.0,
     "report_every": 250,
     "moving_ball": False,
     "ball_speed_min": 0.5,
     "ball_speed_max": 2.0,
     "ball_turn_mean_sec": 5.0,
     "unprivileged": False,
-    # Roughly the go2's forward camera. Total cone width, yaw only.
+    # The go2's front camera: 120 deg across (Unitree spec). Total cone
+    # width, yaw only -- the same number is the lens's horizontal FOV.
     "fov_deg": 120.0,
     "sight_range": 0.0,
     "search_turn_deg": 90.0,
     "search_follows_lean": True,
     # The VLA will see frames at this rate; the search sweeps slowly enough
     # that the scene moves only search_deg_per_frame between two of them.
+    # 18 x 10 Hz = 180 deg/s, about the go2's top yaw: a full turn in 2 s,
+    # and any bearing still spends 6 frames inside the 120 deg view. The
+    # student has to re-look at least that often -- keep ACT's
+    # n_action_steps to ~3-5, or it turns blind straight past the ball.
     "vla_hz": 10.0,
-    "search_deg_per_frame": 10.0,
+    "search_deg_per_frame": 18.0,
     "horizon_sec": None,
+    "hide_targets": False,
     "camera": False,
     "camera_res": 224,
+    # None = the real camera's 16:9 (see go2_front_camera): 224 -> 126.
+    "camera_height": None,
     "camera_probe_every": 50,
+    "camera_zoom": False,
+    # The real go2 streams 1280x720; the eye crops from that.
+    "camera_sensor_res": 1280,
+    "camera_max_zoom": 4.0,
     "record": False,
     "record_dir": "output/datasets/go2_chase",
     "record_fps": 10.0,
@@ -105,8 +119,9 @@ def additional_experiment_arguments(parser: argparse.ArgumentParser):
     parser.add_argument(
         "--throw-max", type=float, default=_DEFAULTS["throw_max"],
         help="Furthest the ball is ever thrown (m), and the leash on a "
-             "moving one. Past ~4 m the camera cannot resolve the ball "
-             "(measured), so raising this records targets the student "
+             "moving one. Past ~4 m a whole-frame 224 image cannot resolve "
+             "the ball (measured); the default 8 assumes --camera-zoom. "
+             "Without it, use ~4 or the dataset records targets the student "
              "cannot see.")
     parser.add_argument(
         "--moving-ball", action="store_true", default=_DEFAULTS["moving_ball"],
@@ -155,7 +170,14 @@ def additional_experiment_arguments(parser: argparse.ArgumentParser):
     parser.add_argument(
         "--search-deg-per-frame", type=float, default=_DEFAULTS["search_deg_per_frame"],
         help="How far the view may rotate between two of those frames. Search "
-             "yaw rate = this x --vla-hz, capped at the robot's top yaw.")
+             "yaw rate = this x --vla-hz, capped at the robot's top yaw "
+             "(18 = 180 deg/s, about the top). Lower is easier for a student "
+             "that looks rarely.")
+    parser.add_argument(
+        "--hide-targets", action="store_true", default=_DEFAULTS["hide_targets"],
+        help="Don't draw the MaskedMimic target spheres (the path of base-link "
+             "targets leading to the ball). The ball stays visible; 'M' in the "
+             "viewer hides every marker, ball included.")
     parser.add_argument(
         "--camera", action="store_true", default=_DEFAULTS["camera"],
         help="Mount the go2's forward camera and render it. This is the image "
@@ -163,7 +185,32 @@ def additional_experiment_arguments(parser: argparse.ArgumentParser):
              "at. Costs render time, so it is off by default.")
     parser.add_argument(
         "--camera-res", type=int, default=_DEFAULTS["camera_res"],
-        help="Square camera resolution in pixels.")
+        help="Camera image width in pixels. Height follows the real go2's "
+             "16:9 frame unless --camera-height is given.")
+    parser.add_argument(
+        "--camera-height", type=int, default=_DEFAULTS["camera_height"],
+        help="Camera image height in pixels (default: width x 9/16, the real "
+             "go2's aspect). Equal to --camera-res gives the old square frame, "
+             "which sees --fov-deg vertically as well.")
+    parser.add_argument(
+        "--camera-zoom", action="store_true", default=_DEFAULTS["camera_zoom"],
+        help="Give the dog a movable eye: render the camera at "
+             "--camera-sensor-res and show the student a --camera-res square "
+             "crop of it -- the whole frame at zoom 1, a 16:9 window 1/zoom "
+             "the size anywhere in it when zoomed. The demonstrator centres "
+             "on the ball and zooms in while it can see it, zooms out when it "
+             "cannot, and the ball is known only while it is in the window. "
+             "Recorded as gaze (u, v, zoom) in observation.state and the next "
+             "gaze in the action. Implies --camera; see camera_eye.")
+    parser.add_argument(
+        "--camera-sensor-res", type=int, default=_DEFAULTS["camera_sensor_res"],
+        help="Full-frame width the eye crops from (--camera-zoom only); "
+             "height is the real go2's 16:9. 1280 is the real camera, and "
+             "render cost grows with it: 640 is plenty for big recordings.")
+    parser.add_argument(
+        "--camera-max-zoom", type=float, default=_DEFAULTS["camera_max_zoom"],
+        help="Deepest zoom (--camera-zoom only). sensor width / --camera-res "
+             "is 1:1; beyond that the crop is upsampled.")
     parser.add_argument(
         "--camera-probe-every", type=int, default=_DEFAULTS["camera_probe_every"],
         help="Save a frame from env 0 every N control steps (0 = never). The "
@@ -272,6 +319,11 @@ def _install_chase(cfg: EnvConfig, args: argparse.Namespace) -> None:
             search_follows_lean=_arg(args, "search_follows_lean"),
             vla_hz=_arg(args, "vla_hz"),
             search_deg_per_frame=_arg(args, "search_deg_per_frame"),
+            show_target_markers=not _arg(args, "hide_targets"),
+            # Sight is the camera's own frame, pose and all -- the same
+            # geometry that gets rendered, whether or not it is.
+            sight_aspect=_camera_frame(args)[0] / _camera_frame(args)[1],
+            eye_component="camera_eye" if _arg(args, "camera_zoom") else None,
         ),
     }
 
@@ -283,7 +335,7 @@ def _install_chase(cfg: EnvConfig, args: argparse.Namespace) -> None:
     # the labels say nothing about, and its ball is a second red blob. Always
     # on when recording, so a contaminated dataset announces itself instead
     # of being discovered later in the training curve.
-    if _arg(args, "camera") or _arg(args, "record"):
+    if _camera_on(args):
         from protomotions.envs.control.env_separation import (
             EnvSeparationProbeConfig,
         )
@@ -300,13 +352,26 @@ def _install_chase(cfg: EnvConfig, args: argparse.Namespace) -> None:
             max_episodes=_arg(args, "record_episodes"),
             task=_arg(args, "record_task"),
             robot_type=getattr(args, "robot_name", "go2"),
+            eye_component="camera_eye" if _arg(args, "camera_zoom") else None,
         )
 
-    if _arg(args, "camera") and _arg(args, "camera_probe_every") > 0:
+    if _camera_on(args) and _arg(args, "camera_probe_every") > 0:
         from protomotions.envs.control.camera_probe import CameraProbeConfig
 
         cfg.control_components["camera_probe"] = CameraProbeConfig(
-            every_steps=_arg(args, "camera_probe_every")
+            every_steps=_arg(args, "camera_probe_every"),
+            eye_component="camera_eye" if _arg(args, "camera_zoom") else None,
+        )
+
+    if _arg(args, "camera_zoom"):
+        from protomotions.envs.control.camera_eye import CameraEyeConfig
+
+        # LAST: the recorder and probe take this frame with the current gaze,
+        # then the eye moves for the next one.
+        cfg.control_components["camera_eye"] = CameraEyeConfig(
+            out_res=_arg(args, "camera_res"),
+            max_zoom=_arg(args, "camera_max_zoom"),
+            hz=_arg(args, "record_fps"),
         )
 
     # Wired but unused while this component does the driving: these are what a
@@ -352,16 +417,41 @@ def _install_camera(simulator_cfg, args: argparse.Namespace) -> None:
     drift apart would teach the student to find a ball that never appears in
     its frame.
     """
-    if simulator_cfg is None or not (_arg(args, "camera") or _arg(args, "record")):
+    if simulator_cfg is None or not _camera_on(args):
         return
     from protomotions.robot_configs.go2 import go2_front_camera
 
-    res = _arg(args, "camera_res")
+    width, height = _camera_frame(args)
     simulator_cfg.onboard_cameras = {
         "front_camera": go2_front_camera(
-            width=res, height=res, fov_deg=_arg(args, "fov_deg")
+            width=width, height=height, fov_deg=_arg(args, "fov_deg")
         )
     }
+
+
+def _camera_on(args) -> bool:
+    return bool(
+        _arg(args, "camera") or _arg(args, "record") or _arg(args, "camera_zoom")
+    )
+
+
+def _camera_frame(args):
+    """(width, height) the camera renders at.
+
+    --camera-zoom renders the full sensor at the real 16:9 and the eye crops
+    it down to --camera-res; otherwise the render IS the student's image.
+    """
+    from protomotions.robot_configs.go2 import GO2_CAMERA_ASPECT
+
+    if _arg(args, "camera_zoom"):
+        width = _arg(args, "camera_sensor_res")
+        return width, 2 * round(width / GO2_CAMERA_ASPECT / 2)
+    width = _arg(args, "camera_res")
+    height = _arg(args, "camera_height")
+    if height is None:
+        # Even, so the recorder's H.264 (yuv420p) accepts it.
+        height = 2 * round(width / GO2_CAMERA_ASPECT / 2)
+    return width, height
 
 
 def configure_robot_and_simulator(robot_cfg, simulator_cfg, args: argparse.Namespace):

@@ -587,6 +587,19 @@ class MaskedMimicGoalControlConfig(MaskedMimicSteeringControlConfig):
     # "the demonstrator can see it but the camera cannot" from 0.9% of
     # frames to 0.00%. Control stays rooted at the root; only SIGHT moves.
     sight_forward_m: float = 0.0
+    # The frame's width / height. 0 keeps the yaw-only wedge above. > 0
+    # tests sight the way the camera renders it: the ball projected through
+    # a level pinhole of fov_deg across, riding the FULL body pose -- so a
+    # rolled or pitched dog sees what its camera sees, including a ball the
+    # wedge would call out of view, and the frame's top and bottom gate too.
+    sight_aspect: float = 0.0
+    # The ball's radius: a ball whose centre is just outside the frame is
+    # still partly on screen, and is counted seen while a clear cap of it is.
+    ball_radius_m: float = 0.12
+    # Name of a CameraEye component. Set, the ball is known only while it is
+    # inside the eye's window -- what the student is actually shown -- and
+    # not merely somewhere in the full frame. Needs sight_aspect > 0.
+    eye_component: Optional[str] = None
     # Searching is a SWEEP IN PLACE: the dog turns one way, steadily, until
     # the ball enters the frame. It does not travel.
     #
@@ -718,6 +731,16 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
             (env.num_envs,), not self._unprivileged(), dtype=torch.bool,
             device=env.device,
         )
+        # Is it inside the camera / eye window this step. Differs from
+        # _ball_seen only while the eye is widening its view after the ball
+        # slipped out of a zoomed window: the dog still believes, but does
+        # not see. The recorder's ball_visible label is this.
+        self._ball_in_view = self._ball_seen.clone()
+        # The last sighting, carried forward at its measured velocity. This
+        # -- not the live ball -- is what the dog chases, so a belief held
+        # past the moment of sight is dead reckoning, never a peek.
+        self._held_xy = torch.zeros(env.num_envs, 2, device=env.device)
+        self._held_vel = torch.zeros(env.num_envs, 2, device=env.device)
         # Heading (world yaw) the current sweep leg is turning towards.
         self._sweep_heading = torch.zeros(env.num_envs, device=env.device)
         # Which way to sweep: +1 left, -1 right. Set to the side the ball
@@ -876,8 +899,28 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         forward = torch.stack([torch.cos(heading), torch.sin(heading)], dim=-1)
         return eye + forward * self.config.sight_forward_m
 
+    def _ball_image(self):
+        """The ball's (u, v, depth, tan_h, tan_v) in the front camera image.
+
+        See camera_eye.project_to_camera. The ball is drawn resting on the
+        ground, so its centre is the target height plus the marker offset.
+        """
+        from protomotions.envs.control.camera_eye import project_to_camera
+
+        target = self.env.control_manager.components[self.config.target_component]
+        ball = target._tar_pos.clone()
+        ball[:, 2] += getattr(target.config, "marker_z_offset", 0.0)
+        root = self.env.simulator.get_root_state()
+        return project_to_camera(
+            ball, root.root_pos, root.root_rot, self.config.sight_forward_m,
+            self.config.fov_deg, self.config.sight_aspect,
+        )
+
     def _in_view(self) -> Tensor:
         """Is the ball inside the forward cone (and close enough to see).
+
+        With sight_aspect set this is the camera itself (or the eye's window
+        inside it): see _ball_image. The wedge below is the fallback.
 
         Measured from the LENS. Yaw only: body pitch and roll tilt the real
         frustum and this does not follow them, which is the residual ~0.5% of
@@ -886,13 +929,27 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         seen -- unlike the reverse.
         """
         delta = self._goal_xy() - self._eye_xy()
-        root_state = self.env.simulator.get_root_state()
-        heading = rotations.calc_heading(root_state.root_rot, True)
-        to = torch.atan2(delta[:, 1], delta[:, 0])
-        bearing = torch.atan2(
-            torch.sin(to - heading), torch.cos(to - heading)
-        ).abs()
-        seen = bearing <= math.radians(self.config.fov_deg) * 0.5
+        if self.config.sight_aspect > 0:
+            u, v, depth, tan_h, tan_v = self._ball_image()
+            radius = self.config.ball_radius_m
+            if self.config.eye_component:
+                eye = self.env.control_manager.components[self.config.eye_component]
+                seen = eye.contains(u, v, depth, radius, tan_h, tan_v)
+            else:
+                from protomotions.envs.control.camera_eye import window_contains
+
+                zero = torch.zeros_like(u)
+                seen = window_contains(
+                    u, v, depth, radius, tan_h, tan_v, zero, zero, torch.ones_like(u)
+                )
+        else:
+            root_state = self.env.simulator.get_root_state()
+            heading = rotations.calc_heading(root_state.root_rot, True)
+            to = torch.atan2(delta[:, 1], delta[:, 0])
+            bearing = torch.atan2(
+                torch.sin(to - heading), torch.cos(to - heading)
+            ).abs()
+            seen = bearing <= math.radians(self.config.fov_deg) * 0.5
         if self.config.sight_range_m > 0:
             rng = torch.linalg.norm(delta, dim=-1)
             seen = seen & (rng <= self.config.sight_range_m)
@@ -908,7 +965,25 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         """
         if not self._unprivileged():
             return
-        seen = self._in_view()
+        in_view = self._in_view()
+        self._ball_in_view = in_view
+        seen = in_view
+        if self.config.eye_component:
+            # Out of a ZOOMED window is not lost: the eye is widening its
+            # view a level at a time (CameraEye.next_gaze), and until it is
+            # all the way out the dog keeps chasing its last sighting. Only
+            # a ball still missing at zoom 1 starts a search.
+            eye = self.env.control_manager.components[self.config.eye_component]
+            widening = self._ball_seen & ~in_view & (eye.zoom > 1.0)
+            seen = in_view | widening
+            self._held_xy = torch.where(
+                widening.unsqueeze(-1),
+                self._held_xy + self._held_vel * self.env.dt,
+                self._held_xy,
+            )
+        mask = in_view.unsqueeze(-1)
+        self._held_xy = torch.where(mask, self._goal_xy(), self._held_xy)
+        self._held_vel = torch.where(mask, self._ball_vel(), self._held_vel)
         lost = self._ball_seen & ~seen
         if bool(lost.any()):
             # Fix the sweep direction once, at the moment sight is lost, and
@@ -927,9 +1002,9 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         if bool(changed.any()):
             self._epoch[changed] += 1
         self._ball_seen = seen
-        if bool(seen.any()):
+        if bool(in_view.any()):
             self._last_bearing = torch.where(
-                seen, self._bearing_to(self._goal_xy()), self._last_bearing
+                in_view, self._bearing_to(self._goal_xy()), self._last_bearing
             )
 
     def _latch_search(self, env_ids: Tensor) -> None:
@@ -1016,7 +1091,9 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         if not self._unprivileged():
             return self._goal_xy()
         here = self.env.simulator.get_root_state().root_pos[:, :2]
-        return torch.where(self._ball_seen.unsqueeze(-1), self._goal_xy(), here)
+        # _held_xy IS the live ball whenever it is in view (refreshed each
+        # look); it only differs while a zoomed-out eye is re-finding it.
+        return torch.where(self._ball_seen.unsqueeze(-1), self._held_xy, here)
 
     def _belief_vel(self) -> Tensor:
         """Believed ball velocity -- zero for a belief, which is not moving."""
@@ -1024,7 +1101,7 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
             return self._ball_vel()
         return torch.where(
             self._ball_seen.unsqueeze(-1),
-            self._ball_vel(),
+            self._held_vel,
             torch.zeros_like(self._goal_xy()),
         )
 
