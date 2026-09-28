@@ -39,6 +39,15 @@ def import_simulator_before_torch(simulator_name):
 
         return None
     elif simulator_name == "isaaclab":
+        # Kit's omni.platforminfo fork()s from a carb.tasking fiber at startup.
+        # OpenBLAS (bundled by numpy/scipy) registers an atfork handler that
+        # joins its worker threads, and on glibc >= 2.39 (Ubuntu 24.04) that
+        # join segfaults inside the fiber. With one BLAS thread there is no
+        # pool to join. Must be set before numpy/scipy first load OpenBLAS.
+        import os
+
+        os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+
         # Import isaaclab base module to ensure it's loaded before torch
         from isaaclab.app import AppLauncher
 
