@@ -1520,6 +1520,12 @@ class Simulator(RecordingMixin, ABC):
         """
         return self.headless and bool(getattr(self.config, "onboard_cameras", None))
 
+    def randomize_rooms(self, env_ids) -> None:
+        """Re-randomize these envs' rooms (SimulatorConfig.rooms).
+
+        A no-op unless the backend builds rooms and can randomize them.
+        """
+
     def get_camera_images(self, data_type: str = "rgb") -> Dict[str, torch.Tensor]:
         """Latest frame from each onboard camera, keyed by camera name.
 

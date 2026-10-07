@@ -448,6 +448,20 @@ class TargetControl(ControlComponent):
     ) -> Dict[str, VisualizationMarkerConfig]:
         if headless:
             return {}
+        slots = getattr(self.command_source, "marker_slots", None)
+        if slots is not None:
+            # One marker set per colour (a set has one colour): the target in
+            # its colour, the source's distractors in theirs.
+            return {
+                f"ball_{name}": VisualizationMarkerConfig(
+                    type="sphere",
+                    color=tuple(rgb),
+                    markers=[MarkerConfig(size=self.config.marker_size)],
+                    cast_shadows=self.config.marker_cast_shadows,
+                    camera_visible=self.config.marker_camera_visible,
+                )
+                for name, rgb, _, _ in slots()
+            }
         return {
             "target_markers": VisualizationMarkerConfig(
                 type="sphere",
@@ -461,8 +475,29 @@ class TargetControl(ControlComponent):
     def get_markers_state(self) -> Dict[str, MarkerState]:
         if not self.env.simulator.show_markers:
             return {}
+        slots = getattr(self.command_source, "marker_slots", None)
+        if slots is not None:
+            tar_rot = torch.zeros(self.env.num_envs, 1, 4, device=self.env.device)
+            tar_rot[..., -1] = 1.0
+            states = {}
+            for name, _, xy, shown in slots():
+                pos = self._tar_pos.clone()
+                pos[:, :2] = xy
+                pos[:, 2] += self.config.marker_z_offset
+                # Not in this throw: under the floor, out of every camera.
+                pos[~shown, 2] = -1000.0
+                states[f"ball_{name}"] = MarkerState(
+                    translation=pos.view(self.env.num_envs, 1, 3), orientation=tar_rot
+                )
+            return states
         tar_pos = self._tar_pos.view(self.env.num_envs, 1, 3).clone()
         tar_pos[..., 2] += self.config.marker_z_offset
+        # A throw with no ball (BallChaseCommandSource.present): keep the
+        # target for bookkeeping, but put the thing itself where no camera
+        # or viewer can see it.
+        present = getattr(self.command_source, "present", None)
+        if present is not None:
+            tar_pos[~present, :, 2] = -1000.0
         tar_rot = torch.zeros(self.env.num_envs, 1, 4, device=self.env.device)
         tar_rot[..., -1] = 1.0
         return {"target_markers": MarkerState(translation=tar_pos, orientation=tar_rot)}

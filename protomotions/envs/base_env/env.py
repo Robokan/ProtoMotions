@@ -649,11 +649,16 @@ class BaseEnv:
 
         if non_scene_mask.any():
             num_non_scene = non_scene_mask.sum().item()
-            respawn_position_xy = self.terrain.sample_valid_locations(
-                num_envs=num_non_scene,
-                sample_flat=sample_flat,
-                max_distance=getattr(self.config, "env_spacing", None),
-            )
+            rooms = self.room_centers
+            if rooms is not None:
+                # One room per env (SimulatorConfig.rooms): always its own.
+                respawn_position_xy = rooms[env_ids[non_scene_mask]]
+            else:
+                respawn_position_xy = self.terrain.sample_valid_locations(
+                    num_envs=num_non_scene,
+                    sample_flat=sample_flat,
+                    max_distance=getattr(self.config, "env_spacing", None),
+                )
 
             if ref_state is None:
                 ref_root = torch.zeros((num_non_scene, 2), device=self.device)
@@ -2068,6 +2073,20 @@ class BaseEnv:
             motion_lib=self.motion_lib,
             fixed_motion_ids_per_env=fixed_motion_ids,
         )
+
+    @property
+    def room_centers(self):
+        """[num_envs, 2] room centres when SimulatorConfig.rooms is set, else None."""
+        rooms = getattr(self.simulator.config, "rooms", None)
+        if rooms is None:
+            return None
+        if getattr(self, "_room_centers", None) is None:
+            from protomotions.components.terrains.rooms import room_centers
+
+            self._room_centers = room_centers(
+                self.terrain, self.num_envs, rooms.spacing, rooms.half_extent
+            ).to(self.device)
+        return self._room_centers
 
     def create_visualization_markers(self, headless: bool):
         """Create visualization markers based on headless flag.

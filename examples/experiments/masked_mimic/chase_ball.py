@@ -59,6 +59,24 @@ _DEFAULTS = {
     "ball_speed_max": 2.0,
     "ball_turn_mean_sec": 5.0,
     "unprivileged": False,
+    # Questions (see BallChaseCommandSourceConfig.look_frac): a share of
+    # throws ask "can you see a ball?" instead of setting a chase, and a
+    # share have no ball at all, so "no" is an answer the data contains.
+    "look_frac": 0.0,
+    "no_ball_frac": 0.0,
+    "answer_hold_sec": 1.5,
+    "look_task": None,
+    # Share of throws whose request names no colour ("get the ball", "is
+    # there a ball?"): the first ball seen is the one.
+    "any_color_frac": 0.0,
+    # Share of throws that are a pose command ("sit", "beg") instead of a
+    # ball request, and which poses (protomotions/envs/control/poses.py).
+    "pose_frac": 0.0,
+    "poses": "sit,beg",
+    # One of these is wanted each throw; the rest may lie around as
+    # distractors, so the question has to be read to be answered.
+    "ball_colors": "red,green,blue",
+    "distractor_prob": 0.5,
     # The go2's front camera: 120 deg across (Unitree spec). Total cone
     # width, yaw only -- the same number is the lens's horizontal FOV.
     "fov_deg": 120.0,
@@ -67,20 +85,36 @@ _DEFAULTS = {
     "search_follows_lean": True,
     # The VLA will see frames at this rate; the search sweeps slowly enough
     # that the scene moves only search_deg_per_frame between two of them.
-    # 18 x 10 Hz = 180 deg/s, about the go2's top yaw: a full turn in 2 s,
-    # and any bearing still spends 6 frames inside the 120 deg view. The
-    # student has to re-look at least that often -- keep ACT's
-    # n_action_steps to ~3-5, or it turns blind straight past the ball.
+    # 7 x 10 Hz = 70 deg/s commanded, which the dog turns at ~65: the
+    # corpus dogs' slow-turn median is 63 deg/s (738 s of slow turns), while
+    # 180 deg/s is its 99th percentile, a pivot the prior has barely seen. A
+    # full sweep takes ~5.5 s; any bearing spends ~17 frames in the view.
     "vla_hz": 10.0,
-    "search_deg_per_frame": 18.0,
+    "search_deg_per_frame": 7.0,
     "horizon_sec": None,
     "hide_targets": False,
+    "no_caption": False,
+    "show_camera": False,
     "camera": False,
     "camera_res": 224,
     # None = the real camera's 16:9 (see go2_front_camera): 224 -> 126.
     "camera_height": None,
     "camera_probe_every": 50,
     "camera_zoom": False,
+    # host:port of scripts/vla_server.py: the VLA drives, the demonstrator
+    # only referees. None: the demonstrator drives.
+    "vla_server": None,
+    # Comma-separated "clip:seconds" keyframes to reach and hold in turn,
+    # e.g. "25_clip_1:8.5,25_clip_1:0.62" (sit, then sit + right paw up).
+    "pose_test": None,
+    "pose_bodies": None,
+    "pose_positions_only": False,
+    "pose_reach": 1.5,
+    "vla_prompt": None,
+    "vla_answer_every": 3,
+    # "warehouse": every dog in its own Replicator-randomized warehouse
+    # (SimulatorConfig.rooms). "open": the shared open ground.
+    "scene": "warehouse",
     # The real go2 streams 1280x720; the eye crops from that.
     "camera_sensor_res": 1280,
     "camera_max_zoom": 4.0,
@@ -89,12 +123,51 @@ _DEFAULTS = {
     "record_fps": 10.0,
     "record_episodes": 40,
     "record_episode_steps": 200,
-    "record_task": "chase the red ball",
+    # None: the recorder's own phrasings (several per kind of request).
+    "record_task": None,
 }
 
 
 def _arg(args, name):
-    return getattr(args, name, _DEFAULTS[name])
+    value = getattr(args, name, _DEFAULTS[name])
+    # A VLA drives from the eye crop, with only what a camera can know: the
+    # zoom eye and unprivileged sight are what it was trained on.
+    if name in ("camera_zoom", "unprivileged") and getattr(args, "vla_server", None):
+        return True
+    return value
+
+
+def _goal_config(args, **kwargs):
+    """The demonstrator's config -- or, with --vla-server, the VLA driver's."""
+    from protomotions.envs.control.ball_chase import MaskedMimicGoalControlConfig
+
+    if _arg(args, "pose_test"):
+        from protomotions.envs.control.pose_command import PoseTestControlConfig
+
+        bodies = _arg(args, "pose_bodies")
+        return PoseTestControlConfig(
+            keyframes=[k.strip() for k in _arg(args, "pose_test").split(",") if k.strip()],
+            bodies=[b.strip() for b in bodies.split(",")] if bodies else None,
+            reach_sec=_arg(args, "pose_reach"),
+            all_rotations=not bool(__import__("os").environ.get("PROTOMOTIONS_POSE_ROOT_ROT_ONLY")),
+            **kwargs,
+        )
+    bodies = _arg(args, "pose_bodies")
+    if bodies:
+        kwargs["pose_bodies"] = [b.strip() for b in bodies.split(",") if b.strip()]
+    if _arg(args, "pose_positions_only"):
+        kwargs["pose_rotations"] = False
+    if not _arg(args, "vla_server"):
+        return MaskedMimicGoalControlConfig(**kwargs)
+    from protomotions.envs.control.vla_driver import VlaGoalControlConfig
+
+    return VlaGoalControlConfig(
+        server=_arg(args, "vla_server"),
+        prompt=_arg(args, "vla_prompt"),
+        answer_every=_arg(args, "vla_answer_every"),
+        vla_hz_rate=_arg(args, "record_fps"),
+        **kwargs,
+    )
 
 
 def _steering():
@@ -139,6 +212,47 @@ def additional_experiment_arguments(parser: argparse.ArgumentParser):
         help="Mean seconds between random direction changes of a moving ball "
              "(Poisson). Each change makes the dog re-plan. 0 disables.")
     parser.add_argument(
+        "--look-frac", type=float, default=_DEFAULTS["look_frac"],
+        help="Share of throws that ask --look-task instead of setting a "
+             "chase: the dog searches, faces the ball when it finds it, "
+             "answers yes, holds --answer-hold-sec, and the next throw "
+             "follows. Recorded with its own prompt and per-frame answer.")
+    parser.add_argument(
+        "--no-ball-frac", type=float, default=_DEFAULTS["no_ball_frac"],
+        help="Share of throws with no ball at all: the dog sweeps a full "
+             "turn and answers no. Without these a model learns the answer "
+             "is always yes. Needs --unprivileged.")
+    parser.add_argument(
+        "--answer-hold-sec", type=float, default=_DEFAULTS["answer_hold_sec"],
+        help="How long a look question (or any 'no') holds after answering "
+             "before the next throw.")
+    parser.add_argument(
+        "--look-task", type=str, default=_DEFAULTS["look_task"],
+        help="Use this as the only phrasing of a coloured look question "
+             "({color} = the wanted ball). Default: several phrasings.")
+    parser.add_argument(
+        "--pose-frac", type=float, default=_DEFAULTS["pose_frac"],
+        help="Share of throws that are a pose command instead of a ball "
+             "request: the dog plays the corpus into the named pose where it "
+             "stands, holds it, plays back out to standing, then the next throw.")
+    parser.add_argument(
+        "--poses", type=str, default=_DEFAULTS["poses"],
+        help="Comma-separated poses for --pose-frac: sit, beg, lie.")
+    parser.add_argument(
+        "--any-color-frac", type=float, default=_DEFAULTS["any_color_frac"],
+        help="Share of throws whose request names no colour ('get the "
+             "ball', 'is there a ball?'): the dog takes the first ball it "
+             "sees, whatever its colour, and says which one it found.")
+    parser.add_argument(
+        "--ball-colors", type=str, default=_DEFAULTS["ball_colors"],
+        help="Comma-separated ball colours (red, green, blue, yellow). Each "
+             "throw wants one of them; the others may be on the ground as "
+             "distractors (--distractor-prob). 'red' alone is the single-ball "
+             "chase.")
+    parser.add_argument(
+        "--distractor-prob", type=float, default=_DEFAULTS["distractor_prob"],
+        help="Chance each non-wanted colour is also on the ground.")
+    parser.add_argument(
         "--unprivileged", action="store_true", default=_DEFAULTS["unprivileged"],
         help="Take the ball's true position away: the dog only knows where it "
              "is while it is inside the forward camera cone (--fov-deg). Out "
@@ -171,8 +285,16 @@ def additional_experiment_arguments(parser: argparse.ArgumentParser):
         "--search-deg-per-frame", type=float, default=_DEFAULTS["search_deg_per_frame"],
         help="How far the view may rotate between two of those frames. Search "
              "yaw rate = this x --vla-hz, capped at the robot's top yaw "
-             "(18 = 180 deg/s, about the top). Lower is easier for a student "
-             "that looks rarely.")
+             "(7 = 70 deg/s commanded, ~65 achieved: the corpus's slow-turn median).")
+    parser.add_argument(
+        "--show-camera", action="store_true", default=_DEFAULTS["show_camera"],
+        help="Viewer: draw the dog's camera -- a magenta dot at the lens and "
+             "cyan dots along where it looks -- to check it sits where the "
+             "real go2's does. Implies --camera.")
+    parser.add_argument(
+        "--no-caption", action="store_true", default=_DEFAULTS["no_caption"],
+        help="Viewer: don't caption the bottom of the window with the "
+             "followed dog's prompt and response.")
     parser.add_argument(
         "--hide-targets", action="store_true", default=_DEFAULTS["hide_targets"],
         help="Don't draw the MaskedMimic target spheres (the path of base-link "
@@ -192,6 +314,47 @@ def additional_experiment_arguments(parser: argparse.ArgumentParser):
         help="Camera image height in pixels (default: width x 9/16, the real "
              "go2's aspect). Equal to --camera-res gives the old square frame, "
              "which sees --fov-deg vertically as well.")
+    parser.add_argument(
+        "--scene", type=str, default=_DEFAULTS["scene"], choices=["warehouse", "open"],
+        help="warehouse (default): each dog in its own room -- a plain warehouse copy per env, "
+             "its lights and edge props re-randomized by Replicator on every "
+             "throw. Balls stay inside the room, the camera also renders "
+             "depth so a ball behind a box is not 'seen', and walls hide the "
+             "other dogs. Visual only: physics is still the trained ground. "
+             "Implies --camera. open: the shared open ground, no rooms.")
+    parser.add_argument(
+        "--pose-test", type=str, default=_DEFAULTS["pose_test"],
+        help="Standalone pose test: comma-separated clip:seconds keyframes "
+             "from the motion library (e.g. '25_clip_1:8.5,25_clip_1:0.62' = "
+             "sit, then sit with the right paw up; 25_clip_1_mirror for the "
+             "left). Each is reached in 1.5 s at the dog's spot, held 3 s, "
+             "then it rests 2 s and repeats, printing how close it got.")
+    parser.add_argument(
+        "--pose-reach", type=float, default=_DEFAULTS["pose_reach"],
+        help="With --pose-test: seconds to reach each pose (split across a "
+             "'a>b>c' transition chain).")
+    parser.add_argument(
+        "--pose-bodies", type=str, default=_DEFAULTS["pose_bodies"],
+        help="Condition only these bodies (plus the trunk) in a pose, e.g. "
+             "'FL_foot,FR_foot,RL_foot,RR_foot'. Default: every leg body in "
+             "the chase's poses, every tracked body in --pose-test.")
+    parser.add_argument(
+        "--pose-positions-only", action="store_true", default=_DEFAULTS["pose_positions_only"],
+        help="In the chase's poses, condition only where the --pose-bodies "
+             "are, not their orientations (measured worse: a beg will not "
+             "come back down).")
+    parser.add_argument(
+        "--vla-server", type=str, default=_DEFAULTS["vla_server"],
+        help="host:port of a running scripts/vla_server.py. The VLA drives "
+             "the dog from its eye crop (implies --camera-zoom and "
+             "--unprivileged); the demonstrator only scores its answers.")
+    parser.add_argument(
+        "--vla-prompt", type=str, default=_DEFAULTS["vla_prompt"],
+        help="Ask this on every throw, e.g. 'is there a green ball?' or "
+             "'get the ball'. Default: the recorder's mix of requests.")
+    parser.add_argument(
+        "--vla-answer-every", type=int, default=_DEFAULTS["vla_answer_every"],
+        help="Generate the VLA's answer text every Nth call (actions every call).")
     parser.add_argument(
         "--camera-zoom", action="store_true", default=_DEFAULTS["camera_zoom"],
         help="Give the dog a movable eye: render the camera at "
@@ -239,7 +402,8 @@ def additional_experiment_arguments(parser: argparse.ArgumentParser):
              "bookkeeping unit; a reset cuts an episode short.")
     parser.add_argument(
         "--record-task", type=str, default=_DEFAULTS["record_task"],
-        help="The language prompt stored with every frame.")
+        help="Use this as the only phrasing of a coloured get request "
+             "({color} = the wanted ball). Default: several phrasings.")
     parser.add_argument(
         "--horizon-sec", type=float, default=None,
         help="Lead time of the farthest conditioned target, i.e. how long the "
@@ -265,6 +429,10 @@ def agent_config(robot_config: RobotConfig, env_config: EnvConfig, args):
 
 def _install_chase(cfg: EnvConfig, args: argparse.Namespace) -> None:
     """Put the ball in the scene and point the pursuit controller at it."""
+    if _arg(args, "no_ball_frac") > 0 and not _arg(args, "unprivileged"):
+        # Privileged sight is handed the ball's position whether or not it
+        # is there, so the dog would chase an absent ball and answer yes.
+        raise ValueError("--no-ball-frac needs --unprivileged")
     from protomotions.envs.control.ball_chase import (
         MaskedMimicGoalControlConfig,
         ball_chase_target_config,
@@ -292,8 +460,16 @@ def _install_chase(cfg: EnvConfig, args: argparse.Namespace) -> None:
             ball_speed_min=_arg(args, "ball_speed_min"),
             ball_speed_max=_arg(args, "ball_speed_max"),
             ball_turn_mean_sec=_arg(args, "ball_turn_mean_sec"),
+            look_frac=_arg(args, "look_frac"),
+            no_ball_frac=_arg(args, "no_ball_frac"),
+            colors=[c.strip() for c in _arg(args, "ball_colors").split(",") if c.strip()],
+            distractor_prob=_arg(args, "distractor_prob"),
+            any_color_frac=_arg(args, "any_color_frac"),
+            pose_frac=_arg(args, "pose_frac"),
+            poses=[p.strip() for p in _arg(args, "poses").split(",") if p.strip()],
         ),
-        "masked_mimic": MaskedMimicGoalControlConfig(
+        "masked_mimic": _goal_config(
+            args,
             num_masked_future_steps=trained.num_masked_future_steps,
             future_steps=trained.future_steps,
             bootstrap_on_episode_end=trained.bootstrap_on_episode_end,
@@ -315,15 +491,18 @@ def _install_chase(cfg: EnvConfig, args: argparse.Namespace) -> None:
             # camera is mounted at, so the demonstrator's "can I see it"
             # matches the picture the student will be handed.
             sight_forward_m=_go2_camera_forward(),
+            sight_up_m=_go2_camera_up(),
             search_turn_deg=_arg(args, "search_turn_deg"),
             search_follows_lean=_arg(args, "search_follows_lean"),
             vla_hz=_arg(args, "vla_hz"),
             search_deg_per_frame=_arg(args, "search_deg_per_frame"),
             show_target_markers=not _arg(args, "hide_targets"),
+            answer_hold_sec=_arg(args, "answer_hold_sec"),
             # Sight is the camera's own frame, pose and all -- the same
             # geometry that gets rendered, whether or not it is.
             sight_aspect=_camera_frame(args)[0] / _camera_frame(args)[1],
             eye_component="camera_eye" if _arg(args, "camera_zoom") else None,
+            sight_camera="front_camera" if _warehouse(args) else None,
         ),
     }
 
@@ -350,7 +529,10 @@ def _install_chase(cfg: EnvConfig, args: argparse.Namespace) -> None:
             fps=_arg(args, "record_fps"),
             episode_steps=_arg(args, "record_episode_steps"),
             max_episodes=_arg(args, "record_episodes"),
-            task=_arg(args, "record_task"),
+            **_recorder_prompts(args),
+            # Walls hide the neighbours: the distance filter would only
+            # throw away frames that show nobody.
+            **({"min_neighbour_m": 0.0} if _warehouse(args) else {}),
             robot_type=getattr(args, "robot_name", "go2"),
             eye_component="camera_eye" if _arg(args, "camera_zoom") else None,
         )
@@ -362,6 +544,17 @@ def _install_chase(cfg: EnvConfig, args: argparse.Namespace) -> None:
             every_steps=_arg(args, "camera_probe_every"),
             eye_component="camera_eye" if _arg(args, "camera_zoom") else None,
         )
+
+    if _arg(args, "show_camera"):
+        from protomotions.envs.control.camera_marker import CameraMarkerConfig
+
+        cfg.control_components["camera_marker"] = CameraMarkerConfig()
+
+    if not _arg(args, "pose_test") and not _arg(args, "no_caption"):
+        from protomotions.envs.control.chase_caption import ChaseCaptionConfig
+
+        # Viewer only: draws nothing headless.
+        cfg.control_components["caption"] = ChaseCaptionConfig(**_recorder_prompts(args))
 
     if _arg(args, "camera_zoom"):
         from protomotions.envs.control.camera_eye import CameraEyeConfig
@@ -379,6 +572,13 @@ def _install_chase(cfg: EnvConfig, args: argparse.Namespace) -> None:
     # steering reward is dropped with the steering command it scored.
     cfg.observation_components["target_obs"] = target_obs_factory()
     cfg.reward_components = {"target_rew": target_reward_factory()}
+
+
+def _go2_camera_up() -> float:
+    """How far above the root the go2's lens sits."""
+    from protomotions.robot_configs.go2 import go2_front_camera
+
+    return float(go2_front_camera().pos[2])
 
 
 def _go2_camera_forward() -> float:
@@ -401,7 +601,7 @@ def _install_load_sensing(robot_cfg, args: argparse.Namespace) -> None:
     when it loses sight of the ball, and it goes into observation.state so
     the student can read it too.
     """
-    if robot_cfg is None or not (_arg(args, "camera") or _arg(args, "record")):
+    if robot_cfg is None or not _camera_on(args):
         return
     from protomotions.robot_configs.go2 import GO2_LOAD_BODIES
 
@@ -422,17 +622,44 @@ def _install_camera(simulator_cfg, args: argparse.Namespace) -> None:
     from protomotions.robot_configs.go2 import go2_front_camera
 
     width, height = _camera_frame(args)
-    simulator_cfg.onboard_cameras = {
-        "front_camera": go2_front_camera(
-            width=width, height=height, fov_deg=_arg(args, "fov_deg")
-        )
-    }
+    camera = go2_front_camera(width=width, height=height, fov_deg=_arg(args, "fov_deg"))
+    if _warehouse(args):
+        # Depth for the occlusion test: once there are things in the scene,
+        # "inside the frame" is not "in view".
+        camera.data_types = list(camera.data_types) + ["distance_to_camera"]
+    simulator_cfg.onboard_cameras = {"front_camera": camera}
+
+
+def _recorder_prompts(args) -> dict:
+    """Override the recorder's coloured phrasings if a single one is given."""
+    from protomotions.envs.control.lerobot_recorder import LeRobotRecorderConfig
+
+    prompts = dict(LeRobotRecorderConfig().prompts)
+    if _arg(args, "record_task"):
+        prompts["get_color"] = [_arg(args, "record_task")]
+    if _arg(args, "look_task"):
+        prompts["look_color"] = [_arg(args, "look_task")]
+    return {"prompts": prompts}
 
 
 def _camera_on(args) -> bool:
     return bool(
         _arg(args, "camera") or _arg(args, "record") or _arg(args, "camera_zoom")
+        or _warehouse(args) or _arg(args, "show_camera")
     )
+
+
+def _warehouse(args) -> bool:
+    return _arg(args, "scene") == "warehouse"
+
+
+def _install_rooms(simulator_cfg, args: argparse.Namespace) -> None:
+    """--scene warehouse: a randomized room around every dog."""
+    if simulator_cfg is None or not _warehouse(args):
+        return
+    from protomotions.simulator.base_simulator.config import RoomsConfig
+
+    simulator_cfg.rooms = RoomsConfig()
 
 
 def _camera_frame(args):
@@ -458,6 +685,7 @@ def configure_robot_and_simulator(robot_cfg, simulator_cfg, args: argparse.Names
     """Training-path hook (config_builder calls this). The inference path
     goes through apply_inference_overrides below, which does the same."""
     _install_camera(simulator_cfg, args)
+    _install_rooms(simulator_cfg, args)
 
 
 def env_config(robot_cfg: RobotConfig, args: argparse.Namespace) -> EnvConfig:
@@ -481,6 +709,7 @@ def apply_inference_overrides(
     only this hook, so the task has to be installed here, not in env_config."""
     _install_load_sensing(robot_cfg, args)
     _install_camera(simulator_cfg, args)
+    _install_rooms(simulator_cfg, args)
     if env_cfg is None:
         return
     _install_chase(env_cfg, args)

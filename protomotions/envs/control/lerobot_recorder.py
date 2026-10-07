@@ -18,10 +18,17 @@ Three choices that matter more than the file format:
   which is exactly what a policy looking through that camera can predict, and
   the control component converts it back.
 
-* **The action does not include the heading.** The demonstrator always faces
-  what it is running at, so the commanded heading is atan2(dy, dx) of the
-  position it was already given -- recording it would be asking the student to
-  learn a copy of its own output. Three numbers: dx, dy, and how long it has.
+* **The action carries the heading.** Chasing, the commanded heading is just
+  atan2(dy, dx) of the target -- but searching, answering a "can you see a
+  ball?", or standing after a "no", the target is the robot's own position
+  and the heading is the whole instruction (the sweep, the turn to face the
+  ball). So: dx, dy, how long it has, and which way to face.
+
+* **Each throw is a question, and every frame an answer.** The episode's
+  prompt is "chase the red ball" or "can you see a ball?" (task_index), and
+  response_index names what the dog would say right then -- "let me look",
+  "yes, I see a ball", "no, I don't see a ball" (meta/responses.jsonl) --
+  so a language-emitting policy has its text targets without re-recording.
 
 * **Privileged columns are labels, never inputs.** ``ball_visible`` and
   ``ball_xy`` are written because they make good auxiliary supervision and an
@@ -78,6 +85,96 @@ _CODEBASE_VERSION = "v2.1"
 _CHUNK = 0
 
 
+# The conditioning a policy has to produce to drive the go2 through
+# MaskedMimic: for every conditionable body, where it should be and how it
+# should be turned, each switched on or off, and the time to be there. The
+# chase prior is shown ONE future slot (MaskedMimicGoalControlConfig.
+# visible_targets), so the final slot is the whole conditioning. A chase is
+# "trunk here, facing there"; a sit or beg adds every leg body, positioned and
+# oriented (measured: with the feet' positions alone a beg would not come back
+# down -- see MaskedMimicGoalControlConfig.pose_bodies).
+MASKED_TARGET_FIELDS = ("x", "y", "z", "fwd_x", "fwd_y", "fwd_z", "up_x", "up_y", "up_z")
+
+
+def masked_target_names(goal) -> List[str]:
+    """Column names of masked_targets for this robot, in order."""
+    names = list(goal.env.robot_config.kinematic_info.body_names)
+    bodies = [names[b] for b in goal.conditionable_body_ids.tolist()]
+    cols = [f"{body}_{f}" for body in bodies for f in MASKED_TARGET_FIELDS]
+    cols += [f"{body}_{bit}" for body in bodies for bit in ("on", "rot_on")]
+    return cols + ["seconds"]
+
+
+def masked_targets(mm, goal, root, terrain) -> Tensor:
+    """[N, 9B + 2B + 1] the final MaskedMimic target, in the robot's own frame.
+
+    Per conditionable body: position, x forward and y left of the robot in its
+    heading frame and z the height above the ground under the target; then
+    orientation, its forward and up vectors in that frame (quat_to_tan_norm).
+    Then which of those the prior is actually told (pos, rot per body), and
+    the lead time of the final slot. A target it is not told is zero.
+    """
+    n = root.root_pos.shape[0]
+    cond = goal.conditionable_body_ids.tolist()
+    steps = mm.ref_pos.shape[1]
+    slot = steps - 1
+    inv = rotations.calc_heading_quat_inv(root.root_rot, True)
+    masks = mm.target_bodies_masks.view(n, steps, len(cond), 2)[:, slot]
+    world = mm.ref_pos[:, slot][:, cond]                              # [N, B, 3]
+    b = world.shape[1]
+    rel = world - root.root_pos.unsqueeze(1)
+    ground = terrain.get_ground_heights(world[..., :2].reshape(-1, 2)).view(n, b)
+    inv_b = inv.unsqueeze(1).expand(n, b, 4).reshape(-1, 4)
+    local = rotations.quat_rotate(inv_b, rel.reshape(-1, 3), True).view(n, b, 3)
+    local[..., 2] = world[..., 2] - ground
+    rot = rotations.quat_mul(inv_b, mm.ref_rot[:, slot][:, cond].reshape(-1, 4), True)
+    rot = rotations.quat_to_tan_norm(rot, True).view(n, b, 6)
+    on, rot_on = masks[..., 0], masks[..., 1]
+    poses = torch.cat(
+        [local * on.unsqueeze(-1).float(), rot * rot_on.unsqueeze(-1).float()], dim=-1
+    )
+    seconds = mm.time_offsets[:, slot] if mm.time_offsets.dim() == 2 else mm.time_offsets
+    return torch.cat(
+        [poses.reshape(n, -1), torch.stack([on, rot_on], dim=-1).reshape(n, -1).float(),
+         seconds.reshape(n, 1).float()],
+        dim=-1,
+    )
+
+
+def language_texts(goal, source, prompts, responses, colors, n, device) -> List[tuple]:
+    """(prompt, response) text per env for this frame, as the recorder writes them.
+
+    goal is the chase demonstrator (its look mode and answer), source its
+    ball command source (what was asked this throw). Shared with the
+    viewer caption, so what is shown on screen is what gets recorded.
+    """
+    zeros = torch.zeros(n, dtype=torch.long, device=device)
+
+    def flag(name):
+        value = getattr(source, name, None)
+        return (value if value is not None else zeros.bool()).tolist()
+
+    look = (goal._look_mode() if hasattr(goal, "_look_mode") else zeros.bool()).tolist()
+    any_mode = flag("any_mode")
+    color = getattr(source, "color", zeros).tolist()
+    throw = getattr(source, "throw_id", zeros).tolist()
+    answer = getattr(goal, "_answer", zeros).tolist()
+    pose = getattr(source, "pose", zeros - 1).tolist()
+    pose_names = list(getattr(getattr(source, "config", None), "poses", []) or [])
+    out = []
+    for e in range(n):
+        kind = ("look" if look[e] else "get") + ("_any" if any_mode[e] else "_color")
+        if pose[e] >= 0:
+            kind = f"pose_{pose_names[pose[e]]}"
+        name = colors[color[e]]
+        phrasings = prompts[kind]
+        # One phrasing per throw: stable across the episode, varied
+        # across throws and envs.
+        prompt = phrasings[(throw[e] * 7 + e) % len(phrasings)]
+        said = responses[kind][answer[e]]
+        out.append((prompt.format(color=name), said.format(color=name)))
+    return out
+
 @dataclass
 class LeRobotRecorderConfig(ControlComponentConfig):
     """Configuration for the dataset recorder."""
@@ -94,6 +191,10 @@ class LeRobotRecorderConfig(ControlComponentConfig):
     # cuts one short because the state jumps.
     episode_steps: int = 200
     max_episodes: int = 40
+    # End the process once max_episodes are written. The chase never ends
+    # by itself, so without this a finished recording keeps simulating --
+    # and holding its GPU -- until someone notices.
+    exit_when_done: bool = True
     # Which control component holds the demonstrator, and which holds the ball.
     goal_component: str = "masked_mimic"
     ball_component: str = "ball"
@@ -103,7 +204,47 @@ class LeRobotRecorderConfig(ControlComponentConfig):
     # the gaze that crop was taken with, and the action ends with the gaze
     # for the next frame -- see camera_eye.
     eye_component: Optional[str] = None
-    task: str = "chase the red ball"
+    # Prompts, per kind of throw: a GET or a LOOK question, naming the
+    # wanted ball's colour or not ("get the ball" takes the first ball seen;
+    # see BallChaseCommandSourceConfig). Each throw uses one phrasing, picked
+    # by throw, so the student learns the request and not one sentence.
+    # {color} is the wanted ball's colour. meta/tasks.jsonl lists every
+    # expansion; task_index points into it.
+    prompts: Dict[str, List[str]] = field(
+        default_factory=lambda: {
+            "get_color": ["get the {color} ball", "go get the {color} ball",
+                          "fetch the {color} ball"],
+            "get_any": ["get the ball", "go get a ball", "fetch a ball"],
+            "look_color": ["is there a {color} ball?", "can you see a {color} ball?",
+                           "do you see a {color} ball?"],
+            "look_any": ["is there a ball?", "can you see a ball?",
+                         "do you see a ball?"],
+            # Pose commands (BallChaseCommandSourceConfig.pose_frac).
+            "pose_sit": ["sit", "sit down", "sit!"],
+            "pose_beg": ["beg", "sit up and beg", "beg for it"],
+            "pose_lie": ["lie down", "down", "lay down"],
+        }
+    )
+    # What the dog would say, per frame: [none yet, yes, no] per kind
+    # (ball_chase.ANSWER_*). {color} is the wanted ball -- for a colourless
+    # request, the one it picked. meta/responses.jsonl lists every
+    # expansion; response_index points into it.
+    responses: Dict[str, List[str]] = field(
+        default_factory=lambda: {
+            "get_color": ["looking for the {color} ball", "getting the {color} ball",
+                          "I can't find a {color} ball"],
+            "get_any": ["looking for a ball", "getting the {color} ball",
+                        "I can't find a ball"],
+            "look_color": ["let me look", "yes, I see a {color} ball",
+                           "no, I don't see a {color} ball"],
+            "look_any": ["let me look", "yes, I see a {color} ball",
+                         "no, I don't see a ball"],
+            # [getting into it, done, --]
+            "pose_sit": ["sitting down", "I'm sitting", "I'm sitting"],
+            "pose_beg": ["okay, I'll beg", "I'm begging", "I'm begging"],
+            "pose_lie": ["lying down", "I'm lying down", "I'm lying down"],
+        }
+    )
     # Written even while it is the only task: a constant prompt costs one
     # column and is what makes the dataset usable later, when there are
     # several objects and the prompt has to pick one.
@@ -314,6 +455,12 @@ class LeRobotRecorder(ControlComponent):
                     "action": action[env_id],
                     "ball_visible": bool(extras["visible"][env_id]),
                     "ball_xy": extras["ball_xy"][env_id],
+                    "task_index": int(extras["task_index"][env_id]),
+                    "response_index": int(extras["response_index"][env_id]),
+                    **({
+                        "input_prev_response_index": int(extras["input_prev_response_index"][env_id]),
+                        "input_prev_heading": float(extras["input_prev_heading"][env_id]),
+                    } if "input_prev_heading" in extras else {}),
                 }
             )
             if len(rows) >= self.config.episode_steps:
@@ -417,14 +564,18 @@ class LeRobotRecorder(ControlComponent):
                 dim=-1,
             )
 
-        target = to_body(goal._target_xy())
-        remaining = (goal._deadline - goal._now()).clamp(
-            goal.config.min_horizon_sec, goal.config.max_horizon_sec
-        )
-        action = torch.cat([target, remaining.unsqueeze(-1)], dim=-1)
+        # The action IS the MaskedMimic conditioning -- the final target the
+        # demonstrator handed the prior this step (see masked_targets). The
+        # DAgger driver keeps the referee's in _label_mm; otherwise it is the
+        # demonstrator's own.
+        mm = getattr(goal, "_label_mm", None)
+        if mm is None:
+            mm = getattr(goal, "_last_mm", None)
+        action = masked_targets(mm, goal, root, self.env.terrain)
         eye = self._eye()
         if eye is not None:
-            action = torch.cat([action, eye.next_gaze()], dim=-1)
+            gaze = eye.rule_gaze() if hasattr(eye, "rule_gaze") else eye.next_gaze()
+            action = torch.cat([action, gaze], dim=-1)
 
         ball_xy = to_body(goal._goal_xy())
         visible = (
@@ -432,10 +583,23 @@ class LeRobotRecorder(ControlComponent):
             if goal._unprivileged()
             else torch.ones_like(goal._deadline, dtype=torch.bool)
         )
+        task_index, response_index = self._language(goal)
         extras = {
             "visible": visible.detach().cpu().numpy(),
             "ball_xy": ball_xy.detach().cpu().numpy().astype(np.float32),
+            "task_index": task_index,
+            "response_index": response_index,
         }
+        # A VLA driving (DAgger): the inputs it had are its OWN previous
+        # answer and heading, not the demonstrator's -- record those.
+        inputs = getattr(goal, "_vla_inputs_now", None)
+        if inputs is not None:
+            table = {t: i for i, t in enumerate(self._responses())}
+            prev_text, prev_heading = inputs
+            extras["input_prev_response_index"] = np.array(
+                [table.get(t, -1) for t in prev_text], dtype=np.int64
+            )
+            extras["input_prev_heading"] = prev_heading.detach().cpu().numpy().astype(np.float32)
         return action.detach().cpu().numpy().astype(np.float32), extras
 
     # ------------------------------------------------------------------
@@ -462,7 +626,8 @@ class LeRobotRecorder(ControlComponent):
         self._episodes_meta.append(
             {
                 "episode_index": index,
-                "tasks": [self.config.task],
+                # One throw, one question: the episode's prompt.
+                "tasks": [self._tasks()[rows[0]["task_index"]]],
                 "length": len(rows),
             }
         )
@@ -486,6 +651,14 @@ class LeRobotRecorder(ControlComponent):
                 f"{self._crowded_out} with a robot too close)",
                 flush=True,
             )
+            if self.config.exit_when_done:
+                import sys  # noqa: PLC0415
+
+                print("[recorder] exiting (exit_when_done)", flush=True)
+                sys.stdout.flush()
+                sys.stderr.flush()
+                # Every file is closed; skip the simulator's slow teardown.
+                os._exit(0)
 
     def _video_path(self, index: int) -> str:
         return os.path.join(
@@ -532,7 +705,20 @@ class LeRobotRecorder(ControlComponent):
                 "frame_index": pa.array(list(range(n)), type=pa.int64()),
                 "episode_index": pa.array([index] * n, type=pa.int64()),
                 "index": pa.array(list(range(base, base + n)), type=pa.int64()),
-                "task_index": pa.array([0] * n, type=pa.int64()),
+                "task_index": pa.array(
+                    [r["task_index"] for r in rows], type=pa.int64()
+                ),
+                "response_index": pa.array(
+                    [r["response_index"] for r in rows], type=pa.int64()
+                ),
+                **({
+                    "input_prev_response_index": pa.array(
+                        [r["input_prev_response_index"] for r in rows], type=pa.int64()
+                    ),
+                    "input_prev_heading": pa.array(
+                        [r["input_prev_heading"] for r in rows], type=pa.float32()
+                    ),
+                } if "input_prev_heading" in rows[0] else {}),
             }
         )
         path = os.path.join(
@@ -611,6 +797,15 @@ class LeRobotRecorder(ControlComponent):
                 "names": self._action_names(),
             },
             "ball_visible": {"dtype": "bool", "shape": [1], "names": None},
+            # What it would say: an index into meta/responses.jsonl.
+            "response_index": {"dtype": "int64", "shape": [1], "names": None},
+            **({
+                # DAgger: what the driving VLA itself last said (-1: nothing
+                # yet) and last commanded -- its inputs, not the labels.
+                "input_prev_response_index": {"dtype": "int64", "shape": [1], "names": None},
+                "input_prev_heading": {"dtype": "float32", "shape": [1], "names": None},
+            } if getattr(self.env.control_manager.components.get(self.config.goal_component),
+                         "_vla_inputs_now", None) is not None else {}),
             "ball_xy": {
                 "dtype": "float32",
                 "shape": [2],
@@ -623,8 +818,47 @@ class LeRobotRecorder(ControlComponent):
             "task_index": {"dtype": "int64", "shape": [1], "names": None},
         }
 
+    def _colors(self) -> List[str]:
+        ball = self.env.control_manager.components.get(self.config.ball_component)
+        source = getattr(ball, "command_source", None)
+        return list(getattr(getattr(source, "config", None), "colors", None) or ["red"])
+
+    @staticmethod
+    def _expand(table: Dict[str, List[str]], colors: List[str]) -> List[str]:
+        """Every template filled with every colour, deduplicated, in order."""
+        out: List[str] = []
+        for kind in table:
+            for text in table.get(kind, []):
+                for c in colors:
+                    t = text.format(color=c)
+                    if t not in out:
+                        out.append(t)
+        return out
+
+    def _tasks(self) -> List[str]:
+        """Prompts by task_index."""
+        return self._expand(self.config.prompts, self._colors())
+
+    def _responses(self) -> List[str]:
+        """Answer texts by response_index."""
+        return self._expand(self.config.responses, self._colors())
+
+    def _language(self, goal):
+        """(task_index, response_index) per env for this frame."""
+        ball = self.env.control_manager.components.get(self.config.ball_component)
+        texts = language_texts(
+            goal, getattr(ball, "command_source", None), self.config.prompts,
+            self.config.responses, self._colors(), self.env.num_envs, self.env.device,
+        )
+        tasks = {t: i for i, t in enumerate(self._tasks())}
+        responses = {t: i for i, t in enumerate(self._responses())}
+        task_index = np.array([tasks[p] for p, _ in texts], dtype=np.int64)
+        response_index = np.array([responses[r] for _, r in texts], dtype=np.int64)
+        return task_index, response_index
+
     def _action_names(self) -> List[str]:
-        names = ["target_x", "target_y", "seconds_remaining"]
+        goal = self.env.control_manager.components[self.config.goal_component]
+        names = masked_target_names(goal)
         if self.config.eye_component:
             names += ["gaze_u", "gaze_v", "gaze_zoom"]
         return names
@@ -652,7 +886,7 @@ class LeRobotRecorder(ControlComponent):
             "robot_type": self.config.robot_type,
             "total_episodes": self._episode_index,
             "total_frames": self._frame_total,
-            "total_tasks": 1,
+            "total_tasks": len(self._tasks()),
             "total_videos": self._episode_index,
             "total_chunks": 1,
             "chunks_size": 1000,
@@ -670,7 +904,11 @@ class LeRobotRecorder(ControlComponent):
         with open(os.path.join(meta, "info.json"), "w") as f:
             json.dump(info, f, indent=4)
         with open(os.path.join(meta, "tasks.jsonl"), "w") as f:
-            f.write(json.dumps({"task_index": 0, "task": self.config.task}) + "\n")
+            for i, task in enumerate(self._tasks()):
+                f.write(json.dumps({"task_index": i, "task": task}) + "\n")
+        with open(os.path.join(meta, "responses.jsonl"), "w") as f:
+            for i, text in enumerate(self._responses()):
+                f.write(json.dumps({"response_index": i, "response": text}) + "\n")
         with open(os.path.join(meta, "episodes.jsonl"), "w") as f:
             for row in self._episodes_meta:
                 f.write(json.dumps(row) + "\n")

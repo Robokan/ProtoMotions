@@ -632,6 +632,74 @@ class SimParams:
     )
 
 
+
+@dataclass
+class RoomsConfig:
+    """One room per env: a visual scene around each robot, randomized.
+
+    The room is VISUAL. Physics stays on the terrain the policy was trained
+    on; the room's own colliders are switched off, so walls do not stop a
+    robot -- the task keeps it inside instead (the chase throws and bounds
+    its balls within the room). Walls do block the camera, which is the
+    point: other envs are out of sight, and the scene varies.
+    """
+
+    usd_path: str = field(
+        default="{ISAAC_NUCLEUS_DIR}/Environments/Simple_Warehouse/warehouse.usd",
+        metadata={"help": "The room. {ISAAC_NUCLEUS_DIR} etc. are expanded."},
+    )
+    spacing: float = field(
+        default=45.0,
+        metadata={"help": "Centre-to-centre distance between rooms (m). 45 "
+                  "clears a 24 x 39 m warehouse with room to spare and fits "
+                  "a 5 x 4 grid (20 envs) on the default 200 m terrain."},
+    )
+    # Measured in Simple_Warehouse (Isaac 6.0): walls x[-10.3, 9.4]
+    # y[-12.2, 18.0], racks and pallets along the -x wall, and a line of
+    # floor-to-ceiling pillars down x ~ -1.3..0.4 every 6 m. The clear floor
+    # is the +x bay, x[1.2, 8.8] y[-11.5, 17.3].
+    floor_center: Tuple[float, float] = field(
+        default=(5.0, 2.9),
+        metadata={
+            "help": "Centre of the usable floor in the room USD's own "
+            "coordinates. The room is placed so this lands on the env's "
+            "room centre, where the robot spawns."
+        },
+    )
+    half_extent: Tuple[float, float] = field(
+        default=(3.8, 14.4),
+        metadata={
+            "help": "Usable floor around the room centre, +/- x and y (m): "
+            "where the robot and every ball stay."
+        },
+    )
+    z_offset: float = field(
+        default=0.005,
+        metadata={"help": "Lift the room's floor this much above the terrain "
+                  "so the two surfaces do not z-fight."},
+    )
+    props: List[str] = field(
+        default_factory=lambda: [
+            "{ISAAC_NUCLEUS_DIR}/Environments/Simple_Warehouse/Props/SM_CardBoxA_01.usd",
+            "{ISAAC_NUCLEUS_DIR}/Environments/Simple_Warehouse/Props/SM_CardBoxB_01_681.usd",
+            "{ISAAC_NUCLEUS_DIR}/Environments/Simple_Warehouse/Props/SM_PaletteA_01.usd",
+        ],
+        metadata={"help": "Clutter scattered along the edges of the floor."},
+    )
+    props_per_room: int = field(
+        default=8, metadata={"help": "How many props each room gets."}
+    )
+    prop_band: float = field(
+        default=0.6,
+        metadata={"help": "Props sit in this band just outside half_extent (m)."},
+    )
+    randomize: bool = field(
+        default=True,
+        metadata={"help": "Re-randomize a room's lights, surfaces and props "
+                  "(Replicator) whenever the task asks -- the chase does on "
+                  "every throw."},
+    )
+
 @dataclass
 class SimulatorConfig:
     """Main configuration class for the simulator."""
@@ -657,6 +725,14 @@ class SimulatorConfig:
     )
     camera: Optional[Any] = field(
         default=None, metadata={"help": "Camera configuration for rendering."}
+    )
+    rooms: Optional["RoomsConfig"] = field(
+        default=None,
+        metadata={
+            "help": "Put each env's robot in its own room (e.g. a warehouse), "
+            "a copy per env on a grid, randomized by Replicator. None: the "
+            "plain shared ground. See RoomsConfig."
+        },
     )
     onboard_cameras: Dict[str, OnboardCameraConfig] = field(
         default_factory=dict,

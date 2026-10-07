@@ -160,6 +160,8 @@ def _add_run(dataset, columns, frames, features, vector_keys, task, start, stop)
             spec = features[key]
             if spec["dtype"] == "bool":
                 frame[key] = np.array([bool(value)])
+            elif spec["dtype"].startswith("int"):
+                frame[key] = np.asarray([value], dtype=np.int64)
             elif isinstance(value, list):
                 frame[key] = np.asarray(value, dtype=np.float32)
             else:
@@ -268,6 +270,11 @@ def main() -> None:
               f"{sum(1 for a, b in runs if b - a >= args.min_frames)} run(s)")
 
     dataset.finalize()
+    # The text each response_index stands for. LeRobot has no table of its
+    # own for it, so it rides along beside tasks in meta/.
+    responses = args.staging[0] / "meta" / "responses.jsonl"
+    if responses.exists():
+        shutil.copy(responses, Path(dataset.root) / "meta" / "responses.jsonl")
     print(f"\nwrote {dataset.meta.total_episodes} episodes / "
           f"{dataset.meta.total_frames} frames as "
           f"{dataset.meta.info.codebase_version} to {dataset.root}")

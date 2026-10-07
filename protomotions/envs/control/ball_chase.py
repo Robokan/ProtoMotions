@@ -41,7 +41,7 @@ the task -- ball, success radius, markers, obs, reward -- is unchanged.
 
 import math
 from dataclasses import dataclass, field
-from typing import Optional, TYPE_CHECKING, Tuple
+from typing import Dict, List, Optional, TYPE_CHECKING, Tuple
 
 import torch
 from torch import Tensor
@@ -64,6 +64,19 @@ if TYPE_CHECKING:
 # 2 feet, the brief. Kept as a named constant because it is a task definition,
 # not a tuning knob.
 TWO_FEET_M = 0.6096
+
+# The answer to a throw's question ("can you see a ball?" / "chase the ball").
+ANSWER_NONE, ANSWER_YES, ANSWER_NO = 0, 1, 2
+
+# Ball colours by name. Saturated and far apart in hue, so under the scene's
+# lighting no two are ever the same few pixels -- the question is which
+# colour, and the answer has to be in the picture.
+BALL_PALETTE: Dict[str, Tuple[float, float, float]] = {
+    "red": (1.0, 0.1, 0.1),
+    "green": (0.1, 0.8, 0.15),
+    "blue": (0.1, 0.25, 1.0),
+    "yellow": (1.0, 0.85, 0.05),
+}
 
 # Range bands for the closing-speed readout. An average hides a chase that
 # sprints the first four metres and then crawls the last one.
@@ -138,6 +151,36 @@ class BallChaseCommandSourceConfig(RandomTargetCommandSourceConfig):
     # None: use tar_dist_max, so "as far as it is ever thrown" is also "as
     # far as it is ever allowed to get". 0 disables.
     leash_m: Optional[float] = None
+    # Each throw is a QUESTION as well as a ball. With probability look_frac
+    # it asks "can you see a ball?" instead of "chase the red ball": the dog
+    # searches, faces the ball when it finds it, answers, holds, and the next
+    # throw follows -- no catch. With probability no_ball_frac there is no
+    # ball at all (hidden, unseeable, uncatchable): the dog sweeps a full
+    # turn and answers no. Without no-ball throws a model learns that the
+    # answer is always yes. See MaskedMimicGoalControl._update_answer.
+    look_frac: float = 0.0
+    no_ball_frac: float = 0.0
+    # Several balls, one wanted. Each throw picks the target's colour from
+    # these (uniformly); every OTHER colour is also on the ground with
+    # probability distractor_prob. The question names the target's colour,
+    # so "yes" means THAT ball: a red ball in view answers "can you see a
+    # green ball?" with no. One colour is the old single red ball.
+    colors: List[str] = field(default_factory=lambda: ["red"])
+    distractor_prob: float = 0.5
+    # Share of throws whose prompt names no colour ("get the ball"): every
+    # ball on the ground is fair game, and the first one the dog sees
+    # becomes its target (MaskedMimicGoalControl._lock_any_ball). A no-ball
+    # throw of this kind has no balls at all.
+    any_color_frac: float = 0.0
+    # Share of throws that are a POSE command instead of a ball request
+    # ("sit", "beg"): the dog takes the named mocap pose where it stands,
+    # holds it, and the next throw follows (poses.GO2_POSES). The balls stay
+    # where they fell, as distractors the dog must ignore.
+    pose_frac: float = 0.0
+    poses: List[str] = field(default_factory=lambda: ["sit", "beg"])
+    # Distractors land in the same annulus as the target, at least this far
+    # from it and from each other, so no two balls read as one blob.
+    distractor_min_sep_m: float = 1.0
 
 
 class BallChaseCommandSource(RandomTargetCommandSource):
@@ -180,6 +223,27 @@ class BallChaseCommandSource(RandomTargetCommandSource):
         self.plan_id = torch.zeros(
             control.env.num_envs, dtype=torch.long, device=control.env.device
         )
+        # Bumped on a throw only (plan_id also bumps on a course change).
+        self.throw_id = torch.zeros_like(self.plan_id)
+        n, dev = control.env.num_envs, control.env.device
+        # This throw's question and whether it has a ball; see the config.
+        self.look = torch.zeros(n, dtype=torch.bool, device=dev)
+        self.present = torch.ones(n, dtype=torch.bool, device=dev)
+        # Set by the goal control once a question has been answered and
+        # held: the next step throws again.
+        self.rethrow_requested = torch.zeros(n, dtype=torch.bool, device=dev)
+        # Which colour is wanted (index into config.colors), and where the
+        # other colours' balls lie (per colour slot; the target's slot unused).
+        k = len(config.colors)
+        self.color = torch.zeros(n, dtype=torch.long, device=dev)
+        self.others_pos = torch.zeros(n, k, 2, device=dev)
+        self.others_on = torch.zeros(n, k, dtype=torch.bool, device=dev)
+        # This throw's pose command: an index into config.poses, -1 for none.
+        self.pose = torch.full((n,), -1, dtype=torch.long, device=dev)
+        # "get the ball": no colour named yet (any_mode), and whether the
+        # dog has picked one (locked).
+        self.any_mode = torch.zeros(n, dtype=torch.bool, device=dev)
+        self.locked = torch.zeros(n, dtype=torch.bool, device=dev)
 
     def reset(self, env_ids: Tensor) -> None:
         super().reset(env_ids)
@@ -189,10 +253,151 @@ class BallChaseCommandSource(RandomTargetCommandSource):
         """A throw: place the ball (base behaviour), then give it a velocity."""
         super()._set_random_target(env_ids)
         self.plan_id[env_ids] += 1
+        self.throw_id[env_ids] += 1
+        self.rethrow_requested[env_ids] = False
+        num, dev = len(env_ids), self.control.env.device
+        self.look[env_ids] = torch.rand(num, device=dev) < self.config.look_frac
+        self.present[env_ids] = torch.rand(num, device=dev) >= self.config.no_ball_frac
+        self.any_mode[env_ids] = torch.rand(num, device=dev) < self.config.any_color_frac
+        is_pose = torch.rand(num, device=dev) < self.config.pose_frac
+        which = torch.randint(0, max(len(self.config.poses), 1), (num,), device=dev)
+        self.pose[env_ids] = torch.where(is_pose, which, torch.full_like(which, -1))
+        # A pose command is neither a question nor a colour request.
+        self.look[env_ids] &= ~is_pose
+        self.any_mode[env_ids] &= ~is_pose
+        # A request typed by a person (VLA driving): every throw asks it.
+        force_look = getattr(self, "force_look", None)
+        force_color = getattr(self, "force_color", None)
+        if force_look is not None:
+            self.look[env_ids] = bool(force_look)
+        if force_color is not None:
+            self.any_mode[env_ids] = force_color < 0
+        force_pose = getattr(self, "force_pose", None)
+        if force_pose is not None:
+            self.pose[env_ids] = int(force_pose)
+            if force_pose >= 0:
+                self.look[env_ids] = False
+                self.any_mode[env_ids] = False
+        # A new question gets a new-looking room (SimulatorConfig.rooms).
+        self.control.env.simulator.randomize_rooms(env_ids)
+        self.locked[env_ids] = False
+        self._scatter_colors(env_ids)
+        # "no ball" for a colourless prompt means no ball of ANY colour.
+        empty = env_ids[self.any_mode[env_ids] & ~self.present[env_ids]]
+        self.others_on[empty] = False
         if not self.config.moving:
             self._tar_vel[env_ids] = 0.0
             return
         self._sample_velocity(env_ids)
+        # An absent ball does not roll: nothing for a leash to re-throw.
+        self._tar_vel[env_ids] *= self.present[env_ids].float().unsqueeze(-1)
+
+    def _scatter_colors(self, env_ids: Tensor) -> None:
+        """Pick the wanted colour and lay the distractors down around the dog."""
+        k = len(self.config.colors)
+        num, dev = len(env_ids), self.control.env.device
+        self.color[env_ids] = torch.randint(0, k, (num,), device=dev)
+        force_color = getattr(self, "force_color", None)
+        if force_color is not None and force_color >= 0:
+            self.color[env_ids] = int(force_color)
+        self.others_on[env_ids] = False
+        if k < 2:
+            return
+        root = self.control.env.simulator.get_root_state()
+        center = root.root_pos[env_ids, :2]
+        target = self.control._tar_pos[env_ids, :2]
+        lo = max(self.config.tar_dist_min, self.control.config.tar_proximity_threshold)
+        hi = max(self.config.tar_dist_max, lo)
+        placed = [target]
+        for slot in range(k):
+            on = (torch.rand(num, device=dev) < self.config.distractor_prob) & (
+                self.color[env_ids] != slot
+            )
+            # A few tries at a spot clear of every ball already down.
+            best = None
+            for _ in range(8):
+                dist = lo + torch.rand(num, device=dev) * (hi - lo)
+                ang = torch.rand(num, device=dev) * 2 * math.pi
+                cand = center + torch.stack([dist * torch.cos(ang), dist * torch.sin(ang)], -1)
+                cand = self._clamp_to_room(cand, env_ids)
+                clear = torch.stack(
+                    [torch.linalg.norm(cand - p, dim=-1) for p in placed], -1
+                ).min(-1).values >= self.config.distractor_min_sep_m
+                best = cand if best is None else torch.where(clear.unsqueeze(-1), cand, best)
+                if bool(clear.all()):
+                    break
+            self.others_pos[env_ids, slot] = best
+            self.others_on[env_ids, slot] = on
+            placed.append(torch.where(on.unsqueeze(-1), best, target))
+
+    def retarget(self, env_ids: Tensor, slots: Tensor) -> None:
+        """Make the ball in colour slot `slots` the target ("get the ball").
+
+        The old target -- if it was on the ground -- stays where it was, as
+        that colour's distractor. Not a throw: plan_id is left alone, so the
+        recorder keeps the episode going; the goal control re-plans because
+        acquiring a ball changes its belief.
+        """
+        if len(env_ids) == 0:
+            return
+        old = self.color[env_ids]
+        old_xy = self.control._tar_pos[env_ids, :2].clone()
+        new_xy = self.others_pos[env_ids, slots]
+        self.control._tar_pos[env_ids, :2] = new_xy
+        self.others_pos[env_ids, old] = old_xy
+        self.others_on[env_ids, old] = self.present[env_ids]
+        self.others_on[env_ids, slots] = False
+        self.color[env_ids] = slots
+        self.present[env_ids] = True
+        self._tar_vel[env_ids] = 0.0
+        self.control._update_target_heights(env_ids)
+
+    def _room_bounds(self):
+        """[N, 4] (x_lo, x_hi, y_lo, y_hi) of each env's room floor, or None.
+
+        With SimulatorConfig.rooms every ball stays inside its own room,
+        a ball-width in from the edge.
+        """
+        env = self.control.env
+        centers = getattr(env, "room_centers", None)
+        if centers is None:
+            return None
+        hx, hy = env.simulator.config.rooms.half_extent
+        m = 0.3
+        return torch.stack(
+            [centers[:, 0] - hx + m, centers[:, 0] + hx - m,
+             centers[:, 1] - hy + m, centers[:, 1] + hy - m], dim=-1
+        )
+
+    def _clamp_to_room(self, xy: Tensor, env_ids: Tensor) -> Tensor:
+        bounds = self._room_bounds()
+        if bounds is None:
+            return xy
+        b = bounds[env_ids]
+        return torch.stack(
+            [torch.maximum(torch.minimum(xy[:, 0], b[:, 1]), b[:, 0]),
+             torch.maximum(torch.minimum(xy[:, 1], b[:, 3]), b[:, 2])], dim=-1
+        )
+
+    def color_name(self) -> List[str]:
+        """The wanted colour's name, per env."""
+        names = self.config.colors
+        return [names[i] for i in self.color.tolist()]
+
+    def marker_slots(self):
+        """(name, rgb, xy [N, 2], shown [N]) per colour, for TargetControl.
+
+        The wanted colour's slot is the target itself -- shown when this
+        throw has one -- and every other slot is that colour's distractor.
+        """
+        slots = []
+        target = self.control._tar_pos[:, :2]
+        for i, name in enumerate(self.config.colors):
+            wanted = self.color == i
+            xy = torch.where(wanted.unsqueeze(-1), target, self.others_pos[:, i])
+            shown = torch.where(wanted, self.present, self.others_on[:, i])
+            slots.append((name, BALL_PALETTE[name], xy, shown))
+        return slots
 
     def _sample_velocity(self, env_ids: Tensor) -> None:
         num = len(env_ids)
@@ -213,6 +418,7 @@ class BallChaseCommandSource(RandomTargetCommandSource):
             ids = turn.nonzero(as_tuple=False).flatten()
             if len(ids) > 0:
                 self._sample_velocity(ids)
+                self._tar_vel[ids] *= self.present[ids].float().unsqueeze(-1)
                 self.plan_id[ids] += 1   # the dog must re-solve its intercept
         control._tar_pos[:, :2] += self._tar_vel * control.env.dt
         leash = self.config.leash_m
@@ -236,6 +442,14 @@ class BallChaseCommandSource(RandomTargetCommandSource):
                 out = (pos[:, axis] < lo) | (pos[:, axis] > hi)
                 self._tar_vel[out, axis] = -self._tar_vel[out, axis]
                 pos[:, axis] = pos[:, axis].clamp(lo, hi)
+        rooms = self._room_bounds()
+        if rooms is not None:
+            pos = control._tar_pos
+            for axis in (0, 1):
+                lo, hi = rooms[:, 2 * axis], rooms[:, 2 * axis + 1]
+                out = (pos[:, axis] < lo) | (pos[:, axis] > hi)
+                self._tar_vel[out, axis] = -self._tar_vel[out, axis]
+                pos[:, axis] = torch.maximum(torch.minimum(pos[:, axis], hi), lo)
         control._update_target_heights(
             torch.arange(control.env.num_envs, device=control.env.device)
         )
@@ -247,9 +461,20 @@ class BallChaseCommandSource(RandomTargetCommandSource):
             self._advance_ball()
 
         self.steps_since_throw += 1
+        asked = self.rethrow_requested.nonzero(as_tuple=False).flatten()
+        if len(asked) > 0:
+            self.steps_since_throw[asked] = 0
+            self._set_random_target(asked)
         rng = self.control.distance_to_target()
         self._report(rng)
-        caught = rng <= self.control.config.tar_proximity_threshold
+        # A question is not a chase, and a ball that is not there cannot be
+        # caught: both end by being answered instead.
+        caught = (
+            (rng <= self.control.config.tar_proximity_threshold)
+            & self.present
+            & ~self.look
+            & (self.pose < 0)
+        )
         ids = caught.nonzero(as_tuple=False).flatten()
         if len(ids) == 0:
             return
@@ -383,6 +608,9 @@ class BallChaseCommandSource(RandomTargetCommandSource):
             self.control._tar_pos[env_ids, 1] = self.control._tar_pos[
                 env_ids, 1
             ].clamp(y_min, y_max)
+        self.control._tar_pos[env_ids, :2] = self._clamp_to_room(
+            self.control._tar_pos[env_ids, :2], env_ids
+        )
         self.control._update_target_heights(env_ids)
 
 
@@ -394,6 +622,13 @@ def ball_chase_target_config(
     ball_speed_min: float = 0.5,
     ball_speed_max: float = 2.0,
     ball_turn_mean_sec: float = 5.0,
+    look_frac: float = 0.0,
+    no_ball_frac: float = 0.0,
+    colors: Optional[List[str]] = None,
+    distractor_prob: float = 0.5,
+    any_color_frac: float = 0.0,
+    pose_frac: float = 0.0,
+    poses: Optional[List[str]] = None,
 ) -> TargetControlConfig:
     """A red ball, caught at success_radius, re-thrown on every catch."""
     return TargetControlConfig(
@@ -419,6 +654,13 @@ def ball_chase_target_config(
             ball_speed_min=ball_speed_min,
             ball_speed_max=ball_speed_max,
             ball_turn_mean_sec=ball_turn_mean_sec,
+            look_frac=look_frac,
+            no_ball_frac=no_ball_frac,
+            colors=list(colors or ["red"]),
+            distractor_prob=distractor_prob,
+            any_color_frac=any_color_frac,
+            pose_frac=pose_frac,
+            poses=list(poses or ["sit", "beg"]),
         ),
     )
 
@@ -587,6 +829,9 @@ class MaskedMimicGoalControlConfig(MaskedMimicSteeringControlConfig):
     # "the demonstrator can see it but the camera cannot" from 0.9% of
     # frames to 0.00%. Control stays rooted at the root; only SIGHT moves.
     sight_forward_m: float = 0.0
+    # And how far above the root it is: the projection needs the full lens
+    # position, or a ball near the frame's top/bottom edge is misjudged.
+    sight_up_m: float = 0.0
     # The frame's width / height. 0 keeps the yaw-only wedge above. > 0
     # tests sight the way the camera renders it: the ball projected through
     # a level pinhole of fov_deg across, riding the FULL body pose -- so a
@@ -600,6 +845,15 @@ class MaskedMimicGoalControlConfig(MaskedMimicSteeringControlConfig):
     # inside the eye's window -- what the student is actually shown -- and
     # not merely somewhere in the full frame. Needs sight_aspect > 0.
     eye_component: Optional[str] = None
+    # Name of an onboard camera that also renders distance_to_camera. Set,
+    # a ball is only seen if nothing is drawn in front of it at its pixel --
+    # a box, a wall, another ball. Geometry alone cannot know that once the
+    # scene has things in it (SimulatorConfig.rooms). None: no occlusion.
+    sight_camera: Optional[str] = None
+    # How much nearer than the ball's surface the rendered depth may be and
+    # still count as the ball itself (m): absorbs the frame being one
+    # control step older than the pose it is tested against.
+    occlusion_tolerance_m: float = 0.15
     # Searching is a SWEEP IN PLACE: the dog turns one way, steadily, until
     # the ball enters the frame. It does not travel.
     #
@@ -665,6 +919,45 @@ class MaskedMimicGoalControlConfig(MaskedMimicSteeringControlConfig):
     # moment the ball is acquired the chase re-plans at full speed.
     vla_hz: float = 10.0
     search_deg_per_frame: float = 10.0
+    # A search turn walks a tight circle, the way the corpus dogs turn
+    # slowly -- not a pivot on the spot. The corpus's slow turns (738 s under
+    # 0.6 m/s and over 30 deg/s): median 63 deg/s, creeping forward at
+    # 0.17 m/s, drifting 0.07 m/s into the turn. The dog creeps less than
+    # the chord it is shown, so this is set by what it DOES: 0.23 m gave
+    # 0.09 m/s, 0.4 m gave 0.28 m/s; 0.3 m lands on the corpus. 0 pivots.
+    search_turn_radius_m: float = 0.3
+    # Answering (BallChaseCommandSourceConfig.look_frac / no_ball_frac). A
+    # question is answered "yes" the moment the ball is seen, and "no" once
+    # the dog has turned no_ball_sweep_deg without seeing it -- a full turn,
+    # every bearing looked at. A "look" question then holds this long
+    # (facing the ball, or standing where it gave up) before the next throw;
+    # a chase that answers "no" does the same, while a chase that answers
+    # "yes" runs on to the catch.
+    no_ball_sweep_deg: float = 360.0
+    answer_hold_sec: float = 1.5
+    # Pose commands (BallChaseCommandSourceConfig.pose_frac): reach the pose
+    # in this long (split across its chain), then hold it before the next throw.
+    pose_reach_sec: float = 1.5
+    pose_hold_sec: float = 2.0
+    # A pose throw first stops the dog where it is (trunk only, like the
+    # start of a search) for this long, then anchors the pose where it
+    # actually came to rest. Folding into a sit from a 2.75 m/s run tumbles
+    # it (measured: nose-down -63 deg).
+    pose_settle_sec: float = 1.0
+    # Which bodies a pose conditions besides the trunk (position AND
+    # orientation for the trunk), and whether their orientations too. Every
+    # conditionable leg body, positioned AND oriented: with only the four
+    # feet' positions, a dog up in a beg ignored every target pulling its
+    # paws down -- it would not drop back to the sit (16 of 51 did), and then
+    # reared and fell when told to get up. With the legs' orientations, 64 of
+    # 64 begged, dropped and stood (measured 2026-09-30).
+    pose_bodies: List[str] = field(
+        default_factory=lambda: [
+            f"{leg}_{part}" for leg in ("FL", "FR", "RL", "RR")
+            for part in ("thigh", "calf", "foot")
+        ]
+    )
+    pose_rotations: bool = True
 
 
 class MaskedMimicGoalControl(MaskedMimicSteeringControl):
@@ -768,6 +1061,41 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
             env.num_envs, dtype=torch.long, device=env.device
         )
         self._blind_spans = []
+        # The answer to this throw's question: ANSWER_NONE / YES / NO, when
+        # it was given, how far the dog has turned blind looking for it, and
+        # which throw it belongs to.
+        n, dev = env.num_envs, env.device
+        self._answer = torch.zeros(n, dtype=torch.long, device=dev)
+        self._answer_at = torch.zeros(n, device=dev)
+        self._blind_turn = torch.zeros(n, device=dev)
+        self._prev_heading = torch.zeros(n, device=dev)
+        self._answer_throw = torch.full((n,), -1, dtype=torch.long, device=dev)
+        # Pose commands: where the pose goes, which way it faces, when it began.
+        self._pose_anchor_xy = torch.zeros(n, 2, device=dev)
+        self._pose_anchor_heading = torch.zeros(n, device=dev)
+        self._pose_start = torch.zeros(n, device=dev)
+        # Which segment the anchor was taken for (-1: none yet this throw).
+        self._pose_anchor_seg = torch.full((n,), -1, dtype=torch.long, device=dev)
+        # Stand up before whatever comes next: until this time the trunk is
+        # held at standing height (see populate_context).
+        self._stand_until = torch.zeros(n, device=dev)
+        self._was_pose = torch.zeros(n, dtype=torch.bool, device=dev)
+        self._pose_segments = None
+        # What each pose throw came out as, judged over its hold (_judge_pose).
+        self._pose_asked = torch.full((n,), -1, dtype=torch.long, device=dev)
+        self._pose_hold_steps = torch.zeros(n, device=dev)
+        self._pose_paws_sum = torch.zeros(n, device=dev)
+        self._pose_pitch_sum = torch.zeros(n, device=dev)
+        # (front paws, nose-up, trunk height) at the start and end of the hold.
+        self._pose_first = torch.zeros(n, 3, device=dev)
+        self._pose_last = torch.zeros(n, 3, device=dev)
+        # Lowest nose-up and trunk height over the hold: a fall shows here.
+        self._pose_low = torch.full((n, 2), 1e3, device=dev)
+        # How it looked at the end of each stage of its chain, for the report.
+        self._pose_prev_stage = torch.full((n,), -2, dtype=torch.long, device=dev)
+        self._pose_path = [[] for _ in range(n)]
+        self._pose_tally = {}
+        self._pose_base_mask = None
 
     def reset(self, env_ids: Tensor) -> None:
         """Forget the throw's deadline so the first real step re-issues it.
@@ -908,12 +1236,21 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         from protomotions.envs.control.camera_eye import project_to_camera
 
         target = self.env.control_manager.components[self.config.target_component]
+        return self._image_of(target._tar_pos[:, :2])
+
+    def _image_of(self, xy: Tensor):
+        """_ball_image for a ball resting at planar xy (any colour's)."""
+        from protomotions.envs.control.camera_eye import project_to_camera
+
+        target = self.env.control_manager.components[self.config.target_component]
         ball = target._tar_pos.clone()
+        ball[:, :2] = xy
         ball[:, 2] += getattr(target.config, "marker_z_offset", 0.0)
         root = self.env.simulator.get_root_state()
         return project_to_camera(
             ball, root.root_pos, root.root_rot, self.config.sight_forward_m,
             self.config.fov_deg, self.config.sight_aspect,
+            lens_up_m=self.config.sight_up_m,
         )
 
     def _in_view(self) -> Tensor:
@@ -942,6 +1279,7 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
                 seen = window_contains(
                     u, v, depth, radius, tan_h, tan_v, zero, zero, torch.ones_like(u)
                 )
+            seen = seen & self._unoccluded(u, v, depth, tan_h, tan_v)
         else:
             root_state = self.env.simulator.get_root_state()
             heading = rotations.calc_heading(root_state.root_rot, True)
@@ -953,7 +1291,569 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         if self.config.sight_range_m > 0:
             rng = torch.linalg.norm(delta, dim=-1)
             seen = seen & (rng <= self.config.sight_range_m)
-        return seen
+        return seen & self._ball_present()
+
+    def _lock_any_ball(self) -> None:
+        """"get the ball": the first ball the dog sees becomes the target.
+
+        Until then every ball on the ground is tested against the camera (or
+        the eye's window); the one nearest the middle of the view wins a tie.
+        Nothing is known about a ball before it is seen, so the choice uses
+        only what is in frame -- exactly what a student could do.
+        """
+        source = self._ball_source()
+        pending = getattr(source, "any_mode", None)
+        if pending is None or self.config.sight_aspect <= 0:
+            return
+        pending = pending & ~source.locked
+        if not bool(pending.any()):
+            return
+        radius = self.config.ball_radius_m
+        eye = (
+            self.env.control_manager.components[self.config.eye_component]
+            if self.config.eye_component else None
+        )
+        from protomotions.envs.control.camera_eye import window_contains
+
+        best = torch.full((self.env.num_envs,), -1, dtype=torch.long, device=self.env.device)
+        best_u = torch.full((self.env.num_envs,), float("inf"), device=self.env.device)
+        for slot, (_, _, xy, shown) in enumerate(source.marker_slots()):
+            u, v, depth, tan_h, tan_v = self._image_of(xy)
+            if eye is not None:
+                seen = eye.contains(u, v, depth, radius, tan_h, tan_v)
+            else:
+                zero = torch.zeros_like(u)
+                seen = window_contains(u, v, depth, radius, tan_h, tan_v, zero, zero, torch.ones_like(u))
+            seen = seen & self._unoccluded(u, v, depth, tan_h, tan_v)
+            better = pending & shown & seen & (u.abs() < best_u)
+            best = torch.where(better, torch.full_like(best, slot), best)
+            best_u = torch.where(better, u.abs(), best_u)
+        found = best >= 0
+        if not bool(found.any()):
+            return
+        swap = found & (best != source.color)
+        ids = swap.nonzero(as_tuple=False).flatten()
+        source.retarget(ids, best[ids])
+        source.locked |= found
+        self._held_xy = torch.where(
+            found.unsqueeze(-1), self._goal_xy(), self._held_xy
+        )
+
+    def _unoccluded(self, u: Tensor, v: Tensor, depth: Tensor, tan_h: float, tan_v: float) -> Tensor:
+        """Nothing rendered in front of a ball at (u, v, depth)?
+
+        Reads the sight camera's distance_to_camera image at the ball's
+        pixel and compares it with the ball's own distance. Balls off the
+        frame (a sliver at the edge) and frames without depth pass.
+        """
+        n = self.env.num_envs
+        yes = torch.ones(n, dtype=torch.bool, device=self.env.device)
+        if not self.config.sight_camera:
+            return yes
+        dist = self.env.simulator.get_camera_images("distance_to_camera").get(
+            self.config.sight_camera
+        )
+        if dist is None:
+            # Say so: silently skipping this is "the ball behind the box is
+            # seen" with nothing to show for it.
+            if not getattr(self, "_depth_warned", False):
+                print(
+                    f"[chase-vision] sight_camera '{self.config.sight_camera}' "
+                    "renders no distance_to_camera -- occlusion is NOT tested.",
+                    flush=True,
+                )
+                self._depth_warned = True
+            return yes
+        dist = dist.reshape(n, dist.shape[1], dist.shape[2], -1)[..., 0]
+        h, w = dist.shape[1], dist.shape[2]
+        inside = (u.abs() <= 1.0) & (v.abs() <= 1.0) & (depth > 0)
+        px = ((u + 1.0) * 0.5 * w).long().clamp(0, w - 1)
+        py = ((v + 1.0) * 0.5 * h).long().clamp(0, h - 1)
+        drawn = dist[torch.arange(n, device=dist.device), py, px].to(u.device)
+        ball = depth * torch.sqrt(1.0 + (u * tan_h) ** 2 + (v * tan_v) ** 2)
+        surface = ball - self.config.ball_radius_m - self.config.occlusion_tolerance_m
+        clear = ~torch.isfinite(drawn) | (drawn >= surface)
+        self._occlusion_tests = getattr(self, "_occlusion_tests", 0) + int(inside.sum())
+        self._occlusion_blocked = getattr(self, "_occlusion_blocked", 0) + int(
+            (inside & ~clear).sum()
+        )
+        return ~inside | clear
+
+    # What the demonstrator would command -- the recorder's labels. Its own
+    # plan here; a driver that lets something else steer (VlaGoalControl)
+    # keeps these pointed at the demonstrator, which is what DAgger records.
+    def _label_target_xy(self) -> Tensor:
+        return self._target_xy()
+
+    def _label_holding(self) -> Tensor:
+        return self._holding()
+
+    def _label_command_heading(self, root_pos: Tensor) -> Tensor:
+        return self._command_heading(root_pos)
+
+    # ------------------------------------------------------------------
+    # Pose commands ("sit", "beg"): hold a mocap pose where the dog stands
+    # ------------------------------------------------------------------
+
+    def _pose_index(self) -> Tensor:
+        pose = getattr(self._ball_source(), "pose", None)
+        if pose is None:
+            return torch.full((self.env.num_envs,), -1, dtype=torch.long, device=self.env.device)
+        return pose
+
+    def _pose_active(self) -> Tensor:
+        return self._pose_index() >= 0
+
+    def _pose_chains(self) -> list:
+        """Per configured pose, its timed segments (loaded from the corpus once).
+
+        A pose throw is: each step of poses.GO2_POSES in turn (a keyframe
+        reached in its reach time, else pose_reach_sec; or a played clip
+        stretch, in real time), a hold of the last (poses.POSE_HOLD_SEC, else
+        pose_hold_sec), then its release (poses.POSE_RELEASE) -- the way the
+        corpus leaves that pose -- before the next throw.
+        """
+        if self._pose_segments is None:
+            from protomotions.envs.control.poses import (
+                GO2_POSES, POSE_HOLD_SEC, POSE_RELEASE, load_step,
+            )
+
+            dev = self.env.device
+            names = list(getattr(self._ball_source().config, "poses", []))
+            lib = self.env.motion_lib
+
+            def seconds(step):
+                if step["kind"] == "play":
+                    return abs(step["t1"] - step["t0"])
+                return step["reach"] if step["reach"] is not None else self.config.pose_reach_sec
+
+            self._pose_segments = []
+            for n in names:
+                main = [load_step(lib, st, dev) for st in GO2_POSES[n]]
+                hold = {"kind": "hold", "of": len(main) - 1,
+                        "frame": main[-1]["frame"], "sec": POSE_HOLD_SEC.get(n, self.config.pose_hold_sec)}
+                release = [load_step(lib, st, dev) for st in POSE_RELEASE.get(n, [])]
+                for st in main + release:
+                    st["sec"] = seconds(st)
+                self._pose_segments.append(main + [hold] + release)
+            width = max((len(sg) for sg in self._pose_segments), default=1)
+            p_n = max(len(names), 1)
+            self._pose_seg_end = torch.zeros(p_n, width, device=dev)
+            self._pose_seg_hold = torch.zeros(p_n, width, dtype=torch.bool, device=dev)
+            self._pose_nseg = torch.ones(p_n, dtype=torch.long, device=dev)
+            self._pose_reached_at = torch.zeros(p_n, device=dev)
+            self._pose_hold_end = torch.zeros(p_n, device=dev)
+            for p, (n, sg) in enumerate(zip(names, self._pose_segments)):
+                ends = torch.tensor([st["sec"] for st in sg], device=dev).cumsum(0)
+                self._pose_seg_end[p, : len(sg)] = ends
+                self._pose_seg_end[p, len(sg):] = ends[-1]
+                self._pose_seg_hold[p, : len(sg)] = torch.tensor(
+                    [st["kind"] == "hold" for st in sg], device=dev
+                )
+                self._pose_nseg[p] = len(sg)
+                h = len(GO2_POSES[n])  # index of the hold segment
+                self._pose_reached_at[p] = ends[h - 1]
+                self._pose_hold_end[p] = ends[h]
+            self._pose_total = self._pose_seg_end[:, -1].clone()
+            body = list(self.env.robot_config.kinematic_info.body_names)
+            front = [body.index(b) for b in ("FL_foot", "FR_foot")]
+            for n, sg in zip(names, self._pose_segments):
+                k = sg[len(GO2_POSES[n])]["frame"]
+                print(
+                    f"[chase-pose] {n} = {k['spec']}: trunk {float(k['pos'][0, 2]):.2f} m, "
+                    f"nose-up {k['pitch']:+.0f} deg, front paws "
+                    f"{float(k['pos'][front, 2].min()):.2f} m",
+                    flush=True,
+                )
+        return self._pose_segments
+
+    def _pose_timing(self):
+        """(segment per env, -1 while settling; its absolute start; end; is a hold)."""
+        self._pose_chains()
+        pose = self._pose_index().clamp_min(0)
+        ends = self._pose_seg_end[pose]                       # [N, S]
+        settle = self.config.pose_settle_sec
+        base = self._pose_start + settle
+        elapsed = self._now() - base
+        seg = (ends <= elapsed.unsqueeze(-1)).sum(dim=-1)
+        seg = torch.minimum(seg, self._pose_nseg[pose] - 1)
+        end = ends.gather(1, seg.unsqueeze(-1)).squeeze(-1)
+        start = torch.where(
+            seg > 0, ends.gather(1, (seg - 1).clamp_min(0).unsqueeze(-1)).squeeze(-1),
+            torch.zeros_like(end),
+        )
+        hold = self._pose_seg_hold[pose].gather(1, seg.unsqueeze(-1)).squeeze(-1)
+        settling = elapsed < 0
+        seg = torch.where(settling, torch.full_like(seg, -1), seg)
+        return seg, base + start, torch.where(settling, base, base + end), hold & ~settling
+
+    def _pose_stage(self):
+        """(segment per env: -1 settling; the deadline its targets count down to).
+
+        A keyframe's deadline is the end of its reach; a played stretch
+        counts down to its end, so its targets are the clip's frames that
+        far ahead; a hold's deadline is already past: "be in it now".
+        """
+        seg, start, end, hold = self._pose_timing()
+        return seg, torch.where(hold, start, end)
+
+    def _pose_done_sec(self) -> Tensor:
+        """Seconds from the throw until the pose is reached (settle + chain)."""
+        self._pose_chains()
+        return self.config.pose_settle_sec + self._pose_reached_at[self._pose_index().clamp_min(0)]
+
+    def _pose_hold_end_sec(self) -> Tensor:
+        """Seconds from the throw until its hold ends and the release begins."""
+        self._pose_chains()
+        return self.config.pose_settle_sec + self._pose_hold_end[self._pose_index().clamp_min(0)]
+
+    def _pose_end_sec(self) -> Tensor:
+        """Seconds from the throw until the pose throw is over (release done)."""
+        self._pose_chains()
+        return self.config.pose_settle_sec + self._pose_total[self._pose_index().clamp_min(0)]
+
+    def _pose_mask_row(self) -> Tensor:
+        """[steps * conditionable * 2] mask of one pose target."""
+        if getattr(self, "_pose_row", None) is None:
+            steps = self.config.num_masked_future_steps
+            cond = self.conditionable_body_ids.tolist()
+            names = list(self.env.robot_config.kinematic_info.body_names)
+            row = torch.zeros(steps, len(cond), 2, dtype=torch.bool, device=self.env.device)
+            row[:, cond.index(self._root_body_id), :] = True
+            for b in self.config.pose_bodies:
+                row[:, cond.index(names.index(b)), 0] = True
+                row[:, cond.index(names.index(b)), 1] = self.config.pose_rotations
+            self._pose_row = row.view(-1)
+        return self._pose_row
+
+    def _pose_lead(self, lead: Tensor) -> Tensor:
+        active = self._pose_active()
+        if not bool(active.any()):
+            return lead
+        _, deadline = self._pose_stage()
+        remaining = (deadline - self._now()).clamp(
+            self.config.min_horizon_sec, self.config.max_horizon_sec
+        )
+        pose_lead = remaining.unsqueeze(-1) * self._fractions().unsqueeze(0)
+        return torch.where(active.unsqueeze(-1), pose_lead, lead)
+
+    def populate_context(self, ctx) -> None:
+        active = self._pose_active()
+        if bool(active.any()):
+            stage, _ = self._pose_stage()
+            # Settling: an ordinary "stop here" (trunk only). Every step after
+            # that goes where the dog is when it begins, facing its way --
+            # except a hold, which stays where its step put it.
+            hold = self._pose_timing()[3]
+            begun = active & (stage >= 0) & (stage != self._pose_anchor_seg) & ~hold
+            if bool(begun.any()):
+                root = self.env.simulator.get_root_state()
+                self._pose_anchor_xy[begun] = root.root_pos[begun, :2]
+                self._pose_anchor_heading[begun] = rotations.calc_heading(
+                    root.root_rot[begun], True
+                )
+            self._pose_anchor_seg = torch.where(active & (stage >= 0), stage, self._pose_anchor_seg)
+            active = active & (stage >= 0)
+        # Only touch the body mask around pose throws (and once after, to put
+        # it back): something else may be steering it (PoseTestControl).
+        if bool(active.any()) or getattr(self, "_pose_mask_dirty", False):
+            if self._pose_base_mask is None:
+                self._pose_base_mask = self.masked_mimic_target_bodies_masks.clone()
+            mask = self._pose_base_mask.clone()
+            mask[active] = self._pose_mask_row()
+            self.masked_mimic_target_bodies_masks[:] = mask
+            self._pose_mask_dirty = bool(active.any())
+        super().populate_context(ctx)
+        # Stand up: the chase's height rule is "wherever the trunk already
+        # is", so a dog still folded from a pose -- or one sinking while it
+        # stops -- would be told to stay down (measured: it settled to 0.24 m
+        # and lay down instead of sitting). Hold the corpus standing height.
+        standing = (self._now() < self._stand_until) & ~active
+        if bool(standing.any()):
+            if self._height_a is None:
+                self._measure_height_fit()
+            ref_pos = ctx.masked_mimic.ref_pos.clone()
+            ground = self.env.terrain.get_ground_heights(
+                ref_pos[standing][:, :, self._root_body_id, :2].reshape(-1, 2)
+            ).view(-1, ref_pos.shape[1])
+            ref_pos[standing, :, self._root_body_id, 2] = ground + float(self._height_a)
+            ctx.masked_mimic.ref_pos = ref_pos
+        # What MaskedMimic is told this step: the recorder's action labels.
+        self._last_mm = ctx.masked_mimic
+        if not bool(active.any()):
+            return
+        from protomotions.envs.control.poses import place, place_bodies, play_frames
+
+        segments = self._pose_chains()
+        pose = self._pose_index()
+        seg_start = self._pose_timing()[1]
+        now = self._now()
+        lead = ctx.masked_mimic.time_offsets
+        ref_pos, ref_rot = ctx.masked_mimic.ref_pos.clone(), ctx.masked_mimic.ref_rot.clone()
+        steps = ref_pos.shape[1]
+        for p, chain in enumerate(segments):
+            for k, step in enumerate(chain):
+                rows = active & (pose == p) & (stage == k)
+                if not bool(rows.any()):
+                    continue
+                anchor_xy = self._pose_anchor_xy[rows]
+                anchor_h = self._pose_anchor_heading[rows]
+                if step["kind"] == "hold":
+                    step = chain[step["of"]]
+                    if step["kind"] == "play":
+                        # The played stretch's last frame, where it put it.
+                        tau = torch.full_like(anchor_h, step["sec"])
+                        lead_rows = torch.zeros(anchor_h.shape[0], steps, device=anchor_h.device)
+                    else:
+                        tau = None
+                else:
+                    tau = now[rows] - seg_start[rows]
+                    lead_rows = lead[rows]
+                if step["kind"] == "play" and tau is not None:
+                    r = anchor_h.shape[0]
+                    # Backwards when t1 < t0: the conditioning is poses at
+                    # times, so a clip played in reverse is as valid a target.
+                    way = 1.0 if step["t1"] >= step["t0"] else -1.0
+                    times = step["t0"] + way * (tau.unsqueeze(-1) + lead_rows).clamp(0.0, step["sec"])
+                    pos_rel, rot_rel = play_frames(self.env.motion_lib, step, times)
+                    b = pos_rel.shape[1]
+                    pos, rot = place_bodies(
+                        pos_rel, rot_rel,
+                        anchor_xy.repeat_interleave(steps, 0), anchor_h.repeat_interleave(steps, 0),
+                        self.env.terrain,
+                    )
+                    ref_pos[rows] = pos.view(r, steps, b, 3)
+                    ref_rot[rows] = rot.view(r, steps, b, 4)
+                else:
+                    pos, rot = place(step["frame"], anchor_xy, anchor_h, self.env.terrain)
+                    ref_pos[rows] = pos.unsqueeze(1).expand(-1, steps, -1, -1)
+                    ref_rot[rows] = rot.unsqueeze(1).expand(-1, steps, -1, -1)
+        ctx.masked_mimic.ref_pos = ref_pos
+        ctx.masked_mimic.ref_rot = ref_rot
+        self._last_mm = ctx.masked_mimic
+
+    def _ball_present(self) -> Tensor:
+        """False on a throw with no ball: nothing there to be seen."""
+        present = getattr(self._ball_source(), "present", None)
+        if present is None:
+            return torch.ones(self.env.num_envs, dtype=torch.bool, device=self.env.device)
+        return present
+
+    def _look_mode(self) -> Tensor:
+        """True on a "can you see a ball?" throw: find it, face it, answer."""
+        look = getattr(self._ball_source(), "look", None)
+        if look is None:
+            return torch.zeros(self.env.num_envs, dtype=torch.bool, device=self.env.device)
+        return look
+
+    def _holding(self) -> Tensor:
+        """Envs told to stay where they are, with only a heading to meet.
+
+        A look question with the ball in view (turn to face it), a question
+        answered "no" (stand), and a pose. A search is NOT held: it walks the
+        corpus's small turning circle (see _searching / _target_xy).
+        """
+        if not self._unprivileged():
+            return self._look_mode() | self._pose_active()
+        held = (
+            (self._look_mode() & self._ball_seen) | (self._answer == ANSWER_NO)
+            | self._pose_active()
+        )
+        if self.config.search_turn_radius_m <= 0:
+            held = held | ~self._ball_seen
+        return held
+
+    def _searching(self) -> Tensor:
+        """Sweeping for a ball it cannot see (not a pose, not given up)."""
+        if not self._unprivileged():
+            return torch.zeros(self.env.num_envs, dtype=torch.bool, device=self.env.device)
+        return ~self._ball_seen & (self._answer != ANSWER_NO) & ~self._pose_active()
+
+    def _command_heading(self, root_pos: Tensor) -> Tensor:
+        """The world heading the conditioning asks for.
+
+        Towards what it is going to, except while blind, when it is the
+        sweep -- which after a "no" is simply where the dog stopped.
+        """
+        delta = self._target_xy() - root_pos[:, :2]
+        heading = torch.atan2(delta[:, 1], delta[:, 0])
+        if self._unprivileged():
+            heading = torch.where(self._ball_seen, heading, self._sweep_heading)
+        return torch.where(self._pose_active(), self._pose_anchor_heading, heading)
+
+    def _update_answer(self) -> None:
+        """Say yes when the ball is seen, no after a full turn without it.
+
+        Runs after the belief update. A new throw clears the answer. Once a
+        look question (or any "no") has been held for answer_hold_sec the
+        ball is asked to throw again, which ends the episode for the
+        recorder the same way a catch does.
+        """
+        source = self._ball_source()
+        throw = getattr(source, "throw_id", None)
+        if throw is None:
+            return
+        root = self.env.simulator.get_root_state()
+        heading = rotations.calc_heading(root.root_rot, True)
+        fresh = throw != self._answer_throw
+        if bool(fresh.any()):
+            self._answer[fresh] = ANSWER_NONE
+            self._blind_turn[fresh] = 0.0
+            self._answer_throw[fresh] = throw[fresh]
+            # A pose goes where the dog is now, facing the way it faces.
+            self._pose_anchor_xy[fresh] = root.root_pos[fresh, :2]
+            self._pose_anchor_heading[fresh] = heading[fresh]
+            self._pose_start[fresh] = self._now()[fresh]
+            self._pose_anchor_seg[fresh] = -1
+            self._judge_pose(fresh & self._was_pose)
+            self._pose_asked[fresh] = self._pose_index()[fresh]
+            # Going into a pose -- or into anything from a pose that left the
+            # dog down -- stand up first. A pose's own release already ends
+            # standing (poses.POSE_RELEASE), and from a sit a trunk-only
+            # stand-up is a beg.
+            stand = fresh & (self._was_pose | self._pose_active())
+            self._stand_until[stand] = self._now()[stand] + self.config.pose_settle_sec
+        turned = torch.atan2(
+            torch.sin(heading - self._prev_heading),
+            torch.cos(heading - self._prev_heading),
+        ).abs()
+        self._prev_heading = heading
+        # A privileged chase pins _ball_seen True; presence keeps an absent
+        # ball from being "seen" there too.
+        seen = self._ball_seen & self._ball_present()
+        blind = ~seen
+        self._blind_turn = torch.where(
+            blind & ~fresh, self._blind_turn + turned, torch.zeros_like(turned)
+        )
+        now = self._now()
+        pending = self._answer == ANSWER_NONE
+        yes = pending & seen
+        no = pending & blind & (
+            self._blind_turn >= math.radians(self.config.no_ball_sweep_deg)
+        )
+        if bool(yes.any()):
+            self._answer[yes] = ANSWER_YES
+            self._answer_at[yes] = now[yes]
+        if bool(no.any()):
+            self._answer[no] = ANSWER_NO
+            self._answer_at[no] = now[no]
+            # Stop sweeping where it gave up, and re-plan to stand there.
+            self._sweep_heading[no] = heading[no]
+            self._epoch[no] += 1
+        answered = self._answer != ANSWER_NONE
+        ends = answered & (self._look_mode() | (self._answer == ANSWER_NO))
+        held = (now - self._answer_at) >= self.config.answer_hold_sec
+        request = getattr(source, "rethrow_requested", None)
+        if request is not None:
+            request |= ends & held & ~self._pose_active()
+        # A pose command ignores the balls: "doing it" until the pose's
+        # deadline, "done" after, and the next throw once it has been held.
+        posing = self._pose_active()
+        self._was_pose = posing.clone()
+        if bool(posing.any()):
+            elapsed = now - self._pose_start
+            done_at = self._pose_done_sec()
+            reached = elapsed >= done_at
+            self._answer = torch.where(
+                posing,
+                torch.where(reached, torch.full_like(self._answer, ANSWER_YES),
+                            torch.full_like(self._answer, ANSWER_NONE)),
+                self._answer,
+            )
+            if request is not None:
+                request |= posing & (elapsed >= self._pose_end_sec())
+            self._watch_pose(posing & reached & (elapsed < self._pose_hold_end_sec()))
+            self._trace_pose(posing)
+
+    def _trace_pose(self, posing: Tensor) -> None:
+        stage, _ = self._pose_stage()
+        stage = torch.where(posing, stage, torch.full_like(stage, -2))
+        moved = posing & (stage != self._pose_prev_stage) & (self._pose_prev_stage >= -1)
+        if bool(moved.any()):
+            paws, pitch, trunk = self._pose_measures()
+            for e in moved.nonzero(as_tuple=False).flatten().tolist():
+                self._pose_path[e].append(
+                    f"{float(trunk[e]):.2f}/{float(pitch[e]):+.0f}/{float(paws[e]):.2f}"
+                )
+        self._pose_prev_stage = stage
+
+    def _pose_measures(self):
+        """(lower front foot above ground, trunk nose-up) per env, m and deg."""
+        names = list(self.env.robot_config.kinematic_info.body_names)
+        pos = self.env.simulator.get_bodies_state().rigid_body_pos
+        front = [names.index(b) for b in ("FL_foot", "FR_foot")]
+        feet = pos[:, front]
+        ground = self.env.terrain.get_ground_heights(feet[..., :2].reshape(-1, 2)).view(-1, 2)
+        paws = (feet[..., 2] - ground).min(dim=-1).values
+        root = self.env.simulator.get_root_state()
+        x = torch.zeros_like(root.root_pos)
+        x[:, 0] = 1.0
+        fwd = rotations.quat_rotate(root.root_rot, x, True)
+        pitch = torch.rad2deg(torch.atan2(fwd[:, 2], torch.linalg.norm(fwd[:, :2], dim=-1)))
+        trunk = root.root_pos[:, 2] - self.env.terrain.get_ground_heights(root.root_pos[:, :2]).view(-1)
+        return paws, pitch, trunk
+
+    def _watch_pose(self, holding: Tensor) -> None:
+        if not bool(holding.any()):
+            return
+        paws, pitch, trunk = self._pose_measures()
+        now = torch.stack([paws, pitch, trunk], dim=-1)
+        first = holding & (self._pose_hold_steps == 0)
+        self._pose_first[first] = now[first]
+        self._pose_last[holding] = now[holding]
+        self._pose_low[holding] = torch.minimum(self._pose_low[holding], now[holding][:, 1:])
+        self._pose_hold_steps += holding.float()
+        self._pose_paws_sum += torch.where(holding, paws, torch.zeros_like(paws))
+        self._pose_pitch_sum += torch.where(holding, pitch, torch.zeros_like(pitch))
+
+    def _judge_pose(self, ended: Tensor) -> None:
+        """Say what a finished pose throw looked like over its hold.
+
+        Nose down past 25 deg or the trunk under 20 cm at any point is a
+        fall. Otherwise, over the hold: both front paws off the ground by
+        more than 15 cm (the beg keyframe has them at 34 / 36) is a beg;
+        paws down with the trunk at sitting height (the sit keyframe is at
+        0.30 m, standing 0.34+) is a sit; anything else -- still standing --
+        is neither.
+        """
+        names = list(getattr(self._ball_source().config, "poses", []))
+        for e in ended.nonzero(as_tuple=False).flatten().tolist():
+            asked, steps = int(self._pose_asked[e]), float(self._pose_hold_steps[e])
+            if asked < 0 or steps <= 0:
+                continue
+            paws = float(self._pose_paws_sum[e]) / steps
+            pitch = float(self._pose_pitch_sum[e]) / steps
+            trunk = float(self._pose_last[e, 2])
+            low_nose, low_trunk = self._pose_low[e].tolist()
+            if low_nose < -25.0 or low_trunk < 0.20:
+                got = "fell"
+            elif paws > 0.15:
+                got = "beg"
+            elif paws < 0.08 and trunk < 0.32:
+                got = "sit"
+            else:
+                got = "other"
+            want = names[asked]
+            key = (want, got)
+            self._pose_tally[key] = self._pose_tally.get(key, 0) + 1
+            so_far = ", ".join(
+                f"{w}: " + " ".join(f"{g} {c}" for (w2, g), c in sorted(self._pose_tally.items()) if w2 == w)
+                for w in names
+            )
+            a, b = self._pose_first[e].tolist(), self._pose_last[e].tolist()
+            path = " > ".join(self._pose_path[e])
+            self._pose_path[e] = []
+            print(
+                f"[chase-pose] dog {e} asked {want} -> {got} (hold mean: paws {paws:.2f} m, "
+                f"nose-up {pitch:+.0f}; start paws {a[0]:.2f} nose {a[1]:+.0f} trunk {a[2]:.2f} "
+                f"-> end paws {b[0]:.2f} nose {b[1]:+.0f} trunk {b[2]:.2f}) "
+                f"[stage ends trunk/nose/paws: {path}] | so far {so_far}",
+                flush=True,
+            )
+        self._pose_hold_steps[ended] = 0.0
+        self._pose_paws_sum[ended] = 0.0
+        self._pose_pitch_sum[ended] = 0.0
+        self._pose_low[ended] = 1e3
 
     def _update_belief(self) -> None:
         """Look, and note the moments the answer changes.
@@ -965,6 +1865,7 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         """
         if not self._unprivileged():
             return
+        self._lock_any_ball()
         in_view = self._in_view()
         self._ball_in_view = in_view
         seen = in_view
@@ -1128,7 +2029,22 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         )
         ball = self._belief_xy()
         live = ball + self._belief_vel() * remaining.unsqueeze(-1)
-        return torch.where(have, live, ball)
+        target = torch.where(have, live, ball)
+        searching = self._searching()
+        if self.config.search_turn_radius_m > 0 and bool(searching.any()):
+            # The chord of the turn still to make, on a circle of the corpus's
+            # radius: it starts at the dog and closes to it as the leg ends,
+            # so the dog creeps round the circle while it sweeps.
+            root = self.env.simulator.get_root_state()
+            heading = rotations.calc_heading(root.root_rot, True)
+            err = self._sweep_error()
+            chord = 2.0 * self.config.search_turn_radius_m * torch.sin(err.abs() * 0.5)
+            ang = heading + 0.5 * err
+            arc = root.root_pos[:, :2] + chord.unsqueeze(-1) * torch.stack(
+                [torch.cos(ang), torch.sin(ang)], dim=-1
+            )
+            target = torch.where(searching.unsqueeze(-1), arc, target)
+        return target
 
     def _intercept_run_time(self, delta: Tensor, vel: Tensor, tau: Tensor) -> Tensor:
         """Running time s (after a turn of tau) to meet a ball moving at vel.
@@ -1205,7 +2121,7 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         remaining = (self._deadline - now).clamp(
             self.config.min_horizon_sec, self.config.max_horizon_sec
         )
-        return remaining.unsqueeze(-1) * self._fractions().unsqueeze(0)
+        return self._pose_lead(remaining.unsqueeze(-1) * self._fractions().unsqueeze(0))
 
     def _set_deadline(self, env_ids: Tensor) -> None:
         """Budget range / top_speed from now: the most urgent time the robot
@@ -1220,7 +2136,7 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
             # the first one, and each one after the previous expires -- is
             # measured from the heading the dog has now, so consecutive legs
             # keep the sweep going instead of re-aiming at the same point.
-            blind = mask & ~self._ball_seen
+            blind = mask & ~self._ball_seen & (self._answer != ANSWER_NO)
             if bool(blind.any()):
                 self._latch_search(blind)
         root_state = self.env.simulator.get_root_state()
@@ -1277,6 +2193,13 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         budget = (tau + self._bearing_gate(bearing) * run).clamp(
             self.config.min_horizon_sec, self.config.max_horizon_sec
         )
+        # A look question turns to face the ball and goes nowhere: the budget
+        # is the turn alone, at full yaw rate.
+        budget = torch.where(
+            self._look_mode(),
+            tau.clamp(self.config.min_horizon_sec, self.config.max_horizon_sec),
+            budget,
+        )
         if self._unprivileged():
             # Searching: no run term at all. The budget is exactly the time
             # to turn this leg at the sweep rate, so the instruction reduces
@@ -1297,6 +2220,7 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
     def step(self) -> None:
         """Look first, then plan. The ball component has already moved."""
         self._update_belief()
+        self._update_answer()
         super().step()
         self._report_sight()
 
@@ -1321,6 +2245,14 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         )
         sweep = math.degrees(self._search_yaw())
         dwell = self.config.fov_deg / max(sweep, 1e-6)
+        tests = getattr(self, "_occlusion_tests", 0)
+        if tests:
+            print(
+                f"[chase-vision] occlusion: {getattr(self, '_occlusion_blocked', 0)} "
+                f"of {tests} in-frame looks blocked by something nearer",
+                flush=True,
+            )
+            self._occlusion_tests = self._occlusion_blocked = 0
         print(
             f"[chase-vision] ball in view {100.0 * self._sight_seen / steps:.0f}% "
             f"of steps, {len(spans)} reacquisitions, mean {blind_s:.1f} s to "
@@ -1368,15 +2300,14 @@ class MaskedMimicGoalControl(MaskedMimicSteeringControl):
         along = root_pos[:, :2].unsqueeze(1) + (
             goal - root_pos[:, :2]
         ).unsqueeze(1) * frac
-        if self._unprivileged():
-            # A search does not travel. Every slot sits on the robot, so the
-            # only thing the conditioning asks for is the heading -- which
-            # is the sweep, not the direction of some invented ball.
-            blind = ~self._ball_seen
-            along = torch.where(
-                blind.view(-1, 1, 1), root_pos[:, :2].unsqueeze(1), along
-            )
-            heading = torch.where(blind, self._sweep_heading, heading)
+        # A search does not travel, a look question only turns to face the
+        # ball, and a "no" stands still: every slot sits on the robot, and
+        # the only live instruction is the heading.
+        hold = self._holding()
+        along = torch.where(
+            hold.view(-1, 1, 1), root_pos[:, :2].unsqueeze(1), along
+        )
+        heading = self._command_heading(root_pos)
         return along, heading.unsqueeze(-1).expand(-1, steps)
 
     def _command(self) -> Tensor:

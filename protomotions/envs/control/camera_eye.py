@@ -65,6 +65,7 @@ def project_to_camera(
     lens_forward_m: float,
     hfov_deg: float,
     aspect: float,
+    lens_up_m: float = 0.0,
 ):
     """World points -> normalised image coordinates of a body-mounted camera.
 
@@ -79,6 +80,7 @@ def project_to_camera(
     """
     offset = torch.zeros_like(root_pos)
     offset[:, 0] = lens_forward_m
+    offset[:, 2] = lens_up_m
     lens = root_pos + rotations.quat_rotate(root_rot, offset, True)
     d = rotations.quat_rotate_inverse(root_rot, points_w - lens, True)
     tan_h = math.tan(math.radians(hfov_deg) * 0.5)
@@ -204,6 +206,14 @@ class CameraEye(ControlComponent):
         self.zoom = torch.ones(n, device=dev)
         self._next: Optional[tuple] = None
         self._next_step = -1
+        # A gaze chosen by someone else (a policy driving the dog): when set,
+        # it replaces the demonstrator's rule for the next frame.
+        self._external: Optional[Tensor] = None
+
+    def set_external(self, gaze: Optional[Tensor]) -> None:
+        """[N, 3] (u, v, zoom) for the next frame, or None for the built-in rule."""
+        self._external = None if gaze is None else gaze.to(self.zoom.device).float()
+        self._next_step = -1
 
     def reset(self, env_ids: Tensor) -> None:
         self.center_u[env_ids] = 0.0
@@ -235,6 +245,25 @@ class CameraEye(ControlComponent):
         """
         if self._next is not None and self._next_step == self._steps:
             return torch.stack(self._next, dim=-1)
+        if self._external is not None:
+            z = self._external[:, 2].clamp(1.0, self.config.max_zoom)
+            half = 1.0 / z
+            cu = torch.maximum(torch.minimum(self._external[:, 0], 1.0 - half), half - 1.0)
+            cv = torch.maximum(torch.minimum(self._external[:, 1], 1.0 - half), half - 1.0)
+            self._next = (cu, cv, z)
+            self._next_step = self._steps
+            return torch.stack(self._next, dim=-1)
+        self._next = tuple(self.rule_gaze().unbind(-1))
+        self._next_step = self._steps
+        return torch.stack(self._next, dim=-1)
+
+    def rule_gaze(self) -> Tensor:
+        """[N, 3] the demonstrator's choice of next gaze from the CURRENT window.
+
+        The label, even while something else (a VLA) is aiming the eye.
+        """
+        if getattr(self, "_rule", None) is not None and self._rule_step == self._steps:
+            return torch.stack(self._rule, dim=-1)
         goal = self._goal()
         u, v, depth, tan_h, tan_v = goal._ball_image()
         radius = goal.config.ball_radius_m
@@ -242,6 +271,12 @@ class CameraEye(ControlComponent):
         # demonstrator's belief, which a privileged chase pins to True even
         # with the ball behind the lens.
         seen = self.contains(u, v, depth, radius, tan_h, tan_v)
+        present = getattr(goal, "_ball_present", None)
+        if present is not None:
+            seen = seen & present()
+        unoccluded = getattr(goal, "_unoccluded", None)
+        if unoccluded is not None:
+            seen = seen & unoccluded(u, v, depth, tan_h, tan_v)
         # Zoom that makes the ball span ball_frac of the window width: the
         # ball is 2*r_u of the 2-unit frame, the window is 2/zoom.
         r_u = radius / (depth.clamp_min(1e-3) * tan_h)
@@ -258,9 +293,9 @@ class CameraEye(ControlComponent):
         cv = torch.where(seen, v, self.center_v)
         cu = torch.maximum(torch.minimum(cu, 1.0 - half), half - 1.0)
         cv = torch.maximum(torch.minimum(cv, 1.0 - half), half - 1.0)
-        self._next = (cu, cv, z)
-        self._next_step = self._steps
-        return torch.stack(self._next, dim=-1)
+        self._rule = (cu, cv, z)
+        self._rule_step = self._steps
+        return torch.stack(self._rule, dim=-1)
 
     def crop(self, frames: Tensor) -> Tensor:
         """The student's view of a batch of full-resolution frames."""
@@ -323,6 +358,7 @@ class CameraEye(ControlComponent):
             [torch.full_like(us, d), -us * d * tan_h, -vs * d * tan_v], dim=-1
         )
         local[..., 0] += goal.config.sight_forward_m
+        local[..., 2] += getattr(goal.config, "sight_up_m", 0.0)
         root = self.env.simulator.get_root_state()
         rot = root.root_rot.unsqueeze(1).expand(n, 4 * k, 4).reshape(-1, 4)
         world = rotations.quat_rotate(rot, local.reshape(-1, 3), True).view(n, 4 * k, 3)

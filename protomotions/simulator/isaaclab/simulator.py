@@ -286,6 +286,7 @@ class IsaacLabSimulator(Simulator):
         # and kinematics are forwarded. Lab 2 forward() is a no-op-safe extra.
         self._scene.write_data_to_sim()
         self._sim.forward()
+        self._setup_room_randomizers()
 
         if os.environ.get("PROTOMOTIONS_DEBUG_ACTUATORS"):
             # Read the gains BACK out of the simulator. Implicit actuators are
@@ -1513,6 +1514,85 @@ class IsaacLabSimulator(Simulator):
     # =====================================================
     # Group 6: Rendering & Visualization
     # =====================================================
+    def _setup_room_randomizers(self) -> None:
+        """One Replicator graph per room, fired on demand by randomize_rooms.
+
+        Relative, so it holds for whatever lights the room USD authors:
+        exposure +-1 stop and a colour temperature for every light in the
+        room, and each prop a new spot along its wall and a new yaw.
+        """
+        rooms = getattr(self.config, "rooms", None)
+        self._room_events: List[str] = []
+        if rooms is None:
+            return
+        # A DistantLight lights the whole world, not its room: one per copy
+        # would stack N-fold on every room. The scene's dome light stays.
+        import omni.usd
+        from pxr import Usd, UsdGeom
+
+        stage = omni.usd.get_context().get_stage()
+        rooms_root = stage.GetPrimAtPath("/World/Rooms")
+        if rooms_root.IsValid():
+            for prim in Usd.PrimRange(rooms_root):
+                if prim.GetTypeName() in ("DistantLight", "DomeLight"):
+                    UsdGeom.Imageable(prim).MakeInvisible()
+        if not rooms.randomize:
+            return
+        import omni.replicator.core as rep
+
+        from protomotions.components.terrains.rooms import room_centers
+
+        centers = room_centers(
+            self.terrain, self.num_envs, rooms.spacing, rooms.half_extent
+        ).tolist()
+        hx, hy = rooms.half_extent
+        band = rooms.prop_band
+        z = rooms.z_offset
+        light_types = ["SphereLight", "RectLight", "DiskLight", "CylinderLight"]
+        for i, (cx, cy) in enumerate(centers):
+            event = f"protomotions_room_{i}"
+            with rep.trigger.on_custom_event(event_name=event):
+                lights = rep.get.prims(
+                    path_pattern=f"/World/Rooms/room_{i}/", prim_types=light_types
+                )
+                with lights:
+                    rep.modify.attribute("inputs:exposure", rep.distribution.uniform(-1.0, 1.0))
+                    rep.modify.attribute("inputs:enableColorTemperature", True)
+                    rep.modify.attribute(
+                        "inputs:colorTemperature", rep.distribution.uniform(3500.0, 7500.0)
+                    )
+                for j in range(rooms.props_per_room if rooms.props else 0):
+                    side = j % 4
+                    if side < 2:
+                        sx = 1 if side == 0 else -1
+                        lo = (cx + sx * (hx + 0.1), cy - hy, z)
+                        hi = (cx + sx * (hx + band), cy + hy, z)
+                    else:
+                        sy = 1 if side == 2 else -1
+                        lo = (cx - hx, cy + sy * (hy + 0.1), z)
+                        hi = (cx + hx, cy + sy * (hy + band), z)
+                    lo, hi = tuple(map(min, lo, hi)), tuple(map(max, lo, hi))
+                    prop = rep.get.prim_at_path(f"/World/RoomProps/room_{i}/prop_{j}")
+                    with prop:
+                        rep.modify.pose(
+                            position=rep.distribution.uniform(lo, hi),
+                            rotation=rep.distribution.uniform((0, 0, -180), (0, 0, 180)),
+                        )
+            self._room_events.append(event)
+        # Start every room already randomized.
+        self.randomize_rooms(torch.arange(self.num_envs))
+
+    def randomize_rooms(self, env_ids) -> None:
+        """Re-randomize these envs' rooms (applied on the next render)."""
+        events = getattr(self, "_room_events", None)
+        if not events:
+            return
+        import omni.replicator.core as rep
+
+        for i in torch.as_tensor(env_ids).flatten().tolist():
+            if 0 <= i < len(events):
+                rep.utils.send_og_event(event_name=events[i])
+
     def get_camera_images(self, data_type: str = "rgb") -> Dict[str, torch.Tensor]:
         """Latest frame from each onboard camera, keyed by camera name.
 
@@ -1847,7 +1927,8 @@ class IsaacLabSimulator(Simulator):
             ), f"Marker {marker_name} passed to update_markers but not defined at instantiation"
             marker_dict = self._visualization_markers[marker_name]
             marker_dict.marker.visualize(
-                translations=markers_state_item.translation.view(-1, 3),
-                orientations=markers_state_item.orientation.view(-1, 4),
+                # reshape, not view: a component may hand over a slice.
+                translations=markers_state_item.translation.reshape(-1, 3),
+                orientations=markers_state_item.orientation.reshape(-1, 4),
                 scales=marker_dict.scale,
             )

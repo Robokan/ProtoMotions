@@ -162,3 +162,29 @@ def test_lost_ball_zooms_out_one_level_at_a_time_around_the_same_spot():
     assert centres[0] == 0.5  # widened in place, not recentred
     assert centres[1] == 0.0  # zoom 1 is the whole frame
     assert centres[2] < 0.0  # re-centred on the ball, off to the left
+
+
+def test_camera_marker_sits_on_the_lens_and_points_along_the_body():
+    from types import SimpleNamespace
+
+    from protomotions.envs.control.camera_marker import CameraMarker, CameraMarkerConfig
+    from protomotions.robot_configs.go2 import go2_front_camera
+
+    cam = go2_front_camera()
+    for rot, forward in ((LEVEL, (1.0, 0.0, 0.0)), (_quat((0, 0, 1), 90), (0.0, 1.0, 0.0))):
+        env = SimpleNamespace(
+            num_envs=1, device="cpu",
+            simulator=SimpleNamespace(
+                config=SimpleNamespace(onboard_cameras={"front_camera": cam}),
+                show_markers=True,
+                get_root_state=lambda rot=rot: SimpleNamespace(root_pos=ROOT, root_rot=rot),
+            ),
+        )
+        state = CameraMarker(CameraMarkerConfig(), env).get_markers_state()
+        lens = state["camera_lens"].translation[0, 0]
+        axis = state["camera_axis"].translation[0]
+        # Forward offset along the body's heading, height straight up.
+        expected = ROOT[0] + torch.tensor(forward) * cam.pos[0] + torch.tensor([0.0, 0.0, cam.pos[2]])
+        assert torch.allclose(lens, expected, atol=1e-5)
+        step = axis[1] - axis[0]
+        assert torch.allclose(step / step.norm(), torch.tensor(forward), atol=1e-5)

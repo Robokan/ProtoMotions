@@ -537,3 +537,72 @@ class SceneCfg(InteractiveSceneCfg):
             )
         else:
             self.terrain = None
+
+        rooms = getattr(config, "rooms", None)
+        if rooms is not None and terrain is not None:
+            self._add_rooms(rooms, terrain, config.num_envs)
+
+    def _add_rooms(self, rooms, terrain, num_envs: int) -> None:
+        """A room per env at its grid centre, plus props along its edges.
+
+        Visual only: every collider in them is switched off, so physics is
+        still the terrain the policy was trained on. Props start in the band
+        just outside the usable floor; Replicator moves them later.
+        """
+        import random
+
+        from isaaclab.utils import assets
+        from protomotions.components.terrains.rooms import room_centers
+
+        def expand(path: str) -> str:
+            return path.format(
+                ISAAC_NUCLEUS_DIR=assets.ISAAC_NUCLEUS_DIR,
+                NVIDIA_NUCLEUS_DIR=assets.NVIDIA_NUCLEUS_DIR,
+            )
+
+        visual = sim_utils.CollisionPropertiesCfg(collision_enabled=False)
+        centers = room_centers(terrain, num_envs, rooms.spacing, rooms.half_extent)
+        rng = random.Random(0)
+        hx, hy = rooms.half_extent
+        for i, (cx, cy) in enumerate(centers.tolist()):
+            setattr(
+                self,
+                f"room_{i}",
+                AssetBaseCfg(
+                    prim_path=f"/World/Rooms/room_{i}",
+                    spawn=sim_utils.UsdFileCfg(
+                        usd_path=expand(rooms.usd_path), collision_props=visual
+                    ),
+                    init_state=AssetBaseCfg.InitialStateCfg(
+                        pos=(
+                            cx - rooms.floor_center[0],
+                            cy - rooms.floor_center[1],
+                            rooms.z_offset,
+                        )
+                    ),
+                ),
+            )
+            for j in range(rooms.props_per_room if rooms.props else 0):
+                side = j % 4
+                along = rng.uniform(-1.0, 1.0)
+                out = rng.uniform(0.1, rooms.prop_band)
+                if side < 2:
+                    x = cx + (1 if side == 0 else -1) * (hx + out)
+                    y = cy + along * hy
+                else:
+                    x = cx + along * hx
+                    y = cy + (1 if side == 2 else -1) * (hy + out)
+                setattr(
+                    self,
+                    f"room_{i}_prop_{j}",
+                    AssetBaseCfg(
+                        prim_path=f"/World/RoomProps/room_{i}/prop_{j}",
+                        spawn=sim_utils.UsdFileCfg(
+                            usd_path=expand(rng.choice(rooms.props)),
+                            collision_props=visual,
+                        ),
+                        init_state=AssetBaseCfg.InitialStateCfg(
+                            pos=(x, y, rooms.z_offset)
+                        ),
+                    ),
+                )

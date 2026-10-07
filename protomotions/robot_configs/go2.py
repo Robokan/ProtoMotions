@@ -242,9 +242,9 @@ def go2_front_camera(
 
     The MJCF puts the trunk's front face at x = 0.188 and the head assembly
     ahead of it (a cylinder at x = 0.285, a nose sphere at x = 0.293), so the
-    lens sits at x = 0.33 -- just proud of the nose, on the centreline, level
-    with the trunk origin and therefore about 0.34 m off the ground when the
-    dog is standing.
+    lens sits at x = 0.33 -- just proud of the nose, on the centreline, and
+    1 inch (0.0254 m) above the trunk origin, where the real one is
+    (checked against it by eye with --show-camera).
 
     Level by default. A ball on the floor is only 5 deg below the axis at 4 m
     and 20 deg at arm's length, both well inside the 44 deg half-height, so tilting
@@ -256,7 +256,9 @@ def go2_front_camera(
 
     return OnboardCameraConfig(
         body_name="base_link",
-        pos=(0.33, 0.0, 0.0),
+        # 1 inch above the trunk origin: checked by eye against the real
+        # go2's lens (--show-camera), 2026-09-28.
+        pos=(0.33, 0.0, 0.0254),
         pitch_deg=0.0,
         width=width,
         height=height,
